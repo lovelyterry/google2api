@@ -18,7 +18,7 @@ from config import (
     get_retry_429_max_retries,
 )
 from log import log
-from src.credential_manager import CredentialManager
+from src.auth import CredentialManager
 
 
 # ==================== 错误检查与处理 ====================
@@ -112,8 +112,8 @@ async def handle_error_with_retry(
             return True
         return False
 
-    # 如果不触发自动封禁，仅对429、503和500错误进行重试
-    if status_code in (429, 500, 503) and retry_enabled and attempt < max_retries:
+    # 如果不触发自动封禁，对400、429、500和503错误进行重试（自动切换账号池中下一个可用凭证）
+    if status_code in (400, 429, 500, 503) and retry_enabled and attempt < max_retries:
         log.info(
             f"[{mode.upper()} RETRY] {status_code} error encountered, retrying "
             f"(attempt {attempt + 1}/{max_retries})"
@@ -151,7 +151,7 @@ async def record_api_call_success(
 ) -> None:
     """
     记录API调用成功
-    
+
     Args:
         credential_manager: 凭证管理器实例
         credential_name: 凭证名称

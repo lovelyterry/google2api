@@ -47,10 +47,9 @@ from src.router.stream_passthrough import (
 )
 
 # 本地模块 - 数据模型
-from src.models import OpenAIChatCompletionRequest, model_to_dict
+from src.schemas import OpenAIChatCompletionRequest, model_to_dict
 
-# 本地模块 - 任务管理
-from src.task_manager import create_managed_task
+
 
 
 # ==================== 路由器初始化 ====================
@@ -85,7 +84,10 @@ async def chat_completions(
     # 处理模型名称和功能检测
     use_fake_streaming = is_fake_streaming_model(openai_request.model)
     use_anti_truncation = is_anti_truncation_model(openai_request.model)
-    real_model = get_base_model_from_feature_model(openai_request.model)
+    base_model = get_base_model_from_feature_model(openai_request.model)
+
+    from src.model_mapping import model_mapping_manager
+    real_model = model_mapping_manager.resolve_model(base_model, router_type="geminicli")
 
     # 获取流式标志
     is_streaming = openai_request.stream
@@ -113,6 +115,9 @@ async def chat_completions(
         "model": gemini_dict.pop("model"),
         "request": gemini_dict
     }
+
+    # 记录实际重定向后的最终目标模型映射
+    model_mapping_manager.record_mapping(openai_request.model, api_request["model"], router_type="geminicli")
 
     # ========== 非流式请求 ==========
     if not is_streaming:
@@ -418,7 +423,7 @@ if __name__ == "__main__":
     }
 
     # 测试Bearer令牌（模拟）
-    test_token = "Bearer pwd"
+    test_token = "Bearer admin"
 
     def test_non_stream_request():
         """测试非流式请求"""

@@ -45,8 +45,6 @@ ENV_MAPPINGS = {
     "API_PASSWORD": "api_password",
     "PANEL_PASSWORD": "panel_password",
     "PASSWORD": "password",
-    "KEEPALIVE_URL": "keepalive_url",
-    "KEEPALIVE_INTERVAL": "keepalive_interval",
 }
 
 
@@ -60,8 +58,8 @@ async def init_config():
         return
 
     try:
-        from src.storage_adapter import get_storage_adapter
-        storage_adapter = await get_storage_adapter()
+        from src.storage import get_storage
+        storage_adapter = await get_storage()
         _config_cache = await storage_adapter.get_all_config()
         _config_initialized = True
     except Exception:
@@ -75,8 +73,8 @@ async def reload_config():
     global _config_cache, _config_initialized
 
     try:
-        from src.storage_adapter import get_storage_adapter
-        storage_adapter = await get_storage_adapter()
+        from src.storage import get_storage
+        storage_adapter = await get_storage()
 
         # 如果后端支持 reload_config_cache，调用它
         if hasattr(storage_adapter._backend, 'reload_config_cache'):
@@ -125,7 +123,7 @@ async def get_auto_ban_enabled() -> bool:
     if env_value:
         return env_value.lower() in ("true", "1", "yes", "on")
 
-    return bool(await get_config_value("auto_ban_enabled", False))
+    return bool(await get_config_value("auto_ban_enabled", True))
 
 
 async def get_auto_ban_error_codes() -> list:
@@ -218,7 +216,7 @@ async def get_server_port() -> int:
 
     Environment variable: PORT
     Database config key: port
-    Default: 7861
+    Default: 8051
     """
     env_value = os.getenv("PORT")
     if env_value:
@@ -227,7 +225,7 @@ async def get_server_port() -> int:
         except ValueError:
             pass
 
-    return int(await get_config_value("port", 7861))
+    return int(await get_config_value("port", 8051))
 
 
 async def get_api_password() -> str:
@@ -236,7 +234,7 @@ async def get_api_password() -> str:
 
     Environment variable: API_PASSWORD
     Database config key: api_password
-    Default: Uses PASSWORD env var for compatibility, otherwise 'pwd'
+    Default: Uses PASSWORD env var for compatibility, otherwise 'admin'
     """
     # 优先使用 API_PASSWORD，如果没有则使用通用 PASSWORD 保证兼容性
     api_password = await get_config_value("api_password", None, "API_PASSWORD")
@@ -244,7 +242,7 @@ async def get_api_password() -> str:
         return str(api_password)
 
     # 兼容性：使用通用密码
-    return str(await get_config_value("password", "pwd", "PASSWORD"))
+    return str(await get_config_value("password", "admin", "PASSWORD"))
 
 
 async def get_panel_password() -> str:
@@ -253,7 +251,7 @@ async def get_panel_password() -> str:
 
     Environment variable: PANEL_PASSWORD
     Database config key: panel_password
-    Default: Uses PASSWORD env var for compatibility, otherwise 'pwd'
+    Default: Uses PASSWORD env var for compatibility, otherwise 'admin'
     """
     # 优先使用 PANEL_PASSWORD，如果没有则使用通用 PASSWORD 保证兼容性
     panel_password = await get_config_value("panel_password", None, "PANEL_PASSWORD")
@@ -261,7 +259,7 @@ async def get_panel_password() -> str:
         return str(panel_password)
 
     # 兼容性：使用通用密码
-    return str(await get_config_value("password", "pwd", "PASSWORD"))
+    return str(await get_config_value("password", "admin", "PASSWORD"))
 
 
 async def get_server_password() -> str:
@@ -270,9 +268,9 @@ async def get_server_password() -> str:
 
     Environment variable: PASSWORD
     Database config key: password
-    Default: pwd
+    Default: admin
     """
-    return str(await get_config_value("password", "pwd", "PASSWORD"))
+    return str(await get_config_value("password", "admin", "PASSWORD"))
 
 
 async def get_credentials_dir() -> str:
@@ -364,13 +362,30 @@ async def get_antigravity_switch_credential_enabled() -> bool:
 
     Environment variable: ANTIGRAVITY_SWITCH_CREDENTIAL
     Database config key: antigravity_switch_credential_enabled
-    Default: False
+    Default: True
     """
     env_value = os.getenv("ANTIGRAVITY_SWITCH_CREDENTIAL")
     if env_value:
         return env_value.lower() in ("true", "1", "yes", "on")
 
-    return bool(await get_config_value("antigravity_switch_credential_enabled", False))
+    return bool(await get_config_value("antigravity_switch_credential_enabled", True))
+
+
+async def get_antigravity_telemetry_enabled() -> bool:
+    """
+    Get Antigravity background telemetry enabled setting.
+
+    控制是否开启 Antigravity 伴随流量打点 (recordCodeAssistMetrics, listExperiments, unleash)。
+
+    Environment variable: ANTIGRAVITY_TELEMETRY_ENABLED
+    Database config key: antigravity_telemetry_enabled
+    Default: True
+    """
+    env_value = os.getenv("ANTIGRAVITY_TELEMETRY_ENABLED")
+    if env_value:
+        return env_value.lower() in ("true", "1", "yes", "on")
+
+    return bool(await get_config_value("antigravity_telemetry_enabled", True))
 
 
 async def get_oauth_proxy_url() -> str:
@@ -462,35 +477,3 @@ async def get_antigravity_api_url() -> str:
     )
 
 
-async def get_keepalive_url() -> str:
-    """
-    Get keep-alive URL setting.
-
-    配置后保活服务会定期向该URL发送GET请求。
-    留空表示禁用保活服务。
-
-    Environment variable: KEEPALIVE_URL
-    Database config key: keepalive_url
-    Default: "" (disabled)
-    """
-    return str(await get_config_value("keepalive_url", "", "KEEPALIVE_URL"))
-
-
-async def get_keepalive_interval() -> int:
-    """
-    Get keep-alive interval in seconds.
-
-    保活请求发送间隔（秒）。
-
-    Environment variable: KEEPALIVE_INTERVAL
-    Database config key: keepalive_interval
-    Default: 60
-    """
-    env_value = os.getenv("KEEPALIVE_INTERVAL")
-    if env_value:
-        try:
-            return int(env_value)
-        except ValueError:
-            pass
-
-    return int(await get_config_value("keepalive_interval", 60))

@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from log import log
 
-from src.google_oauth_api import Credentials
-from src.storage_adapter import get_storage_adapter
+from .google_oauth import Credentials
+from src.storage import get_storage
 
 class CredentialManager:
     """
@@ -36,8 +36,8 @@ class CredentialManager:
         if self._initialized and self._storage_adapter is not None:
             return
 
-        # 初始化统一存储适配器
-        self._storage_adapter = await get_storage_adapter()
+        # 初始化统一存储
+        self._storage_adapter = await get_storage()
         self._initialized = True
 
     async def close(self):
@@ -209,7 +209,7 @@ class CredentialManager:
                 return None
 
             # 创建凭证对象并自动刷新 token
-            from .google_oauth_api import Credentials, get_user_email
+            from .google_oauth import Credentials, get_user_email
 
             credentials = Credentials.from_dict(credential_data)
             if not credentials:

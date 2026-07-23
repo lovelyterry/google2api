@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from log import log
 from src.utils import authenticate_bearer, get_base_model_from_feature_model
-from src.models import OpenAIChatCompletionRequest, model_to_dict
+from src.schemas import OpenAIChatCompletionRequest, model_to_dict
 from src.router.hi_check import is_health_check_request, create_health_check_response
 from src.router.stream_passthrough import (
     build_streaming_response_or_error,
@@ -35,7 +35,10 @@ async def chat_completions(
     if is_health_check_request(normalized_dict, format="openai"):
         return JSONResponse(content=create_health_check_response(format="openai"))
 
-    real_model = get_base_model_from_feature_model(openai_request.model)
+    base_model = get_base_model_from_feature_model(openai_request.model)
+    from src.model_mapping import model_mapping_manager
+    real_model = model_mapping_manager.resolve_model(base_model, router_type="vertex")
+
     is_streaming = openai_request.stream
 
     normalized_dict["model"] = real_model
@@ -51,6 +54,9 @@ async def chat_completions(
         "model": gemini_dict.pop("model"),
         "request": gemini_dict,
     }
+
+    # 记录实际重定向后的最终目标模型映射
+    model_mapping_manager.record_mapping(openai_request.model, api_request["model"], router_type="vertex")
 
     # ========== 非流式请求 ==========
     if not is_streaming:

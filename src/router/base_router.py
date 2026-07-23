@@ -5,7 +5,7 @@ Base Router - 共用的路由基础功能
 
 from typing import List
 
-from src.models import Model, ModelList
+from src.schemas import Model, ModelList
 
 def create_openai_model_list(
     model_ids: List[str],

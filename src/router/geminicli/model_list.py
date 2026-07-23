@@ -24,7 +24,7 @@ from src.utils import (
 
 # 本地模块 - 基础路由工具
 from src.router.base_router import create_gemini_model_list, create_openai_model_list
-from src.models import model_to_dict
+from src.schemas import model_to_dict
 from log import log
 
 

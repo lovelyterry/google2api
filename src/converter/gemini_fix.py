@@ -646,6 +646,22 @@ def is_thinking_model(model_name: str) -> bool:
     """检查是否为思考模型 (包含 -thinking 或 pro)"""
     return "think" in model_name or "pro" in model_name.lower()
 
+DYNAMIC_EXACT_MODELS: set = set()
+
+def update_dynamic_exact_models(models: Any) -> None:
+    """从 API 动态获取并更新支持的原生模型 ID 列表"""
+    global DYNAMIC_EXACT_MODELS
+    if isinstance(models, (list, set, tuple)):
+        added_count = 0
+        for m in models:
+            if isinstance(m, str) and m.strip():
+                lowered = m.strip().lower()
+                if lowered not in DYNAMIC_EXACT_MODELS:
+                    DYNAMIC_EXACT_MODELS.add(lowered)
+                    added_count += 1
+        if added_count > 0:
+            log.info(f"[DYNAMIC MODELS] 动态更新了 {added_count} 个原生模型 ID 到匹配白名单中 (当前总数: {len(DYNAMIC_EXACT_MODELS)})")
+
 
 def map_antigravity_gemini_model(model_name: str, thinking_level: Optional[str], thinking_budget: Optional[int]) -> str:
     """
@@ -653,21 +669,26 @@ def map_antigravity_gemini_model(model_name: str, thinking_level: Optional[str],
     """
     model_lower = model_name.lower()
     
-    # 1. 后端支持的精确模型 ID 列表
+    # 1. 后端支持的默认/备用精确模型 ID 列表
     exact_models = {
         "gemini-3-flash", "gemini-3-flash-agent",
         "gemini-3.1-pro-low", "gemini-pro-agent",
         "gemini-3.1-flash-lite", "gemini-3.1-flash-image",
-        "gemini-3.5-flash-low", "gemini-3.5-flash-extra-low",
+        "gemini-3.5-flash-low", "gemini-3.5-flash-extra-low", "gemini-3.5-flash-high",
+        "gemini-3.6-flash", "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.6-flash-high", "gemini-3.6-pro",
         "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash-thinking",
         "tab_flash_lite_preview", "tab_jump_flash_lite_preview", "gpt-oss-120b-medium",
         "chat_20706", "chat_23310"
     }
     
+    # 优先匹配动态获取的模型列表或静态白名单（完整名称匹配）
+    if model_lower in DYNAMIC_EXACT_MODELS or model_lower in exact_models:
+        return model_name
+
     base_model = get_base_model_name(model_lower)
     
     # 已经是一个精确的后端模型 ID 则直接返回
-    if base_model in exact_models:
+    if base_model in DYNAMIC_EXACT_MODELS or base_model in exact_models:
         return base_model
         
     # 2. 根据请求的模型名后缀直接映射

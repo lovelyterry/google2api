@@ -202,15 +202,21 @@ def _cached_content_token_count(usage_metadata: Any) -> int:
     return int(usage_metadata.get("cachedContentTokenCount", 0) or 0)
 
 
-def _anthropic_usage_from_metadata(usage_metadata: Any) -> Dict[str, int]:
+def _anthropic_usage_from_metadata(usage_metadata: Any, model: str = "") -> Dict[str, int]:
     if not isinstance(usage_metadata, dict):
         return {"input_tokens": 0, "output_tokens": 0}
 
-    prompt_tokens_total = int(usage_metadata.get("promptTokenCount", 0) or 0)
+    from src.token_usage import log_usage_metadata
+    log_usage_metadata(usage_metadata, model, "Anthropic")
+
+    prompt_token_count = usage_metadata.get("promptTokenCount")
+    cached_content_token_count = usage_metadata.get("cachedContentTokenCount")
+
+    prompt_tokens_total = int(prompt_token_count or 0)
     cached_tokens = _cached_content_token_count(usage_metadata)
     usage = {
         "input_tokens": max(prompt_tokens_total - cached_tokens, 0),
-        "output_tokens": int(usage_metadata.get("candidatesTokenCount", 0) or 0),
+        "output_tokens": int(candidates_token_count or 0),
     }
 
     if cached_tokens > 0:
@@ -904,7 +910,7 @@ def gemini_to_anthropic_response(
         stop_reason = "end_turn"
 
     # 提取 token 使用情况
-    usage = _anthropic_usage_from_metadata(usage_metadata)
+    usage = _anthropic_usage_from_metadata(usage_metadata, model=model)
 
     # 构建 Anthropic 响应
     message_id = f"msg_{uuid.uuid4().hex}"
@@ -1026,6 +1032,9 @@ async def gemini_stream_to_anthropic_stream(
             if "usageMetadata" in response:
                 usage = response["usageMetadata"]
                 if isinstance(usage, dict):
+                    from src.token_usage import log_usage_metadata
+                    log_usage_metadata(usage, model, "Anthropic流式")
+
                     if "promptTokenCount" in usage:
                         prompt_tokens_total = int(usage.get("promptTokenCount", 0) or 0)
                         input_tokens = max(prompt_tokens_total - cached_input_tokens, 0)

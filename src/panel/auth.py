@@ -2,8 +2,8 @@
 认证路由模块 - 处理 /auth/* 相关的HTTP请求
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse, HTMLResponse
 
 from log import log
 from src.auth import (
@@ -13,12 +13,13 @@ from src.auth import (
     get_auth_status,
     verify_password,
 )
-from src.models import (
+from src.schemas import (
     LoginRequest,
     AuthStartRequest,
     AuthCallbackRequest,
     AuthCallbackUrlRequest,
 )
+from src.panel.utils import validate_mode
 from src.utils import verify_panel_token
 
 
@@ -40,6 +41,12 @@ async def login(request: LoginRequest):
     except Exception as e:
         log.error(f"登录失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/auto-login")
+async def auto_login(token: str = Depends(verify_panel_token)):
+    """自动登录校验Token"""
+    return JSONResponse(content={"success": True, "message": "自动登录校验成功"})
 
 
 @router.post("/start")
@@ -121,6 +128,8 @@ async def auth_callback(request: AuthCallbackRequest, token: str = Depends(verif
             else:
                 raise HTTPException(status_code=400, detail=result["error"])
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -170,6 +179,8 @@ async def auth_callback_url(request: AuthCallbackUrlRequest, token: str = Depend
             else:
                 raise HTTPException(status_code=400, detail=result["error"])
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -190,3 +201,74 @@ async def check_auth_status(project_id: str, token: str = Depends(verify_panel_t
     except Exception as e:
         log.error(f"检查认证状态失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/oauth-callback", response_class=HTMLResponse)
+@router.get("/callback", response_class=HTMLResponse)
+async def handle_direct_browser_oauth_callback(request: Request):
+    """支持浏览器直接重定向自动完成凭证获取与落盘保存"""
+    try:
+        full_url = str(request.url)
+        log.info(f"收到浏览器直接重定向回调: {full_url}")
+        result = await complete_auth_flow_from_callback_url(full_url)
+        if result.get("success"):
+            return HTMLResponse(content="""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>授权成功</title></head>
+<body style="font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #0f172a; color: #f8fafc;">
+    <div style="text-align: center;">
+        <h2 style="color: #10b981; margin-bottom: 8px;">授权成功</h2>
+        <p style="color: #94a3b8; font-size: 14px;">凭证已自动保存，您可以关闭此窗口。</p>
+    </div>
+    <script>
+        if (window.opener) {
+            try { window.opener.postMessage({ type: 'oauth-success' }, '*'); } catch(e) {}
+        }
+    </script>
+</body>
+</html>""")
+        else:
+            err_msg = result.get("error", "未知错误")
+            return HTMLResponse(status_code=400, content=f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>授权失败</title></head>
+<body style="font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #0f172a; color: #f8fafc;">
+    <div style="text-align: center;">
+        <h2 style="color: #ef4444; margin-bottom: 8px;">授权失败</h2>
+        <p style="color: #94a3b8; font-size: 14px;">{err_msg}</p>
+    </div>
+</body>
+</html>""")
+    except Exception as e:
+        log.error(f"处理自动回调路由异常: {e}")
+        return HTMLResponse(status_code=500, content="<h1>500 Internal Server Error</h1>")
+
+
+@router.post("/complete")
+async def complete_oauth_login(
+    mode: str = "antigravity",
+    token: str = Depends(verify_panel_token)
+):
+    """
+    对标 AntigravityScheduler 的 completeOAuthFlow 接口
+    由前端【获取认证凭证】按钮触发，尝试完成 Code 交换并保存凭证
+    """
+    try:
+        mode = validate_mode(mode)
+        log.info(f"收到 complete_oauth_login 请求: mode={mode}")
+        from src.auth import asyncio_complete_auth_flow
+        result = await asyncio_complete_auth_flow(mode=mode)
+        if result.get("success"):
+            return JSONResponse(content={
+                "success": True,
+                "message": result.get("message", "凭证获取并保存成功！"),
+                "account": result
+            })
+        else:
+            return JSONResponse(status_code=400, content={
+                "success": False,
+                "error": result.get("error", "未检测到授权回调，请确保已在浏览器中完成授权。")
+            })
+    except Exception as e:
+        log.error(f"处理 complete_oauth_login 异常: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})

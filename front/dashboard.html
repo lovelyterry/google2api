@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>google2api 控制面板</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2.0.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/front/dashboard.css?v=6.0.4">
+    <!-- 优先加载本地 Vue 3 JS 库（支持完全离线部署），失败时自动回退至 CDN -->
+    <script src="/front/vue.global.js?v=2.0.0"></script>
+    <script>
+        if (typeof Vue === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"><\/script>');
+        }
+    </script>
+</head>
+
+<body>
+    <div id="app" class="container">
+
+        <!-- 1. 登录界面 -->
+        <div v-if="!isLoggedIn" class="login-form">
+            <div class="login-header">
+                <div class="brand-logo-container">
+                    <svg width="44" height="44" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M16 2L4 26H28L16 2Z" fill="url(#loginLogoGrad)"/>
+                        <path d="M16 8L23.2 22.4H8.8L16 8Z" fill="#0b0f17" opacity="0.4"/>
+                        <defs>
+                            <linearGradient id="loginLogoGrad" x1="4" y1="2" x2="28" y2="26" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#3B82F6"/>
+                                <stop offset="1" stop-color="#8B5CF6"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <h1>google2api <span class="version-badge">v2.0</span></h1>
+                <p>高性能 Google Gemini & Antigravity 代理转接网关</p>
+            </div>
+            <div class="login-body">
+                <div class="password-input-wrapper">
+                    <input type="password" v-model="loginPassword" placeholder="输入访问密码..." @keyup.enter="login" />
+                </div>
+                <button class="btn btn-primary login-btn" @click="login">登 录 面 板</button>
+            </div>
+        </div>
+
+        <!-- 2. 主界面 -->
+        <div v-else>
+            <div class="drawer-backdrop" :class="{ show: isDrawerOpen }" @click="toggleDrawer"></div>
+
+            <div class="app-layout" :class="{ 'sidebar-collapsed': isSidebarCollapsed }">
+                <!-- 左侧导航抽屉 -->
+                <nav class="sidebar-drawer" :class="{ open: isDrawerOpen, collapsed: isSidebarCollapsed }">
+                    <div class="sidebar-header">
+                        <div class="sidebar-header-left">
+                            <div class="brand-logo-mini">
+                                <svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M16 2L4 26H28L16 2Z" fill="url(#sideLogoGrad)"/>
+                                    <defs>
+                                        <linearGradient id="sideLogoGrad" x1="4" y1="2" x2="28" y2="26" gradientUnits="userSpaceOnUse">
+                                            <stop stop-color="#3B82F6"/>
+                                            <stop offset="1" stop-color="#8B5CF6"/>
+                                        </linearGradient>
+                                    </defs>
+                                </svg>
+                            </div>
+                            <h1 class="sidebar-title">google2api</h1>
+                            <span class="sidebar-tag">v2.0</span>
+                        </div>
+                        <button class="sidebar-toggle-btn" @click="toggleSidebarCollapse" :title="isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'">
+                            <svg class="toggle-icon" :class="{ rotated: isSidebarCollapsed }" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="4" ry="4"></rect>
+                                <path d="M15 9l-3 3 3 3"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="sidebar-nav">
+                        <button class="nav-item" :class="{ active: activeTab === 'antigravity' }" @click="switchTab('antigravity')" :title="isSidebarCollapsed ? '反重力认证' : ''">
+                            <span class="nav-item-icon">🌌</span>
+                            <span>反重力认证</span>
+                        </button>
+                        <button class="nav-item" :class="{ active: activeTab === 'oauth' }" @click="switchTab('oauth')" :title="isSidebarCollapsed ? '谷歌云认证' : ''">
+                            <span class="nav-item-icon">🔑</span>
+                            <span>谷歌云认证</span>
+                        </button>
+                        <button class="nav-item" :class="{ active: activeTab === 'upload' }" @click="switchTab('upload')" :title="isSidebarCollapsed ? '批量上传' : ''">
+                            <span class="nav-item-icon">📤</span>
+                            <span>批量上传</span>
+                        </button>
+                        <button class="nav-item" :class="{ active: activeTab === 'tokens' }" @click="switchTab('tokens')" :title="isSidebarCollapsed ? 'TOKEN 看板' : ''">
+                            <span class="nav-item-icon">🎟️</span>
+                            <span>TOKEN 看板</span>
+                        </button>
+                        <button class="nav-item" :class="{ active: activeTab === 'models' }" @click="switchTab('models')" :title="isSidebarCollapsed ? '模型映射' : ''">
+                            <span class="nav-item-icon">🗺️</span>
+                            <span>模型映射</span>
+                        </button>
+                        <button class="nav-item" :class="{ active: activeTab === 'config' }" @click="switchTab('config')" :title="isSidebarCollapsed ? '配置管理' : ''">
+                            <span class="nav-item-icon">🛠️</span>
+                            <span>配置管理</span>
+                        </button>
+                        <button class="nav-item" :class="{ active: activeTab === 'about' }" @click="switchTab('about')" :title="isSidebarCollapsed ? '项目信息' : ''">
+                            <span class="nav-item-icon">ℹ️</span>
+                            <span>项目信息</span>
+                        </button>
+                    </div>
+                    <div class="sidebar-footer">
+                        <button class="nav-item theme-toggle-btn" @click="toggleTheme" :title="isSidebarCollapsed ? (theme === 'dark' ? '深色主题' : '浅色主题') : '切换明暗主题'">
+                            <span class="nav-item-icon">{{ theme === 'dark' ? '🌙' : '☀️' }}</span>
+                            <span>{{ theme === 'dark' ? '深色主题' : '浅色主题' }}</span>
+                        </button>
+                        <button class="nav-item logout-nav-btn" @click="logout" :title="isSidebarCollapsed ? '退出登录' : ''">
+                            <span class="nav-item-icon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                    <polyline points="16 17 21 12 16 7"></polyline>
+                                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                                </svg>
+                            </span>
+                            <span>退出登录</span>
+                        </button>
+                    </div>
+                </nav>
+
+                <!-- 右侧主内容区域 -->
+                <div class="main-content-container">
+                    <header class="top-app-bar">
+                        <div class="top-app-bar-left">
+                            <button class="menu-toggle-btn" :class="{ active: isDrawerOpen }" @click="toggleDrawer" :title="isDrawerOpen ? '关闭菜单' : '打开菜单'">
+                                <svg class="menu-icon" :class="{ open: isDrawerOpen }" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line class="line-1" x1="4" y1="6" x2="20" y2="6"></line>
+                                    <line class="line-2" x1="4" y1="12" x2="20" y2="12"></line>
+                                    <line class="line-3" x1="4" y1="18" x2="20" y2="18"></line>
+                                </svg>
+                            </button>
+                            <h1 class="mobile-bar-title">
+                                {{ activeTab === 'antigravity' ? '反重力认证' : activeTab === 'oauth' ? '谷歌云认证' : activeTab === 'upload' ? '批量上传' : activeTab === 'tokens' ? 'TOKEN 看板' : activeTab === 'models' ? '模型映射' : activeTab === 'config' ? '配置管理' : '项目信息' }}
+                            </h1>
+                        </div>
+                        <div class="top-app-bar-right">
+                            <button class="top-bar-theme-btn" @click="toggleTheme" title="切换明暗主题">
+                                <span>{{ theme === 'dark' ? '🌙' : '☀️' }}</span>
+                            </button>
+                            <button class="top-bar-logout-btn" @click="logout" title="退出登录">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                    <polyline points="16 17 21 12 16 7"></polyline>
+                                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                                </svg>
+                                <span>退出</span>
+                            </button>
+                        </div>
+                    </header>
+
+                    <main class="main-content-wrapper">
+
+                        <!-- ================= 1. Antigravity 认证标签页 ================= -->
+                        <div v-if="activeTab === 'antigravity'" class="tab-content active">
+                            <!-- 统一 Hero 工具栏 -->
+                            <div class="config-hero-card mb-3">
+                                <div class="hero-header">
+                                    <div class="hero-icon hero-icon-purple">
+                                        🌌
+                                    </div>
+                                    <div>
+                                        <div class="hero-title-row">
+                                            <h3 class="hero-title">Antigravity 账号凭证管理</h3>
+                                        </div>
+                                        <p class="hero-desc">管理与轮询 Antigravity 账号，实时查验 Project ID、账号额度、冒烟测试与积分状态</p>
+                                    </div>
+                                </div>
+                                <div class="hero-actions">
+                                    <div class="toolbar-stats m-0">
+                                        <div class="toolbar-stat-item" title="总计凭证"><span class="toolbar-stat-label">总计:</span><span class="toolbar-stat-val">{{ ag.stats.total }}</span></div>
+                                        <div class="toolbar-stat-item" title="正常凭证"><span class="toolbar-stat-label">正常:</span><span class="toolbar-stat-val">{{ ag.stats.normal }}</span></div>
+                                        <div class="toolbar-stat-item" title="禁用凭证"><span class="toolbar-stat-label">禁用:</span><span class="toolbar-stat-val">{{ ag.stats.disabled }}</span></div>
+                                    </div>
+                                    <div class="api-pill-group m-0">
+                                        <span class="api-label cursor-pointer" @click="cpAllUrls('antigravity')" title="点击一键复制所有 API 地址">📡 API:</span>
+                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1/chat/completions')">OpenAI</span>
+                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1/messages')">Claude</span>
+                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1beta/models')">Gemini</span>
+                                    </div>
+                                    <div v-if="ag.currentSelected" class="selected-account-indicator" title="当前调度算法选中的账号">
+                                        <span class="indicator-icon">🎯</span>
+                                        <span class="indicator-label">当前调度:</span>
+                                        <span class="indicator-email">{{ getSelectedEmail('antigravity') }}</span>
+                                    </div>
+                                    <button class="btn btn-primary btn-hero-action" @click="startAuth('antigravity')">➕ 授权登录 / 添加账号</button>
+                                </div>
+                            </div>
+
+                            <div class="modern-card mb-2 card-padded">
+                                <div class="batch-actions">
+                                    <div class="action-subgroup">
+                                        <div class="checkbox-container">
+                                            <input type="checkbox" id="selectAllAg" class="select-all-checkbox" :checked="isAllSelected('antigravity')" @change="toggleSelectAll('antigravity')">
+                                            <label for="selectAllAg">全选</label>
+                                        </div>
+                                        <span class="selected-count">已选 {{ ag.selectedFiles.length }} 项</span>
+                                        <span class="button-group-separator"></span>
+                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchVerifyProjectIds('antigravity')">检验账号</button>
+                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchTestCredentials('antigravity')">冒烟测试</button>
+                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchToggleContentDetails('antigravity')">查看内容</button>
+                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchRefreshQuotas('antigravity')">刷新额度</button>
+                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchToggleErrorDetails('antigravity')">查看报错</button>
+                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'enable')">启用账号</button>
+                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'disable')">禁用账号</button>
+                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'enable_credit')">开启积分</button>
+                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchRefreshEmails('antigravity')">刷新邮箱</button>
+                                        <button class="btn-compact btn-danger-outline" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'delete')">删除账号</button>
+                                    </div>
+                                    <div class="filter-group-right">
+                                        <select v-model="ag.statusFilter" class="filter-select select-sm" @change="fetchCreds('antigravity')">
+                                            <option value="all">状态: 全部</option>
+                                            <option value="enabled">仅启用</option>
+                                            <option value="disabled">仅禁用</option>
+                                        </select>
+                                        <select v-model="ag.errorCodeFilter" class="filter-select select-sm" @change="fetchCreds('antigravity')">
+                                            <option value="all">错误码: 全部</option>
+                                            <option value="none">无错误</option>
+                                            <option value="400">400</option>
+                                            <option value="403">403</option>
+                                            <option value="429">429</option>
+                                            <option value="500">500</option>
+                                        </select>
+                                        <select v-model="ag.cooldownFilter" class="filter-select select-sm" @change="fetchCreds('antigravity')">
+                                            <option value="all">CD: 全部</option>
+                                            <option value="in_cooldown">CD中</option>
+                                            <option value="no_cooldown">未CD</option>
+                                        </select>
+                                        <select v-model="ag.tierFilter" class="filter-select select-sm" @change="fetchCreds('antigravity')">
+                                            <option value="all">Tier: 全部</option>
+                                            <option value="free">Free</option>
+                                            <option value="pro">Pro</option>
+                                            <option value="ultra">Ultra</option>
+                                        </select>
+                                        <select v-model="ag.pageSize" class="page-size-select select-sm" @change="fetchCreds('antigravity')">
+                                            <option :value="20">20条/页</option>
+                                            <option :value="50">50条/页</option>
+                                            <option :value="100">100条/页</option>
+                                            <option :value="200">200条/页</option>
+                                            <option :value="500">500条/页</option>
+                                        </select>
+                                        <button class="btn-compact" @click="ag.viewMode = ag.viewMode === 'card' ? 'table' : 'card'">
+                                            {{ ag.viewMode === 'card' ? '☰ 切换为表格' : '🔳 切换为卡片' }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Antigravity OAuth 授权美化面板 -->
+                            <div v-if="ag.authPanelVisible" class="auth-hub-panel auth-hub-panel-primary">
+                                <div class="auth-hub-header">
+                                    <h4 class="auth-hub-title">🔑 Antigravity OAuth 认证授权</h4>
+                                    <button class="btn-compact btn-xs" @click="ag.authPanelVisible = false">✕ 关闭</button>
+                                </div>
+
+                                <div class="auth-url-container">
+                                    <div class="auth-url-topbar">
+                                        <span class="auth-url-label">🔗 授权 URL 地址：</span>
+                                        <div class="auth-url-actions" v-if="ag.authUrl && ag.authUrl !== '#'">
+                                            <button class="btn-compact btn-xs" @click="copyToClipboard(ag.authUrl, '授权链接已复制到剪贴板')">📋 复制链接</button>
+                                            <a :href="ag.authUrl" target="_blank" class="btn-compact btn-xs btn-primary" style="text-decoration: none;">↗️ 跳转授权</a>
+                                        </div>
+                                    </div>
+                                    <div v-if="ag.authUrl && ag.authUrl !== '#'" class="auth-url-text-wrap">
+                                        <a :href="ag.authUrl" target="_blank" class="auth-link" style="word-break: break-all; white-space: pre-wrap; font-size: 13px; font-weight: 500;">{{ ag.authUrl }}</a>
+                                    </div>
+                                    <div v-else class="auth-url-text-wrap" style="color: var(--text-secondary); opacity: 0.8; font-style: italic;">
+                                        ⏳ 正在向服务器请求生成 Google 账号授权链接，请稍候...
+                                    </div>
+                                </div>
+
+                                <div class="auth-callback-bar">
+                                    <div class="auth-callback-header">
+                                        <span>🚀 点击获取凭证或粘贴回调 URL 快捷提取：</span>
+                                    </div>
+                                    <div class="auth-callback-input-group mb-1">
+                                        <button class="btn-compact btn-primary" @click="completeOAuthFlow('antigravity')" id="getCredsBtn">获取认证凭证</button>
+                                    </div>
+                                    <div class="auth-callback-input-group">
+                                        <input type="url" v-model="ag.callbackUrlInput" class="input-sm" placeholder="粘贴完整的回调 URL，例如：http://localhost:11451/?state=xxx&code=xxx...">
+                                        <button class="btn-compact btn-primary" @click="processCallbackUrl('antigravity')">提取凭证</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 卡片视图 -->
+                            <div v-if="ag.viewMode === 'card'" class="account-grid">
+                                <div v-for="item in ag.items" :key="item.filename" class="account-card" :class="{ 'account-card-disabled': item.disabled, 'account-card-selected': item.is_selected || item.filename === ag.currentSelected }">
+                                    <div class="account-card-header">
+                                        <div class="account-card-title">
+                                            <div class="account-card-email-info">
+                                                <input type="checkbox" :value="item.filename" v-model="ag.selectedFiles">
+                                                <span class="account-card-email" :title="item.filename">{{ item.user_email || item.filename }}</span>
+                                                <span v-if="item.user_name" class="account-card-name">{{ item.user_name }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="account-card-badges">
+                                        <span v-if="item.is_selected || item.filename === ag.currentSelected" class="badge badge-selected-glow" title="当前调度算法选中的账号"><i class="badge-dot-active"></i> 🎯 当前调度选中</span>
+                                        <span v-if="item.disabled" class="badge badge-secondary" title="已禁用">🚫 已禁用</span>
+                                        <span v-else class="badge badge-success">正常</span>
+                                        <span v-for="code in item.error_codes" :key="code" class="badge badge-danger">ERR {{ code }}</span>
+                                        <span class="badge badge-primary">{{ (item.tier || 'pro').toUpperCase() }}</span>
+                                        <span v-if="item.enable_credit" class="badge badge-success">Credit ON</span>
+                                        <span v-for="(until, model) in getActiveCooldowns(item.model_cooldowns)" :key="model" class="badge cooldown-badge" :title="'模型: ' + model">⏰ {{ formatCooldownBadge(model, until) }}</span>
+                                    </div>
+                                    <!-- 额度进度条与刷新重置时间 -->
+                                    <div v-if="getQuotaBuckets(item.quota_groups).length > 0" class="quota-box">
+                                        <div v-for="(b, bIdx) in getQuotaBuckets(item.quota_groups)" :key="b.bucketId || bIdx" class="quota-item" :title="getBucketTitle(b)">
+                                            <div class="quota-item-header">
+                                                <span class="quota-item-title">{{ getBucketIcon(b) }} {{ getBucketLabel(b) }}</span>
+                                                <div class="quota-item-info">
+                                                    <span v-if="getBucketResetTime(b)" class="quota-reset-time">⏱️ {{ getBucketResetTime(b) }}重置</span>
+                                                    <span class="quota-percent-badge" :style="{ color: getBucketPercent(b) > 80 ? '#ef4444' : getBucketPercent(b) > 50 ? '#f59e0b' : '#10b981' }">
+                                                        已用 {{ getBucketPercent(b) }}%
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div class="quota-progress-track">
+                                                <div class="quota-progress-bar" :style="{ width: getBucketPercent(b) + '%', background: getBucketColor(b) }"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div v-else-if="getGeminiQuotaGroups(item.quota_groups).length > 0" class="quota-container-inline">
+                                        <div v-for="g in getGeminiQuotaGroups(item.quota_groups)" :key="g.displayName" class="quota-row-inline" :title="g.displayName + ': ' + getQuotaRemainingText(g)">
+                                            <div class="progress-bar-inline">
+                                                <div class="progress-fill-inline" :style="{ width: calculateQuotaPercent(g) + '%' }"></div>
+                                            </div>
+                                            <span class="quota-text-inline">{{ calculateQuotaPercent(g) }}%</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="account-card-actions">
+                                        <div class="action-group action-group-stretch">
+                                            <div class="action-subgroup flex-between">
+                                                <button class="btn-xs flex-1" @click="verifyProjectId('antigravity', item.filename)">检验账号</button>
+                                                <button class="btn-xs flex-1" @click="testCredential('antigravity', item.filename)">冒烟测试</button>
+                                            </div>
+                                            <div class="action-subgroup flex-between">
+                                                <button class="btn-xs flex-1" @click="toggleContentDetails('antigravity', item.filename, item.pathId)">查看内容</button>
+                                                <button class="btn-xs flex-1" @click="refreshSingleQuota('antigravity', item.filename)">刷新额度</button>
+                                                <button class="btn-xs flex-1" @click="toggleErrorDetails('antigravity', item.filename, item.pathId)">查看报错</button>
+                                            </div>
+                                            <div class="action-subgroup flex-between">
+                                                <button class="btn-xs flex-1" @click="singleAction('antigravity', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
+                                                <button class="btn-xs flex-1" @click="singleAction('antigravity', item.filename, item.enable_credit ? 'disable_credit' : 'enable_credit')">{{ item.enable_credit ? '关闭积分' : '开启积分' }}</button>
+                                                <button class="btn-xs btn-danger-outline flex-1" @click="deleteSingleCredential('antigravity', item.filename)">删除账号</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 展开查看内容 -->
+                                    <div v-if="ag.expandedDetails[item.pathId]" class="cred-details show">
+                                        <pre class="cred-content">{{ ag.expandedDetails[item.pathId] }}</pre>
+                                    </div>
+                                    <!-- 展开查看报错 -->
+                                    <div v-if="ag.expandedErrors[item.pathId]" class="cred-details show">
+                                        <div class="cred-content cred-content-error">
+                                            <div v-if="ag.expandedErrors[item.pathId].loading" class="loading-placeholder">⏳ 正在加载报错信息...</div>
+                                            <div v-else-if="ag.expandedErrors[item.pathId].errorCodes && ag.expandedErrors[item.pathId].errorCodes.length === 0" class="success-placeholder">
+                                                <span class="status-box-icon">✅</span><span class="status-box-title">无报错记录</span><span class="logs-desc">（该凭证运行正常）</span>
+                                            </div>
+                                            <div v-else-if="ag.expandedErrors[item.pathId].errorCodes">
+                                                <div v-for="code in ag.expandedErrors[item.pathId].errorCodes" :key="code" class="error-item-card">
+                                                    <div class="error-item-title">错误码: {{ code }}</div>
+                                                    <div class="error-item-body">{{ ag.expandedErrors[item.pathId].errorMessages[code] || '无详细信息' }}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 表格视图 -->
+                            <div v-else class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th class="th-check">全选</th>
+                                            <th class="th-check">#</th>
+                                            <th class="th-email">账号标识 (邮箱/文件名)</th>
+                                            <th>模型配额 (Quota)</th>
+                                            <th>状态标签</th>
+                                            <th class="td-actions">快捷操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template v-for="(item, idx) in ag.items" :key="item.filename">
+                                            <tr :class="{ 'account-row-disabled': item.disabled, 'account-row-selected': item.is_selected || item.filename === ag.currentSelected }">
+                                                <td class="td-check"><input type="checkbox" :value="item.filename" v-model="ag.selectedFiles"></td>
+                                                <td class="td-index">{{ idx + 1 + (ag.currentPage - 1) * ag.pageSize }}</td>
+                                                <td class="td-email-truncate" :title="item.user_email || item.filename"><span class="table-email">{{ item.user_email || item.filename }}</span> <span v-if="item.user_name" class="user-name-sub">({{ item.user_name }})</span></td>
+                                                <td>
+                                                    <div v-if="getQuotaBuckets(item.quota_groups).length > 0" class="quota-box quota-box-compact">
+                                                        <div v-for="(b, bIdx) in getQuotaBuckets(item.quota_groups)" :key="b.bucketId || bIdx" class="quota-item" :title="getBucketTitle(b)">
+                                                            <div class="quota-item-header">
+                                                                <span class="quota-item-title text-xs-10">{{ getBucketIcon(b) }} {{ getBucketLabel(b) }}</span>
+                                                                <div class="quota-item-info">
+                                                                    <span v-if="getBucketResetTime(b)" class="quota-reset-time text-xs-10">⏱️ {{ getBucketResetTime(b) }}重置</span>
+                                                                    <span class="quota-percent-badge text-xs-10" :style="{ color: getBucketPercent(b) > 80 ? '#ef4444' : getBucketPercent(b) > 50 ? '#f59e0b' : '#10b981' }">
+                                                                        已用 {{ getBucketPercent(b) }}%
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <div class="quota-progress-track" style="height: 5px;">
+                                                                <div class="quota-progress-bar" :style="{ width: getBucketPercent(b) + '%', background: getBucketColor(b) }"></div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div v-else-if="getGeminiQuotaGroups(item.quota_groups).length > 0">
+                                                        <div v-for="g in getGeminiQuotaGroups(item.quota_groups)" :key="g.displayName" class="quota-row-inline" :title="g.displayName + ': ' + getQuotaRemainingText(g)">
+                                                            <div class="progress-bar-inline"><div class="progress-fill-inline" :style="{ width: calculateQuotaPercent(g) + '%' }"></div></div>
+                                                            <span class="quota-text-inline">{{ calculateQuotaPercent(g) }}%</span>
+                                                        </div>
+                                                    </div>
+                                                    <span v-else style="color: var(--text-secondary); font-size: 11px;">未获取</span>
+                                                </td>
+                                                <td>
+                                                    <span v-if="item.is_selected || item.filename === ag.currentSelected" class="badge badge-selected-glow" title="当前调度算法选中的账号">🎯 当前调度选中</span>
+                                                    <span v-if="item.disabled" class="badge badge-secondary">🚫 已禁用</span>
+                                                    <span v-else class="badge badge-success">正常</span>
+                                                    <span v-for="code in item.error_codes" :key="code" class="badge badge-danger">ERR {{ code }}</span>
+                                                    <span class="badge badge-primary">{{ (item.tier || 'pro').toUpperCase() }}</span>
+                                                    <span v-if="item.enable_credit" class="badge badge-success">Credit ON</span>
+                                                    <span v-for="(until, model) in getActiveCooldowns(item.model_cooldowns)" :key="model" class="badge cooldown-badge" :title="'模型: ' + model">⏰ {{ formatCooldownBadge(model, until) }}</span>
+                                                </td>
+                                                <td style="text-align: right; white-space: nowrap;">
+                                                    <button class="btn-xs mr-1" @click="verifyProjectId('antigravity', item.filename)">检验账号</button>
+                                                    <button class="btn-xs mr-1" @click="testCredential('antigravity', item.filename)">冒烟测试</button>
+                                                    <button class="btn-xs mr-1" @click="toggleContentDetails('antigravity', item.filename, item.pathId)">查看内容</button>
+                                                    <button class="btn-xs mr-1" @click="refreshSingleQuota('antigravity', item.filename)">刷新额度</button>
+                                                    <button class="btn-xs mr-1" @click="toggleErrorDetails('antigravity', item.filename, item.pathId)">查看报错</button>
+                                                    <button class="btn-xs mr-1" @click="singleAction('antigravity', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
+                                                    <button class="btn-xs mr-1" @click="singleAction('antigravity', item.filename, item.enable_credit ? 'disable_credit' : 'enable_credit')">{{ item.enable_credit ? '关闭积分' : '开启积分' }}</button>
+                                                    <button class="btn-xs btn-danger-outline" @click="deleteSingleCredential('antigravity', item.filename)">删除账号</button>
+                                                </td>
+                                            </tr>
+                                            <tr v-if="ag.expandedDetails[item.pathId] || ag.expandedErrors[item.pathId]" :key="item.filename + '_sub'">
+                                                <td colspan="6" style="padding: 8px 16px; background: rgba(0, 0, 0, 0.02);">
+                                                    <div v-if="ag.expandedDetails[item.pathId]" class="cred-details show" style="margin: 0;">
+                                                        <pre class="cred-content">{{ ag.expandedDetails[item.pathId] }}</pre>
+                                                    </div>
+                                                    <div v-if="ag.expandedErrors[item.pathId]" class="cred-details show" style="margin: 0;">
+                                                        <div class="cred-content cred-content-error">
+                                                            <div v-if="ag.expandedErrors[item.pathId].loading" class="loading-placeholder">⏳ 正在加载报错信息...</div>
+                                                            <div v-else-if="ag.expandedErrors[item.pathId].errorCodes && ag.expandedErrors[item.pathId].errorCodes.length === 0" class="success-placeholder">
+                                                                <span class="status-box-icon">✅</span><span class="status-box-title">无报错记录</span><span class="logs-desc">（该凭证运行正常）</span>
+                                                            </div>
+                                                            <div v-else-if="ag.expandedErrors[item.pathId].errorCodes">
+                                                                <div v-for="code in ag.expandedErrors[item.pathId].errorCodes" :key="code" class="error-item-card">
+                                                                    <div class="error-item-title">错误码: {{ code }}</div>
+                                                                    <div class="error-item-body">{{ ag.expandedErrors[item.pathId].errorMessages[code] || '无详细信息' }}</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- 分页控件 -->
+                            <div class="pagination-container">
+                                <button class="pagination-btn" :disabled="ag.currentPage <= 1" @click="changePage('antigravity', -1)">上一页</button>
+                                <div class="pagination-info">第 {{ ag.currentPage }} 页，共 {{ totalPages('antigravity') }} 页</div>
+                                <button class="pagination-btn" :disabled="ag.currentPage >= totalPages('antigravity')" @click="changePage('antigravity', 1)">下一页</button>
+                            </div>
+                        </div>
+
+                        <!-- ================= 2. OAuth 谷歌云认证标签页 ================= -->
+                        <div v-if="activeTab === 'oauth'" class="tab-content active">
+                            <!-- 统一 Hero 工具栏 -->
+                            <div class="config-hero-card mb-3">
+                                <div class="hero-header">
+                                    <div class="hero-icon">
+                                        🔑
+                                    </div>
+                                    <div>
+                                        <div class="hero-title-row">
+                                            <h3 class="hero-title">Google Cloud 账号凭证管理</h3>
+                                        </div>
+                                        <p class="hero-desc">管理与轮询 Google Cloud OAuth 账号凭证，支持一键认证授权与熔断冷却复位</p>
+                                    </div>
+                                </div>
+                                <div class="hero-actions">
+                                    <div class="toolbar-stats m-0">
+                                        <div class="toolbar-stat-item" title="总计凭证"><span class="toolbar-stat-label">总计:</span><span class="toolbar-stat-val">{{ oauth.stats.total }}</span></div>
+                                        <div class="toolbar-stat-item" title="正常凭证"><span class="toolbar-stat-label">正常:</span><span class="toolbar-stat-val">{{ oauth.stats.normal }}</span></div>
+                                        <div class="toolbar-stat-item" title="禁用凭证"><span class="toolbar-stat-label">禁用:</span><span class="toolbar-stat-val">{{ oauth.stats.disabled }}</span></div>
+                                    </div>
+                                    <div class="api-pill-group m-0">
+                                        <span class="api-label cursor-pointer" @click="cpAllUrls('oauth')" title="点击一键复制所有 API 地址">📡 API:</span>
+                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1/chat/completions')">OpenAI</span>
+                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1/messages')">Claude</span>
+                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1beta/models')">Gemini</span>
+                                    </div>
+                                    <div v-if="oauth.currentSelected" class="selected-account-indicator" title="当前调度算法选中的账号">
+                                        <span class="indicator-icon">🎯</span>
+                                        <span class="indicator-label">当前调度:</span>
+                                        <span class="indicator-email">{{ getSelectedEmail('oauth') }}</span>
+                                    </div>
+                                    <button class="btn btn-primary btn-hero-action" @click="startAuth('oauth')">➕ 获取谷歌云认证链接</button>
+                                </div>
+                            </div>
+
+                            <div class="modern-card mb-2 card-padded">
+                                <div class="batch-actions">
+                                    <div class="action-subgroup">
+                                        <div class="checkbox-container">
+                                            <input type="checkbox" id="selectAllOauth" class="select-all-checkbox" :checked="isAllSelected('oauth')" @change="toggleSelectAll('oauth')">
+                                            <label for="selectAllOauth">全选</label>
+                                        </div>
+                                        <span class="selected-count">已选 {{ oauth.selectedFiles.length }} 项</span>
+                                        <span class="button-group-separator"></span>
+                                        <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchVerifyProjectIds('oauth')">检验账号</button>
+                                        <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchTestCredentials('oauth')">冒烟测试</button>
+                                        <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchToggleContentDetails('oauth')">查看内容</button>
+                                        <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchToggleErrorDetails('oauth')">查看报错</button>
+                                        <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchAction('oauth', 'enable')">启用账号</button>
+                                        <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchAction('oauth', 'disable')">禁用账号</button>
+                                        <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchConfigurePreview()">设置预览</button>
+                                        <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchRefreshEmails('oauth')">刷新邮箱</button>
+                                        <button class="btn-compact btn-danger-outline" :disabled="oauth.selectedFiles.length === 0" @click="batchAction('oauth', 'delete')">删除账号</button>
+                                    </div>
+                                    <div class="filter-group-right">
+                                        <select v-model="oauth.statusFilter" class="filter-select select-sm" @change="fetchCreds('oauth')">
+                                            <option value="all">状态: 全部</option>
+                                            <option value="enabled">仅启用</option>
+                                            <option value="disabled">仅禁用</option>
+                                        </select>
+                                        <select v-model="oauth.errorCodeFilter" class="filter-select select-sm" @change="fetchCreds('oauth')">
+                                            <option value="all">错误码: 全部</option>
+                                            <option value="none">无错误</option>
+                                            <option value="400">400</option>
+                                            <option value="403">403</option>
+                                            <option value="429">429</option>
+                                            <option value="500">500</option>
+                                        </select>
+                                        <select v-model="oauth.cooldownFilter" class="filter-select select-sm" @change="fetchCreds('oauth')">
+                                            <option value="all">CD: 全部</option>
+                                            <option value="in_cooldown">CD中</option>
+                                            <option value="no_cooldown">未CD</option>
+                                        </select>
+                                        <select v-model="oauth.previewFilter" class="filter-select select-sm" @change="fetchCreds('oauth')">
+                                            <option value="all">Preview: 全部</option>
+                                            <option value="preview">支持</option>
+                                            <option value="no_preview">不支持</option>
+                                        </select>
+                                        <select v-model="oauth.tierFilter" class="filter-select select-sm" @change="fetchCreds('oauth')">
+                                            <option value="all">Tier: 全部</option>
+                                            <option value="free">Free</option>
+                                            <option value="pro">Pro</option>
+                                            <option value="ultra">Ultra</option>
+                                        </select>
+                                        <select v-model="oauth.pageSize" class="page-size-select select-sm" @change="fetchCreds('oauth')">
+                                            <option :value="20">20条/页</option>
+                                            <option :value="50">50条/页</option>
+                                            <option :value="100">100条/页</option>
+                                            <option :value="200">200条/页</option>
+                                            <option :value="500">500条/页</option>
+                                        </select>
+                                        <button class="btn-compact" @click="oauth.viewMode = oauth.viewMode === 'card' ? 'table' : 'card'">
+                                            {{ oauth.viewMode === 'card' ? '☰ 切换为表格' : '🔳 切换为卡片' }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Google Cloud OAuth 授权美化面板 -->
+                            <div v-if="oauth.authPanelVisible" class="auth-hub-panel auth-hub-panel-success">
+                                <div class="auth-hub-header">
+                                    <h4 class="auth-hub-title" style="color: var(--success);">🔑 Google Cloud OAuth 认证授权 (自动启用 API)</h4>
+                                    <button class="btn-compact btn-xs" @click="oauth.authPanelVisible = false">✕ 关闭</button>
+                                </div>
+
+                                <div class="auth-url-container">
+                                    <div class="auth-url-topbar">
+                                        <span class="auth-url-label">🔗 授权 URL 地址：</span>
+                                        <div class="auth-url-actions" v-if="oauth.authUrl && oauth.authUrl !== '#'">
+                                            <button class="btn-compact btn-xs" @click="copyToClipboard(oauth.authUrl, '授权链接已复制到剪贴板')">📋 复制链接</button>
+                                            <a :href="oauth.authUrl" target="_blank" class="btn-compact btn-xs btn-success" style="text-decoration: none;">↗️ 跳转授权</a>
+                                        </div>
+                                    </div>
+                                    <div v-if="oauth.authUrl && oauth.authUrl !== '#'" class="auth-url-text-wrap">
+                                        <a :href="oauth.authUrl" target="_blank" class="auth-link" style="color: var(--success); word-break: break-all; white-space: pre-wrap; font-size: 13px; font-weight: 500;">{{ oauth.authUrl }}</a>
+                                    </div>
+                                    <div v-else class="auth-url-text-wrap" style="color: var(--text-secondary); opacity: 0.8; font-style: italic;">
+                                        ⏳ 正在向服务器请求生成 Google 账号授权链接，请稍候...
+                                    </div>
+                                </div>
+
+                                <div class="auth-callback-bar">
+                                    <div class="auth-callback-header">
+                                        <span>🚀 点击获取凭证或粘贴回调 URL 快捷提取：</span>
+                                    </div>
+                                    <div class="auth-callback-input-group mb-1">
+                                        <button class="btn-compact btn-success" @click="completeOAuthFlow('oauth')" id="getCredsBtnOAuth">获取认证凭证</button>
+                                    </div>
+                                    <div class="auth-callback-input-group">
+                                        <input type="url" v-model="oauth.callbackUrlInput" class="input-sm" placeholder="粘贴完整的回调 URL，例如：http://localhost:11451/?state=xxx&code=xxx...">
+                                        <button class="btn-compact btn-success" @click="processCallbackUrl('oauth')">提取凭证</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 卡片视图 -->
+                            <div v-if="oauth.viewMode === 'card'" class="account-grid">
+                                <div v-for="item in oauth.items" :key="item.filename" class="account-card" :class="{ 'account-card-disabled': item.disabled, 'account-card-selected': item.is_selected || item.filename === oauth.currentSelected }">
+                                    <div class="account-card-header">
+                                        <div class="account-card-title">
+                                            <div class="account-card-email-info">
+                                                <input type="checkbox" :value="item.filename" v-model="oauth.selectedFiles">
+                                                <span class="account-card-email" :title="item.filename">{{ item.user_email || item.filename }}</span>
+                                                <span v-if="item.user_name" class="account-card-name">{{ item.user_name }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="account-card-badges">
+                                        <span v-if="item.is_selected || item.filename === oauth.currentSelected" class="badge badge-selected-glow" title="当前调度算法选中的账号"><i class="badge-dot-active"></i> 🎯 当前调度选中</span>
+                                        <span v-if="item.disabled" class="badge badge-secondary" title="已禁用">🚫 已禁用</span>
+                                        <span v-else class="badge badge-success">正常</span>
+                                        <span v-for="code in item.error_codes" :key="code" class="badge badge-danger">ERR {{ code }}</span>
+                                        <span class="badge badge-primary">{{ (item.tier || 'pro').toUpperCase() }}</span>
+                                        <span v-for="(until, model) in getActiveCooldowns(item.model_cooldowns)" :key="model" class="badge cooldown-badge" :title="'模型: ' + model">⏰ {{ formatCooldownBadge(model, until) }}</span>
+                                    </div>
+                                    <div class="account-card-actions">
+                                        <div class="action-group" style="align-items: stretch; gap: 6px;">
+                                            <div class="action-subgroup" style="justify-content: space-between;">
+                                                <button class="btn-xs" style="flex: 1;" @click="verifyProjectId('oauth', item.filename)">检验账号</button>
+                                                <button class="btn-xs" style="flex: 1;" @click="testCredential('oauth', item.filename)">冒烟测试</button>
+                                            </div>
+                                            <div class="action-subgroup" style="justify-content: space-between;">
+                                                <button class="btn-xs" style="flex: 1;" @click="toggleContentDetails('oauth', item.filename, item.pathId)">查看内容</button>
+                                                <button class="btn-xs" style="flex: 1;" @click="toggleErrorDetails('oauth', item.filename, item.pathId)">查看报错</button>
+                                            </div>
+                                            <div class="action-subgroup" style="justify-content: space-between;">
+                                                <button class="btn-xs" style="flex: 1;" @click="singleAction('oauth', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
+                                                <button class="btn-xs btn-danger-outline" style="flex: 1;" @click="deleteSingleCredential('oauth', item.filename)">删除账号</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- 展开查看内容 -->
+                                    <div v-if="oauth.expandedDetails[item.pathId]" class="cred-details show">
+                                        <pre class="cred-content">{{ oauth.expandedDetails[item.pathId] }}</pre>
+                                    </div>
+                                    <!-- 展开查看报错 -->
+                                    <div v-if="oauth.expandedErrors[item.pathId]" class="cred-details show">
+                                        <div class="cred-content cred-content-error">
+                                            <div v-if="oauth.expandedErrors[item.pathId].loading" class="loading-placeholder">⏳ 正在加载报错信息...</div>
+                                            <div v-else-if="oauth.expandedErrors[item.pathId].errorCodes && oauth.expandedErrors[item.pathId].errorCodes.length === 0" class="success-placeholder">
+                                                <span class="status-box-icon">✅</span><span class="status-box-title">无报错记录</span><span class="logs-desc">（该凭证运行正常）</span>
+                                            </div>
+                                            <div v-else-if="oauth.expandedErrors[item.pathId].errorCodes">
+                                                <div v-for="code in oauth.expandedErrors[item.pathId].errorCodes" :key="code" class="error-item-card">
+                                                    <div class="error-item-title">错误码: {{ code }}</div>
+                                                    <div class="error-item-body">{{ oauth.expandedErrors[item.pathId].errorMessages[code] || '无详细信息' }}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 表格视图 -->
+                            <div v-else class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 40px; text-align: center;">全选</th>
+                                            <th style="width: 40px; text-align: center;">#</th>
+                                            <th style="min-width: 260px; max-width: 400px;">账号标识 (邮箱/文件名)</th>
+                                            <th>状态标签</th>
+                                            <th style="text-align: right;">快捷操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template v-for="(item, idx) in oauth.items" :key="item.filename">
+                                            <tr :class="{ 'account-row-disabled': item.disabled, 'account-row-selected': item.is_selected || item.filename === oauth.currentSelected }">
+                                                <td style="text-align: center;"><input type="checkbox" :value="item.filename" v-model="oauth.selectedFiles"></td>
+                                                <td style="text-align: center; color: var(--text-secondary);">{{ idx + 1 + (oauth.currentPage - 1) * oauth.pageSize }}</td>
+                                                <td style="min-width: 260px; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="item.user_email || item.filename"><span class="table-email">{{ item.user_email || item.filename }}</span> <span v-if="item.user_name" class="user-name-sub">({{ item.user_name }})</span></td>
+                                                <td>
+                                                    <span v-if="item.is_selected || item.filename === oauth.currentSelected" class="badge badge-selected-glow" title="当前调度算法选中的账号">🎯 当前调度选中</span>
+                                                    <span v-if="item.disabled" class="badge badge-secondary">🚫 已禁用</span>
+                                                    <span v-else class="badge badge-success">正常</span>
+                                                    <span v-for="code in item.error_codes" :key="code" class="badge badge-danger">ERR {{ code }}</span>
+                                                    <span class="badge badge-primary">{{ (item.tier || 'pro').toUpperCase() }}</span>
+                                                    <span v-for="(until, model) in getActiveCooldowns(item.model_cooldowns)" :key="model" class="badge cooldown-badge" :title="'模型: ' + model">⏰ {{ formatCooldownBadge(model, until) }}</span>
+                                                </td>
+                                                <td style="text-align: right; white-space: nowrap;">
+                                                    <button class="btn-xs mr-1" @click="verifyProjectId('oauth', item.filename)">检验账号</button>
+                                                    <button class="btn-xs mr-1" @click="testCredential('oauth', item.filename)">冒烟测试</button>
+                                                    <button class="btn-xs mr-1" @click="toggleContentDetails('oauth', item.filename, item.pathId)">查看内容</button>
+                                                    <button class="btn-xs mr-1" @click="toggleErrorDetails('oauth', item.filename, item.pathId)">查看报错</button>
+                                                    <button class="btn-xs mr-1" @click="singleAction('oauth', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
+                                                    <button class="btn-xs btn-danger-outline" @click="deleteSingleCredential('oauth', item.filename)">删除账号</button>
+                                                </td>
+                                            </tr>
+                                            <tr v-if="oauth.expandedDetails[item.pathId] || oauth.expandedErrors[item.pathId]" :key="item.filename + '_sub'">
+                                                <td colspan="5" style="padding: 8px 16px; background: rgba(0, 0, 0, 0.02);">
+                                                    <div v-if="oauth.expandedDetails[item.pathId]" class="cred-details show" style="margin: 0;">
+                                                        <pre class="cred-content">{{ oauth.expandedDetails[item.pathId] }}</pre>
+                                                    </div>
+                                                    <div v-if="oauth.expandedErrors[item.pathId]" class="cred-details show" style="margin: 0;">
+                                                        <div class="cred-content cred-content-error">
+                                                            <div v-if="oauth.expandedErrors[item.pathId].loading" class="loading-placeholder">⏳ 正在加载报错信息...</div>
+                                                            <div v-else-if="oauth.expandedErrors[item.pathId].errorCodes && oauth.expandedErrors[item.pathId].errorCodes.length === 0" class="success-placeholder">
+                                                                <span class="status-box-icon">✅</span><span class="status-box-title">无报错记录</span><span class="logs-desc">（该凭证运行正常）</span>
+                                                            </div>
+                                                            <div v-else-if="oauth.expandedErrors[item.pathId].errorCodes">
+                                                                <div v-for="code in oauth.expandedErrors[item.pathId].errorCodes" :key="code" class="error-item-card">
+                                                                    <div class="error-item-title">错误码: {{ code }}</div>
+                                                                    <div class="error-item-body">{{ oauth.expandedErrors[item.pathId].errorMessages[code] || '无详细信息' }}</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- 分页控件 -->
+                            <div class="pagination-container">
+                                <button class="pagination-btn" :disabled="oauth.currentPage <= 1" @click="changePage('oauth', -1)">上一页</button>
+                                <div class="pagination-info">第 {{ oauth.currentPage }} 页，共 {{ totalPages('oauth') }} 页</div>
+                                <button class="pagination-btn" :disabled="oauth.currentPage >= totalPages('oauth')" @click="changePage('oauth', 1)">下一页</button>
+                            </div>
+                        </div>
+
+                        <!-- ================= 3. 批量上传标签页 ================= -->
+                        <div v-if="activeTab === 'upload'" class="tab-content active">
+                            <!-- 统一 Hero 工具栏 -->
+                            <div class="config-hero-card mb-3">
+                                <div class="hero-header">
+                                    <div class="hero-icon">
+                                        📤
+                                    </div>
+                                    <div>
+                                        <div class="hero-title-row">
+                                            <h3 class="hero-title">批量上传凭证文件</h3>
+                                        </div>
+                                        <p class="hero-desc">支持批量上传 Google Cloud 和 Antigravity 认证凭证（支持 .json 及包含多凭证的 .zip 压缩包）</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="upload-grid-2">
+                                <!-- GCP 凭证 -->
+                                <div class="config-section-card upload-card">
+                                    <div>
+                                        <div class="config-section-title">
+                                            <div class="config-section-title-left">
+                                                <div class="upload-icon-box">🔑</div>
+                                                <span class="hero-title">Google Cloud 凭证批量上传</span>
+                                            </div>
+                                        </div>
+                                        <div class="upload-area upload-area-padded" @click="$refs.gcpInput.click()" @dragover.prevent @drop="handleFileDrop($event, 'gcp')">
+                                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="upload-svg-blue">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                                <polyline points="17 8 12 3 7 8"></polyline>
+                                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                                            </svg>
+                                            <p class="upload-area-main-text upload-area-title">点击选择文件或将文件拖拽至此区域</p>
+                                            <p class="upload-desc upload-area-sub">支持 .json 和 .zip 格式文件</p>
+                                        </div>
+                                        <input type="file" ref="gcpInput" multiple accept=".json,.zip" class="hidden" @change="handleFileSelect($event, 'gcp')" />
+                                    </div>
+                                    <div v-if="upload.gcpFiles.length > 0" class="mt-2">
+                                        <h4 class="hero-desc">已选择 {{ upload.gcpFiles.length }} 个文件：</h4>
+                                        <div class="button-group mt-2 button-group-row">
+                                            <button class="btn btn-primary" :disabled="upload.gcpUploading" @click="doUploadFiles('gcp')">🚀 开始上传文件</button>
+                                            <button class="btn" @click="upload.gcpFiles = []">清空列表</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Antigravity 凭证 -->
+                                <div class="config-section-card upload-card">
+                                    <div>
+                                        <div class="config-section-title">
+                                            <div class="config-section-title-left">
+                                                <div class="upload-icon-box upload-icon-box-purple">🌌</div>
+                                                <span class="hero-title">Antigravity 凭证批量上传</span>
+                                            </div>
+                                        </div>
+                                        <div class="upload-area upload-area-antigravity upload-area-padded" @click="$refs.agInput.click()" @dragover.prevent @drop="handleFileDrop($event, 'antigravity')">
+                                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="upload-svg-purple">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                                <polyline points="17 8 12 3 7 8"></polyline>
+                                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                                            </svg>
+                                            <p class="upload-area-main-text upload-area-title">点击选择文件或将文件拖拽至此区域</p>
+                                            <p class="upload-desc upload-area-sub">支持 .json 和 .zip 格式文件</p>
+                                        </div>
+                                        <input type="file" ref="agInput" multiple accept=".json,.zip" class="hidden" @change="handleFileSelect($event, 'antigravity')" />
+                                    </div>
+                                    <div v-if="upload.agFiles.length > 0" class="mt-2">
+                                        <h4 class="hero-desc">已选择 {{ upload.agFiles.length }} 个文件：</h4>
+                                        <div class="button-group mt-2 button-group-row">
+                                            <button class="btn btn-primary" :disabled="upload.agUploading" @click="doUploadFiles('antigravity')">🚀 开始上传文件</button>
+                                            <button class="btn" @click="upload.agFiles = []">清空列表</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ================= 3.5. TOKEN 看板标签页 ================= -->
+                        <div v-if="activeTab === 'tokens'" class="tab-content active">
+                            <!-- 顶部 Hero 工具栏 -->
+                            <div class="config-hero-card mb-3">
+                                <div class="hero-header">
+                                    <div class="hero-icon">
+                                        🎟️
+                                    </div>
+                                    <div>
+                                        <div class="hero-title-row">
+                                            <h3 class="hero-title">TOKEN 消耗监控看板</h3>
+                                        </div>
+                                        <p class="hero-desc">全方位统计各个谷歌账号消耗排名、模型消耗排名及日/周/月 Token 流量趋势分析</p>
+                                    </div>
+                                </div>
+                                <div class="hero-actions">
+                                    <button class="btn btn-secondary btn-hero-action" @click="loadTokenDashboard" :disabled="tokenDashboard.loading">
+                                        🔄 {{ tokenDashboard.loading ? '同步中...' : '刷新看板' }}
+                                    </button>
+                                    <button class="btn btn-danger-outline btn-hero-action" @click="clearTokenDashboard">
+                                        🗑️ 清空历史
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 顶部 4 大核心指标卡片 -->
+                            <div class="grid-stats-4">
+                                <div class="token-card-stat stat-card-blue">
+                                    <div class="stat-header-row">
+                                        <span>💎 总 Token 消耗</span>
+                                        <span class="stat-tag-blue">TOTAL</span>
+                                    </div>
+                                    <div class="stat-value-lg">{{ formatTokenCount(tokenDashboard.summary.total_tokens) }}</div>
+                                </div>
+
+                                <div class="token-card-stat stat-card-green">
+                                    <div class="stat-header-row">
+                                        <span>📥 输入 / 📤 输出 Token</span>
+                                        <span class="stat-tag-green">IN / OUT</span>
+                                    </div>
+                                    <div class="stat-value-md">
+                                        {{ formatTokenCount(tokenDashboard.summary.prompt_tokens) }} <span class="hero-desc">/</span> {{ formatTokenCount(tokenDashboard.summary.completion_tokens) }}
+                                    </div>
+                                </div>
+
+                                <div class="token-card-stat stat-card-purple">
+                                    <div class="stat-header-row">
+                                        <span>⚡ API 请求总次数</span>
+                                        <span class="stat-tag-purple">CALLS</span>
+                                    </div>
+                                    <div class="stat-value-lg">{{ (tokenDashboard.summary.total_requests || 0).toLocaleString() }} <span class="hero-desc">次</span></div>
+                                </div>
+
+                                <div class="token-card-stat stat-card-amber">
+                                    <div class="stat-header-row">
+                                        <span>📅 日 / 周 / 月 动态速览</span>
+                                        <span class="stat-tag-amber">PERIOD</span>
+                                    </div>
+                                    <div class="stat-value-sm">
+                                        <span>今: {{ formatTokenCount(tokenDashboard.summary.today_tokens) }}</span>
+                                        <span>周: {{ formatTokenCount(tokenDashboard.summary.this_week_tokens) }}</span>
+                                        <span>月: {{ formatTokenCount(tokenDashboard.summary.this_month_tokens) }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 趋势图表区 (日/周/月) -->
+                            <div class="config-section-card mb-3 card-padded-lg">
+                                <div class="card-header-flex">
+                                    <div class="hero-title-row">
+                                        <div class="icon-box-sm">📈</div>
+                                        <span class="hero-title">Token 消耗周期分布趋势图</span>
+                                    </div>
+                                    <div class="filter-tabs-box">
+                                        <button class="chart-period-btn" :class="{ active: tokenDashboard.trendPeriod === 'daily' }" @click="tokenDashboard.trendPeriod = 'daily'">日视图</button>
+                                        <button class="chart-period-btn" :class="{ active: tokenDashboard.trendPeriod === 'weekly' }" @click="tokenDashboard.trendPeriod = 'weekly'">周视图</button>
+                                        <button class="chart-period-btn" :class="{ active: tokenDashboard.trendPeriod === 'monthly' }" @click="tokenDashboard.trendPeriod = 'monthly'">月视图</button>
+                                    </div>
+                                </div>
+
+                                <!-- 纯 CSS/SVG 折线图 -->
+                                <div class="chart-container-box">
+                                    <!-- 图例 (Legend) -->
+                                    <div class="legend-group">
+                                        <span class="legend-item">
+                                            <span class="legend-line-blue"></span>
+                                            <span class="stat-tag-blue">总 Token 消耗</span>
+                                        </span>
+                                        <span class="legend-item">
+                                            <span class="legend-line-green"></span>
+                                            <span class="stat-tag-green">输入 (Prompt)</span>
+                                        </span>
+                                        <span class="legend-item">
+                                            <span class="legend-line-green"></span>
+                                            <span class="stat-tag-amber">输出 (Completion)</span>
+                                        </span>
+                                    </div>
+
+                                    <div v-if="!activeTrendList.length" class="text-center p-2 hero-desc">
+                                        暂无该视图周期下的 Token 消耗趋势数据
+                                    </div>
+                                    <div v-else class="chart-box-relative">
+                                        <svg viewBox="0 0 800 160" preserveAspectRatio="none" class="chart-svg-full">
+                                            <defs>
+                                                <!-- 渐变填充背景色 -->
+                                                <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.22"/>
+                                                    <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0"/>
+                                                </linearGradient>
+                                            </defs>
+
+                                            <!-- 网格参考线 -->
+                                            <line x1="40" y1="20" x2="760" y2="20" stroke="rgba(0,0,0,0.06)" stroke-dasharray="3,3" />
+                                            <line x1="40" y1="60" x2="760" y2="60" stroke="rgba(0,0,0,0.06)" stroke-dasharray="3,3" />
+                                            <line x1="40" y1="100" x2="760" y2="100" stroke="rgba(0,0,0,0.06)" stroke-dasharray="3,3" />
+                                            <line x1="40" y1="140" x2="760" y2="140" stroke="rgba(0,0,0,0.12)" />
+
+                                            <!-- 面积渐变 -->
+                                            <polygon v-if="trendChartData.areaPolygon" :points="trendChartData.areaPolygon" fill="url(#areaGradient)" />
+
+                                            <!-- 输入 Token 曲线 (绿) -->
+                                            <polyline v-if="trendChartData.promptPolyline" :points="trendChartData.promptPolyline" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="4,2" stroke-linecap="round" stroke-linejoin="round" />
+
+                                            <!-- 输出 Token 曲线 (橙) -->
+                                            <polyline v-if="trendChartData.completionPolyline" :points="trendChartData.completionPolyline" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="2,2" stroke-linecap="round" stroke-linejoin="round" />
+
+                                            <!-- 总 Token 核心折线 (蓝) -->
+                                            <polyline v-if="trendChartData.totalPolyline" :points="trendChartData.totalPolyline" fill="none" stroke="#2563eb" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+
+                                            <!-- 拐点圆圈 -->
+                                            <g v-for="(dot, dIdx) in trendChartData.dots" :key="dIdx">
+                                                <circle :cx="dot.cx" :cy="dot.cy" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="2.5" />
+                                            </g>
+                                        </svg>
+
+                                        <!-- 悬浮 Tooltip 盒子及 X 轴日期 -->
+                                        <div class="chart-overlay-container">
+                                            <div v-for="(dot, dIdx) in trendChartData.dots" :key="dIdx" 
+                                                 class="chart-hover-col chart-column-hover"
+                                                 :style="{ left: (dot.cx / 800 * 100) + '%', width: (100 / Math.max(1, trendChartData.dots.length)) + '%', transform: 'translateX(-50%)' }">
+                                                
+                                                <!-- 悬浮 Tooltip -->
+                                                <div class="chart-tooltip">
+                                                    <div class="chart-tooltip-title">{{ dot.label }}</div>
+                                                    <div class="chart-tooltip-row"><span>总 Tokens:</span><span class="font-mono-val">{{ dot.item.total_tokens.toLocaleString() }}</span></div>
+                                                    <div class="chart-tooltip-row"><span>📥 输入:</span><span class="font-mono-val">{{ dot.item.prompt_tokens.toLocaleString() }}</span></div>
+                                                    <div class="chart-tooltip-row"><span>📤 输出:</span><span class="font-mono-val">{{ dot.item.completion_tokens.toLocaleString() }}</span></div>
+                                                    <div class="chart-tooltip-row"><span>⚡ 请求数:</span><span class="font-mono-val">{{ dot.item.request_count }} 次</span></div>
+                                                </div>
+
+                                                <!-- X 轴日期文字 -->
+                                                <div class="chart-x-axis-lbl">
+                                                    {{ (dot.item.date || '').slice(-5) }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 2 列网格：账号排名 vs 模型排名 -->
+                            <div class="grid-2-tables">
+                                <!-- 左侧：谷歌账号 Token 消耗排名 -->
+                                <div class="config-section-card" style="border-radius: 16px; padding: 20px;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(245, 158, 11, 0.1); display: flex; align-items: center; justify-content: center; font-size: 16px;">🏆</div>
+                                            <span style="font-size: 16px; font-weight: 700;">谷歌账号 TOKEN 消耗排名</span>
+                                            <span class="badge badge-primary" style="font-size: 11px; margin-left: 6px; border-radius: 100px;">TOP 10 / {{ tokenDashboard.accountRanking.length }} 个账号</span>
+                                        </div>
+                                    </div>
+                                    <div class="table-container" style="margin-top: 10px;">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th style="width: 54px; text-align: center;">排名</th>
+                                                    <th>谷歌账号 Email / 文件</th>
+                                                    <th>输入 / 输出</th>
+                                                    <th>总 Token 消耗</th>
+                                                    <th style="width: 110px;">消耗占比</th>
+                                                    <th style="text-align: right;">请求数</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="(acc, index) in tokenDashboard.accountRanking.slice(0, 10)" :key="acc.account">
+                                                    <td style="text-align: center;">
+                                                        <span class="token-rank-medal" 
+                                                              :class="{ 'rank-gold': index === 0, 'rank-silver': index === 1, 'rank-bronze': index === 2, 'rank-default': index >= 3 }">
+                                                            {{ index + 1 }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="account-pill-tag">
+                                                            <span>{{ acc.account }}</span>
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span style="font-size: 11px; opacity: 0.85; font-family: var(--font-mono);">
+                                                            📥 {{ formatTokenCount(acc.prompt_tokens) }} / 📤 {{ formatTokenCount(acc.completion_tokens) }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span style="font-weight: 800; color: #2563eb; font-family: var(--font-mono); font-size: 13px;">
+                                                            {{ formatTokenCount(acc.total_tokens) }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                                            <div class="token-progress-bar-bg">
+                                                                <div class="token-progress-bar-fill" style="background: linear-gradient(90deg, #3b82f6, #8b5cf6);"
+                                                                     :style="{ width: ((acc.total_tokens / maxAccountTokens) * 100) + '%' }">
+                                                                </div>
+                                                            </div>
+                                                            <span style="font-size: 11px; opacity: 0.75; font-family: var(--font-mono); font-weight: 600;">
+                                                                {{ Math.round((acc.total_tokens / maxAccountTokens) * 100) }}%
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td style="text-align: right; font-family: var(--font-mono); font-weight: 700; font-size: 13px;">
+                                                        {{ acc.request_count }} 次
+                                                    </td>
+                                                </tr>
+                                                <tr v-if="!tokenDashboard.accountRanking.length">
+                                                    <td colspan="6" style="text-align: center; padding: 32px; opacity: 0.6; font-size: 13px;">暂无账号 Token 消耗排名数据</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- 右侧：各个模型 Token 消耗排名 -->
+                                <div class="config-section-card" style="border-radius: 16px; padding: 20px;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(16, 185, 129, 0.1); display: flex; align-items: center; justify-content: center; font-size: 16px;">🤖</div>
+                                            <span style="font-size: 16px; font-weight: 700;">各个模型 TOKEN 消耗排名</span>
+                                            <span class="badge badge-primary" style="font-size: 11px; margin-left: 6px; border-radius: 100px;">TOP 10 / {{ tokenDashboard.modelRanking.length }} 个模型</span>
+                                        </div>
+                                    </div>
+                                    <div class="table-container" style="margin-top: 10px;">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th style="width: 54px; text-align: center;">排名</th>
+                                                    <th>模型名称 (Model)</th>
+                                                    <th>输入 / 输出</th>
+                                                    <th>总 Token 消耗</th>
+                                                    <th style="width: 110px;">消耗占比</th>
+                                                    <th style="text-align: right;">请求数</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="(mdl, index) in tokenDashboard.modelRanking.slice(0, 10)" :key="mdl.model">
+                                                    <td style="text-align: center;">
+                                                        <span class="token-rank-medal" 
+                                                              :class="{ 'rank-gold': index === 0, 'rank-silver': index === 1, 'rank-bronze': index === 2, 'rank-default': index >= 3 }">
+                                                            {{ index + 1 }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="model-tag-target" style="font-size: 12px; font-weight: 600; border-radius: 8px; padding: 4px 10px;">
+                                                            🎯 {{ mdl.model }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span style="font-size: 11px; opacity: 0.85; font-family: var(--font-mono);">
+                                                            📥 {{ formatTokenCount(mdl.prompt_tokens) }} / 📤 {{ formatTokenCount(mdl.completion_tokens) }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span style="font-weight: 800; color: #10b981; font-family: var(--font-mono); font-size: 13px;">
+                                                            {{ formatTokenCount(mdl.total_tokens) }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                                            <div class="token-progress-bar-bg">
+                                                                <div class="token-progress-bar-fill" style="background: linear-gradient(90deg, #10b981, #06b6d4);"
+                                                                     :style="{ width: ((mdl.total_tokens / maxModelTokens) * 100) + '%' }">
+                                                                </div>
+                                                            </div>
+                                                            <span style="font-size: 11px; opacity: 0.75; font-family: var(--font-mono); font-weight: 600;">
+                                                                {{ Math.round((mdl.total_tokens / maxModelTokens) * 100) }}%
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td style="text-align: right; font-family: var(--font-mono); font-weight: 700; font-size: 13px;">
+                                                        {{ mdl.request_count }} 次
+                                                    </td>
+                                                </tr>
+                                                <tr v-if="!tokenDashboard.modelRanking.length">
+                                                    <td colspan="6" style="text-align: center; padding: 32px; opacity: 0.6; font-size: 13px;">暂无模型 Token 消耗排名数据</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        </div>
+
+                        <!-- ================= 4. 模型映射标签页 ================= -->
+                        <div v-if="activeTab === 'models'" class="tab-content active">
+                            <!-- 顶部 Hero 工具栏 -->
+                            <div class="config-hero-card mb-3">
+                                <div class="hero-header">
+                                    <div class="hero-icon">
+                                        🗺️
+                                    </div>
+                                    <div>
+                                        <div class="hero-title-row">
+                                            <h3 class="hero-title">动态模型映射与重定向路由</h3>
+                                        </div>
+                                        <p class="hero-desc">实时监控与管理前端请求模型 (Requested Model) 重定向至后端实际处理模型 (Target Model) 的智能路由规则</p>
+                                    </div>
+                                </div>
+
+                            </div>
+
+
+                            <!-- 规则配置 (Fallback 兜底) -->
+                            <div class="config-section-card config-card-flex mb-4">
+                                <div>
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>🛡️</span>
+                                            <span>全局兜底模型设置 (Fallback Target)</span>
+                                        </div>
+                                    </div>
+                                    <div class="form-group mb-2">
+                                        <label for="fallbackTargetModel" class="form-label">兜底目标模型:</label>
+                                        <select id="fallbackTargetModel" v-model="models.fallbackModel" class="config-input-styled mapping-select">
+                                            <option value="">-- 选择兜底目标模型 (留空为禁用) --</option>
+                                            <option v-for="opt in models.availableOptions" :key="'fb-' + opt" :value="opt">{{ opt }}</option>
+                                        </select>
+                                        <small class="config-note hero-desc">当请求的模型未匹配任何规则且非可用模型时，自动兜底重定向至此模型</small>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-primary btn-hero-action align-self-end mt-2" @click="saveFallbackModel">
+                                    💾 保存兜底设置
+                                </button>
+                            </div>
+
+                            <!-- 自定义映射规则配置卡片 -->
+                            <div class="config-section-card">
+                                <div class="config-section-title">
+                                    <div class="config-section-title-left">
+                                        <span>➕</span>
+                                        <span>添加 / 修改自定义映射规则</span>
+                                    </div>
+                                </div>
+                                <div class="form-row-align-end mapping-form-row">
+                                    <div class="form-col-flex">
+                                        <label class="form-label">前端请求模型 (Requested Model):</label>
+                                        <input type="text" v-model="models.newOriginal" class="config-input-styled mapping-input" placeholder="例如: gpt-4, claude-3-5-sonnet" />
+                                    </div>
+                                    <div class="arrow-separator mapping-arrow">➔</div>
+                                    <div class="form-col-flex">
+                                        <label class="form-label">映射目标模型 (Target Model):</label>
+                                        <select v-model="models.newTarget" class="config-input-styled mapping-select">
+                                            <option value="" disabled>-- 选择动态拉取的目标模型 --</option>
+                                            <option v-for="opt in models.availableOptions" :key="'target-' + opt" :value="opt">{{ opt }}</option>
+                                        </select>
+                                    </div>
+                                    <button type="button" class="btn btn-primary btn-mapping-save" @click="addModelMapping">
+                                        ➕ 保存映射规则
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 手动/自定义规则列表 -->
+                            <div class="config-section-card">
+                                <div class="config-section-title">
+                                    <div class="config-section-title-left">
+                                        <span>⚙️</span>
+                                        <span>已生效的手动 / 自定义映射规则列表</span>
+                                        <span class="badge badge-primary badge-ml-1">{{ Object.keys(models.mappings).length }} 条规则</span>
+                                    </div>
+                                    <button class="btn-xs btn-danger-outline" @click="clearModelMappings">🗑️ 清空所有自定义映射</button>
+                                </div>
+                                <div class="table-container">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>前端请求原始模型 (Requested Model)</th>
+                                                <th style="width: 60px; text-align: center;">重定向</th>
+                                                <th>后端实际处理目标模型 (Target Model)</th>
+                                                <th style="text-align: right;">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="(target, orig) in models.mappings" :key="orig">
+                                                <td><span class="model-tag-requested">📥 {{ orig }}</span></td>
+                                                <td style="text-align: center;"><span class="model-arrow-badge">➔</span></td>
+                                                <td><span class="model-tag-target">🎯 {{ target }}</span></td>
+                                                <td style="text-align: right;"><button class="btn-xs btn-danger-outline" @click="deleteModelMapping(orig)">删除</button></td>
+                                            </tr>
+                                            <tr v-if="Object.keys(models.mappings).length === 0">
+                                                <td colspan="4" style="text-align: center; padding: 32px; opacity: 0.65;">
+                                                    <div style="font-size: 28px; margin-bottom: 6px;">📭</div>
+                                                    <div>暂无自定义重定向映射规则</div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- 实时捕捉的动态模型映射列表 -->
+                            <div class="config-section-card">
+                                <div class="config-section-title">
+                                    <div class="config-section-title-left">
+                                        <span>📡</span>
+                                        <span>实时捕捉的动态模型映射列表</span>
+                                        <span class="badge badge-success" style="font-size: 11px; margin-left: 6px;">{{ (models.dynamicMappings || []).length }} 条记录</span>
+                                    </div>
+                                    <button class="btn-xs btn-danger-outline" @click="clearDynamicMappings">🗑️ 清空动态记录</button>
+                                </div>
+                                <div class="table-container">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>请求模型 (Requested)</th>
+                                                <th>路由类型</th>
+                                                <th style="width: 60px; text-align: center;">重定向</th>
+                                                <th>实际处理目标模型 (Target)</th>
+                                                <th>调用次数</th>
+                                                <th>最后使用时间</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="item in models.dynamicMappings" :key="item.key">
+                                                <td><span class="model-tag-requested">📥 {{ item.requested_model }}</span></td>
+                                                <td><span class="badge badge-info">{{ item.router_type }}</span></td>
+                                                <td style="text-align: center;"><span class="model-arrow-badge">➔</span></td>
+                                                <td><span class="model-tag-target">🎯 {{ item.target_model }}</span></td>
+                                                <td><span class="badge badge-secondary">{{ item.count }} 次</span></td>
+                                                <td style="font-size: 12px; opacity: 0.85;">{{ item.last_used_at }}</td>
+                                            </tr>
+                                            <tr v-if="!models.dynamicMappings || models.dynamicMappings.length === 0">
+                                                <td colspan="6" style="text-align: center; padding: 32px; opacity: 0.65;">
+                                                    <div style="font-size: 28px; margin-bottom: 6px;">📡</div>
+                                                    <div>暂无实时捕捉到的动态映射记录</div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ================= 5. 配置管理标签页 ================= -->
+                        <div v-if="activeTab === 'config'" class="tab-content active">
+                            <!-- 顶部 Hero 工具栏 -->
+                            <div class="config-hero-card mb-3">
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div style="width: 42px; height: 42px; border-radius: 10px; background: rgba(37, 99, 235, 0.1); display: flex; align-items: center; justify-content: center; font-size: 22px;">
+                                        🛠️
+                                    </div>
+                                    <div>
+                                        <h3 style="margin: 0; font-size: 18px; font-weight: 700;">全局系统配置管理</h3>
+                                        <p style="margin: 2px 0 0 0; opacity: 0.75; font-size: 12px;">管理系统全局服务参数、代理连接与安全策略配置</p>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 10px; align-items: center;">
+                                    <button type="button" class="btn btn-primary btn-hero-action" @click="saveConfig">💾 保存全局配置</button>
+                                </div>
+                            </div>
+
+                            <!-- 1. 服务器与网络基础配置 -->
+                            <div class="config-section-card">
+                                <div class="config-section-title">
+                                    <div class="config-section-title-left">
+                                        <span>🖥️</span>
+                                        <span>服务器与网络基础配置</span>
+                                    </div>
+                                    <span style="font-size: 12px; font-weight: normal; opacity: 0.65;">服务绑定与访问鉴权</span>
+                                </div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px 18px;">
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">服务器主机地址 (Host):</label>
+                                        <input type="text" v-model="config.form.host" class="config-input-styled" placeholder="0.0.0.0" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">服务器端口号 (Port):</label>
+                                        <input type="number" v-model="config.form.port" class="config-input-styled" placeholder="8051" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">API 访问密码 (API Key):</label>
+                                        <input type="text" v-model="config.form.api_password" class="config-input-styled" placeholder="Bearer Key (留空免密)" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">控制面板密码 (Web Admin):</label>
+                                        <input type="text" v-model="config.form.panel_password" class="config-input-styled" placeholder="控制面板登录密码" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">凭证存储目录 (Credentials Path):</label>
+                                        <input type="text" v-model="config.form.credentials_dir" class="config-input-styled" placeholder="credentials" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">网络代理设置 (HTTP/SOCKS5 Proxy):</label>
+                                        <input type="text" v-model="config.form.proxy" class="config-input-styled" placeholder="http://127.0.0.1:7890" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 2. 服务代理端点配置 -->
+                            <div class="config-section-card">
+                                <div class="config-section-title">
+                                    <div class="config-section-title-left">
+                                        <span>🌐</span>
+                                        <span>服务代理端点配置 (Endpoints Proxy)</span>
+                                    </div>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button type="button" class="btn-xs btn-auto" @click="useMirrorUrls">🚀 一键使用镜像网址</button>
+                                        <button type="button" class="btn-xs btn-auto" @click="restoreOfficialUrls">🔄 还原官方端点</button>
+                                    </div>
+                                </div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px 18px;">
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Code Assist Endpoint:</label>
+                                        <input type="text" v-model="config.form.code_assist_endpoint" class="config-input-styled" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">OAuth Endpoint:</label>
+                                        <input type="text" v-model="config.form.oauth_proxy_url" class="config-input-styled" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Google APIs Endpoint:</label>
+                                        <input type="text" v-model="config.form.googleapis_proxy_url" class="config-input-styled" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Resource Manager API Endpoint:</label>
+                                        <input type="text" v-model="config.form.resource_manager_api_url" class="config-input-styled" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Service Usage API Endpoint:</label>
+                                        <input type="text" v-model="config.form.service_usage_api_url" class="config-input-styled" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Antigravity API Endpoint:</label>
+                                        <input type="text" v-model="config.form.antigravity_api_url" class="config-input-styled" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 3. 并排 2-Column Grid (自动封禁策略 + 重试避障) -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                                <div class="config-section-card" style="margin-bottom: 0;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>🚫</span>
+                                            <span>自动封禁熔断策略</span>
+                                        </div>
+                                    </div>
+                                    <div class="form-group mb-3">
+                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="autoBanEnabled" v-model="config.form.auto_ban_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
+                                            <label for="autoBanEnabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用错误自动封禁凭证</label>
+                                        </div>
+                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">触发特定错误响应时自动锁定受损凭证文件</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="autoBanErrorCodes" style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">自动封禁 HTTP 错误码列表:</label>
+                                        <input type="text" id="autoBanErrorCodes" v-model="config.form.auto_ban_error_codes" class="config-input-styled" placeholder="例如: 400,403" />
+                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">逗号分隔的 HTTP 状态码（如 400, 403）</small>
+                                    </div>
+                                </div>
+
+                                <div class="config-section-card" style="margin-bottom: 0;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>🔄</span>
+                                            <span>错误自动重试避障</span>
+                                        </div>
+                                    </div>
+                                    <div class="form-group mb-3">
+                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="retry429Enabled" v-model="config.form.retry_429_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
+                                            <label for="retry429Enabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用 429/5xx 错误自动重试</label>
+                                        </div>
+                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">遇到限频 429 或服务端错误时自动发起指数避障重试</small>
+                                    </div>
+                                    <div style="display: flex; gap: 12px;">
+                                        <div style="flex: 1;">
+                                            <label for="retry429MaxRetries" style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">最大重试次数:</label>
+                                            <input type="number" id="retry429MaxRetries" v-model="config.form.retry_429_max_retries" class="config-input-styled" min="1" max="50" />
+                                        </div>
+                                        <div style="flex: 1;">
+                                            <label for="retry429Interval" style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">重试间隔(秒):</label>
+                                            <input type="number" id="retry429Interval" v-model="config.form.retry_429_interval" class="config-input-styled" min="0.01" max="10" step="0.01" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 4. 兼容性与流式高级处理策略 -->
+                            <div class="config-section-card">
+                                <div class="config-section-title">
+                                    <div class="config-section-title-left">
+                                        <span>⚙️</span>
+                                        <span>兼容性与流式高级处理策略</span>
+                                    </div>
+                                </div>
+                                <div class="config-switch-grid">
+                                    <div class="config-switch-item">
+                                        <input type="checkbox" id="compatibilityModeEnabled" v-model="config.form.compatibility_mode_enabled" class="config-checkbox" />
+                                        <div class="config-switch-content">
+                                            <label for="compatibilityModeEnabled" class="config-switch-title">
+                                                兼容性转换模式
+                                                <span class="badge-hot-update">热更新</span>
+                                            </label>
+                                            <div class="config-switch-desc">将 system 角色消息转为 user 角色，停用 system_instructions 以提高老版本 API 兼容性</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-switch-item">
+                                        <input type="checkbox" id="returnThoughtsToFrontend" v-model="config.form.return_thoughts_to_frontend" class="config-checkbox" />
+                                        <div class="config-switch-content">
+                                            <label for="returnThoughtsToFrontend" class="config-switch-title">
+                                                返回思维链 (Thinking)
+                                                <span class="badge-hot-update">热更新</span>
+                                            </label>
+                                            <div class="config-switch-desc">保留并输出 Gemini 2.0 / Claude Thinking 模型的思考推理过程文本</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-switch-item">
+                                        <input type="checkbox" id="antigravityStream2nostream" v-model="config.form.antigravity_stream_2_nostream" class="config-checkbox" />
+                                        <div class="config-switch-content">
+                                            <label for="antigravityStream2nostream" class="config-switch-title">
+                                                流式转非流式优化
+                                                <span class="badge-hot-update">热更新</span>
+                                            </label>
+                                            <div class="config-switch-desc">非流式请求底层统一走流式 API 传输并实时收集拼接为完整响应</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-switch-item">
+                                        <input type="checkbox" id="antigravitySwitchCredentialEnabled" v-model="config.form.antigravity_switch_credential_enabled" class="config-checkbox" />
+                                        <div class="config-switch-content">
+                                            <label for="antigravitySwitchCredentialEnabled" class="config-switch-title">
+                                                重试自动切换凭证
+                                                <span class="badge-hot-update">热更新</span>
+                                            </label>
+                                            <div class="config-switch-desc">当某个凭证触发错误重试时，自动无缝轮换至备选凭证完成请求</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-switch-item">
+                                        <input type="checkbox" id="antigravityTelemetryEnabled" v-model="config.form.antigravity_telemetry_enabled" class="config-checkbox" />
+                                        <div class="config-switch-content">
+                                            <label for="antigravityTelemetryEnabled" class="config-switch-title">
+                                                Antigravity 伴随流量打点
+                                                <span class="badge-hot-update">热更新</span>
+                                            </label>
+                                            <div class="config-switch-desc">对话生成时并发发送指标上报、实验拉取与 Unleash 心跳（模拟真实 CLI 伴随流量特征）</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ================= 6. 项目信息标签页 ================= -->
+                        <div v-if="activeTab === 'about'" class="tab-content active">
+                            <!-- 统一 Hero 工具栏 -->
+                            <div class="config-hero-card mb-3">
+                                <div style="display: flex; align-items: center; gap: 14px;">
+                                    <div style="width: 48px; height: 48px; border-radius: 14px; background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(16, 185, 129, 0.2)); display: flex; align-items: center; justify-content: center; font-size: 26px; box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.3);">
+                                        ℹ️
+                                    </div>
+                                    <div>
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <h3 style="margin: 0; font-size: 20px; font-weight: 800; background: linear-gradient(135deg, var(--text-primary), var(--primary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">关于 google2api 项目信息</h3>
+                                        </div>
+                                        <p style="margin: 4px 0 0 0; opacity: 0.75; font-size: 12px;">高性能开源 Google Gemini 与 Antigravity 代理转接网关，统一为标准的 OpenAI / Claude / Gemini API 协议</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 项目介绍与免责声明 -->
+                            <div class="config-section-card mb-3" style="border-left: 4px solid var(--primary);">
+                                <div class="config-section-title">
+                                    <div class="config-section-title-left">
+                                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(37, 99, 235, 0.1); display: flex; align-items: center; justify-content: center; font-size: 16px;">📋</div>
+                                        <span style="font-size: 16px; font-weight: 700;">项目简介与架构说明</span>
+                                    </div>
+                                </div>
+                                <p style="font-size: 13.5px; line-height: 1.7; margin-bottom: 14px;">
+                                    <strong>google2api</strong> 是一个专为开发者打造的高性能 API 网关代理工具。能够将 Google Gemini 和 Google Antigravity 统一无缝转换为标准的 <strong>OpenAI (v1)</strong>、<strong>Claude</strong> 和 <strong>Gemini Native API</strong> 格式，支持多账户智能负载均衡轮换、实时日志流监控与动态模型重定向。
+                                </p>
+                                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-weight: 700;">🔗 开源 GitHub 仓库：</span>
+                                        <a href="https://github.com/lovelyterry/google2api" target="_blank" class="account-pill-tag" style="text-decoration: none;">
+                                            <span>⭐ GitHub - lovelyterry/google2api</span>
+                                        </a>
+                                    </div>
+                                    <div style="padding: 10px 14px; border-radius: 10px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); color: #dc2626; font-size: 12.5px;">
+                                        <strong>⚠️ 免责声明：</strong> 本项目遵循开源协议，仅供技术研究与个人学习交流使用，严禁用于任何形式的商业用途与非法倒卖。
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 功能特性 Grid -->
+                            <div class="config-section-card mb-3">
+                                <div class="config-section-title">
+                                    <div class="config-section-title-left">
+                                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(124, 58, 237, 0.1); display: flex; align-items: center; justify-content: center; font-size: 16px;">✨</div>
+                                        <span style="font-size: 16px; font-weight: 700;">核心功能特性</span>
+                                    </div>
+                                </div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; align-items: stretch;">
+                                    <div style="padding: 14px; border: 1px solid var(--border-color, rgba(0,0,0,0.08)); border-radius: 12px; background: rgba(0, 0, 0, 0.015); display: flex; flex-direction: column; justify-content: space-between;">
+                                        <div>
+                                            <p style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #2563eb;">🔄 多账户与多模式混合</p>
+                                            <p style="margin: 0; font-size: 12px; opacity: 0.8; line-height: 1.5;">支持同时并行管理 Google Cloud 凭证与 Antigravity 凭证，多模式透明调度。</p>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 14px; border: 1px solid var(--border-color, rgba(0,0,0,0.08)); border-radius: 12px; background: rgba(0, 0, 0, 0.015); display: flex; flex-direction: column; justify-content: space-between;">
+                                        <div>
+                                            <p style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #10b981;">⚡ 智能轮换与自动避障</p>
+                                            <p style="margin: 0; font-size: 12px; opacity: 0.8; line-height: 1.5;">智能轮换账户，遇 429 或 403 自动触发熔断冷却或备选路由映射策略。</p>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 14px; border: 1px solid var(--border-color, rgba(0,0,0,0.08)); border-radius: 12px; background: rgba(0, 0, 0, 0.015); display: flex; flex-direction: column; justify-content: space-between;">
+                                        <div>
+                                            <p style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #9333ea;">📊 动态模型映射与兜底</p>
+                                            <p style="margin: 0; font-size: 12px; opacity: 0.8; line-height: 1.5;">自定义模型别名映射，支持全局 Fallback 目标模型兜底重定向。</p>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 14px; border: 1px solid var(--border-color, rgba(0,0,0,0.08)); border-radius: 12px; background: rgba(0, 0, 0, 0.015); display: flex; flex-direction: column; justify-content: space-between;">
+                                        <div>
+                                            <p style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #f59e0b;">🎛️ 配置热更新与代理连接</p>
+                                            <p style="margin: 0; font-size: 12px; opacity: 0.8; line-height: 1.5;">修改配置即刻生效，原生支持 HTTP / SOCKS5 代理网络连接。</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 联系与反馈 -->
+                            <div class="config-section-card">
+                                <div class="config-section-title">
+                                    <div class="config-section-title-left">
+                                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(16, 185, 129, 0.1); display: flex; align-items: center; justify-content: center; font-size: 16px;">📞</div>
+                                        <span style="font-size: 16px; font-weight: 700;">交流与反馈支持</span>
+                                    </div>
+                                </div>
+                                <div style="font-size: 13px; line-height: 1.9;">
+                                    <p style="margin: 4px 0;">• <strong>问题 Issue 反馈：</strong> 在 GitHub Issues 中提交您遇到的 Bug 或故障追踪</p>
+                                    <p style="margin: 4px 0;">• <strong>新功能 Proposal：</strong> 在 GitHub Discussions 中发帖讨论您希望加入的全新特性</p>
+                                    <p style="margin: 4px 0;">• <strong>Pull Request：</strong> 欢迎 Fork 仓库并提交代码合并请求共建项目</p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </main>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 全局 Toast 提示框 -->
+        <div id="statusSection">
+            <div v-if="toast.show" class="status show" :class="toast.type" v-html="toast.message"></div>
+        </div>
+
+        <!-- 4. 全局消息 & 确认框 Custom Modal 模态框 -->
+        <div v-if="modal.show" class="modal-backdrop-custom" @click="handleModalCancel">
+            <div class="custom-modal-card" @click.stop>
+                <div class="custom-modal-header">
+                    <div class="custom-modal-icon-wrapper" :class="'custom-modal-icon-' + (modal.type || 'info')">
+                        <span v-if="modal.type === 'danger'">⚠️</span>
+                        <span v-else-if="modal.type === 'warning'">⚠️</span>
+                        <span v-else-if="modal.type === 'success'">✅</span>
+                        <span v-else>ℹ️</span>
+                    </div>
+                    <div class="custom-modal-title-box">
+                        <h4 class="custom-modal-title">{{ modal.title || '提示' }}</h4>
+                    </div>
+                    <button class="custom-modal-close-btn" @click="handleModalCancel" title="关闭">✕</button>
+                </div>
+                <div class="custom-modal-body">
+                    {{ modal.message }}
+                </div>
+                <div class="custom-modal-footer">
+                    <button v-if="modal.isConfirm" class="custom-modal-btn custom-modal-btn-cancel" @click="handleModalCancel">
+                        {{ modal.cancelText || '取消' }}
+                    </button>
+                    <button class="custom-modal-btn" :class="'custom-modal-btn-' + (modal.type || 'primary')" @click="handleModalConfirm">
+                        {{ modal.confirmText || '确定' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/front/dashboard.js?v=22.0.0"></script>
+</body>
+
+</html>

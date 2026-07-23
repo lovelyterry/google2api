@@ -18,12 +18,13 @@ from config import (
     get_antigravity_api_url,
     get_antigravity_stream2nostream,
     get_auto_ban_error_codes,
+    get_antigravity_telemetry_enabled,
 )
 from log import log
 
-from src.credential_manager import credential_manager
-from src.httpx_client import stream_post_async, post_async
-from src.models import Model, model_to_dict
+from src.auth import credential_manager
+from src.client import stream_post_async, post_async, get_async
+from src.schemas import Model, model_to_dict
 from src.utils import ANTIGRAVITY_USER_AGENT
 
 # 导入共同的基础功能
@@ -45,7 +46,6 @@ from src.api.utils import (
 
 SESSION_TTL_SECONDS = 6 * 60 * 60
 MAX_SESSION_STATES = 1024
-_REDIS_KEY_PREFIX = "antigravity:session:"
 
 
 @dataclass
@@ -60,30 +60,6 @@ class AntigravitySessionState:
 
 # 内存回退存储
 _session_states: Dict[str, AntigravitySessionState] = {}
-
-# Redis 客户端（懒初始化，REDIS_URL 存在时使用）
-_redis_client = None
-_redis_checked = False
-
-
-async def _get_redis():
-    """懒初始化 Redis 客户端，REDIS_URL 未设置时返回 None。"""
-    global _redis_client, _redis_checked
-    if _redis_checked:
-        return _redis_client
-    _redis_checked = True
-    redis_url = os.getenv("REDIS_URL")
-    if not redis_url:
-        return None
-    try:
-        import redis.asyncio as aioredis  # type: ignore
-        client = aioredis.from_url(redis_url, decode_responses=True)
-        await client.ping()
-        _redis_client = client
-        log.info("[SESSION] Redis session store enabled")
-    except Exception as e:
-        log.warning(f"[SESSION] Redis unavailable, falling back to in-memory: {e}")
-    return _redis_client
 
 
 def _extract_first_user_text(request_payload: Dict[str, Any]) -> str:
@@ -148,24 +124,6 @@ async def _get_session_state(request_payload: Dict[str, Any], model: str = "") -
     key = _session_key(request_payload, model)
     first_user_text = _extract_first_user_text(request_payload)
 
-    redis = await _get_redis()
-    if redis is not None:
-        redis_key = f"{_REDIS_KEY_PREFIX}{key}"
-        try:
-            raw = await redis.get(redis_key)
-            if raw:
-                data = json.loads(raw)
-                state = AntigravitySessionState(**data)
-                state.step_index += 1
-                state.last_used_at = now
-            else:
-                state = _make_new_state(first_user_text, now)
-            await redis.set(redis_key, json.dumps(state.__dict__), ex=SESSION_TTL_SECONDS)
-            return state
-        except Exception as e:
-            log.warning(f"[SESSION] Redis error, falling back to memory: {e}")
-
-    # 内存回退
     _prune_session_states(now)
     state = _session_states.get(key)
     if state:
@@ -251,9 +209,88 @@ def build_antigravity_headers(access_token: str) -> Dict[str, str]:
     }
 
 
-def _is_retryable_status(status_code: int, disable_error_codes: List[int]) -> bool:
-    """统一判断是否属于可重试状态码。"""
+async def send_background_telemetry(
+    access_token: str, project_id: str, request_id: str, model_name: str
+) -> None:
+    """
+    异步并发发送伴随流量请求 (匹配 traffic.log 日志的伴随打点特征)：
+    1. v1internal:recordCodeAssistMetrics (代码助手指标上报)
+    2. v1internal:listExperiments (实验配置获取)
+    3. antigravity-unleash.goog (Unleash 特性心跳)
+    """
+    try:
+        if not await get_antigravity_telemetry_enabled():
+            return
+
+        antigravity_url = await get_antigravity_api_url()
+        headers = build_antigravity_headers(access_token)
+
+        async def _safe_post(url: str, json_payload: dict, req_headers: dict):
+            try:
+                await post_async(url=url, json=json_payload, headers=req_headers, timeout=5.0)
+            except Exception as ex:
+                log.debug(f"[ANTIGRAVITY TELEMETRY] 伴随 POST 请求静默忽略异常 ({url}): {ex}")
+
+        async def _safe_get(url: str, req_headers: dict):
+            try:
+                await get_async(url=url, headers=req_headers, timeout=5.0)
+            except Exception as ex:
+                log.debug(f"[ANTIGRAVITY TELEMETRY] 伴随 GET 请求静默忽略异常 ({url}): {ex}")
+
+        # 1. 伴随指标上报 (recordCodeAssistMetrics)
+        metrics_payload = {
+            "project": project_id,
+            "requestId": request_id,
+            "model": model_name,
+            "clientMetadata": {
+                "ideName": "vscode",
+                "ideVersion": "1.96.0",
+                "extensionName": "antigravity",
+                "extensionVersion": "1.1.5",
+            },
+        }
+        asyncio.create_task(
+            _safe_post(
+                url=f"{antigravity_url}/v1internal:recordCodeAssistMetrics",
+                json_payload=metrics_payload,
+                req_headers=headers,
+            )
+        )
+
+        # 2. 伴随实验获取 (listExperiments)
+        asyncio.create_task(
+            _safe_post(
+                url=f"{antigravity_url}/v1internal:listExperiments",
+                json_payload={},
+                req_headers=headers,
+            )
+        )
+
+        # 3. Unleash 特性获取 (antigravity-unleash.goog)
+        unleash_headers = {
+            "User-Agent": "codeium-language-server",
+            "unleash-appname": "codeium-language-server",
+            "unleash-instanceid": "localhost",
+            "unleash-connection-id": "02b6e7ac-23b2-4c1b-b40e-ca7690890734",
+            "unleash-sdk": "unleash-client-go:4.5.0",
+            "authorization": "*:production.e44558998bfc35ea9584dc65858e4485fdaa5d7ef46903e0c67712d1",
+        }
+        asyncio.create_task(
+            _safe_get(
+                url="https://antigravity-unleash.goog/api/client/features",
+                req_headers=unleash_headers,
+            )
+        )
+    except Exception as e:
+        log.debug(f"[TELEMETRY] 伴随流量上报跳过: {e}")
+
+
+def _is_retryable_status(status_code: int, disable_error_codes: List[int], error_body: str = "") -> bool:
+    """统一判断是否属于可重试状态码或可重试错误。"""
+    if error_body and ("provisioning" in error_body.lower() or "under provisioning" in error_body.lower()):
+        return True
     return status_code in (429, 503) or status_code in disable_error_codes
+
 
 
 async def _switch_credential_for_retry(
@@ -343,7 +380,7 @@ async def stream_request(
 
     # 构建 CLI 格式请求体
     inner_request = body.get("request", body)
-    final_payload, _ = await wrap_cli_request(inner_request, model_name, project_id)
+    final_payload, request_id = await wrap_cli_request(inner_request, model_name, project_id)
 
     # 3. 调用stream_post_async进行请求
     retry_config = await get_retry_config()
@@ -407,7 +444,7 @@ async def stream_request(
                         error_body = ""
 
                     # 如果错误码是429、503或者在禁用码当中，做好记录后进行重试
-                    if _is_retryable_status(status_code, DISABLE_ERROR_CODES):
+                    if _is_retryable_status(status_code, DISABLE_ERROR_CODES, error_body):
                         log.warning(f"[ANTIGRAVITY STREAM] 流式请求失败 (status={status_code}), 凭证: {current_file}, 响应: {error_body[:500] if error_body else '无'}")
 
                         # 解析冷却时间
@@ -467,6 +504,11 @@ async def stream_request(
                         )
                         success_recorded = True
                         log.debug(f"[ANTIGRAVITY STREAM] 开始接收流式响应，模型: {model_name}")
+                        # 异步触发伴随流量打点
+                        req_id = final_payload.get("requestId", "")
+                        asyncio.create_task(
+                            send_background_telemetry(access_token, project_id, req_id, model_name)
+                        )
 
                     # 记录原始chunk内容（用于调试）
                     if isinstance(chunk, bytes):
@@ -535,7 +577,7 @@ async def stream_request(
                 else:
                     # 如果没有记录到错误响应，返回500错误
                     yield Response(
-                        content=json.dumps({"error": f"流式请求异常: {str(e)}"}),
+                        content=json.dumps({"error": "流式请求发生异常，重试均已耗尽"}),
                         status_code=500,
                         media_type="application/json"
                     )
@@ -702,6 +744,11 @@ async def non_stream_request(
                     await record_api_call_success(
                         credential_manager, current_file, mode="antigravity", model_name=model_name
                     )
+                    # 异步触发伴随流量打点
+                    req_id = final_payload.get("requestId", "")
+                    asyncio.create_task(
+                        send_background_telemetry(access_token, project_id, req_id, model_name)
+                    )
                     return Response(
                         content=response.content,
                         status_code=200,
@@ -724,7 +771,7 @@ async def non_stream_request(
                 except Exception:
                     pass
 
-                if _is_retryable_status(status_code, DISABLE_ERROR_CODES):
+                if _is_retryable_status(status_code, DISABLE_ERROR_CODES, error_text):
                     log.warning(f"[ANTIGRAVITY] 非流式请求失败 (status={status_code}), 凭证: {current_file}, 响应: {error_text[:500] if error_text else '无'}")
 
                     # 解析冷却时间
@@ -825,28 +872,40 @@ async def non_stream_request(
 
 # ==================== 模型和配额查询 ====================
 
-async def fetch_available_models() -> List[Dict[str, Any]]:
+_MODELS_CACHE: List[Dict[str, Any]] = []
+_MODELS_CACHE_TIME: float = 0.0
+
+
+async def fetch_available_models(force_refresh: bool = False) -> List[Dict[str, Any]]:
     """
-    获取可用模型列表，返回符合 OpenAI API 规范的格式
+    获取可用模型列表，返回符合 OpenAI API 规范的格式。
+    系统启动时拉取一次后永久使用内存缓存，不再发起额外的上游网络请求。
     
-    Returns:
-        模型列表，格式为字典列表（用于兼容现有代码）
+    Args:
+        force_refresh: 是否强制刷新缓存（仅在显式手动刷新时生效）
         
-    Raises:
-        返回空列表如果获取失败
+    Returns:
+        模型列表，格式为字典列表
     """
+    global _MODELS_CACHE, _MODELS_CACHE_TIME
+    now = time.time()
+
+    # 启动时已加载缓存且非手动强制刷新时，直接返回内存缓存，完全零网络开销
+    if not force_refresh and _MODELS_CACHE:
+        return _MODELS_CACHE
+
     # 获取凭证管理器和可用凭证
     cred_result = await credential_manager.get_valid_credential(mode="antigravity")
     if not cred_result:
         log.error("[ANTIGRAVITY] No valid credentials available for fetching models")
-        return []
+        return _MODELS_CACHE if _MODELS_CACHE else []
 
     current_file, credential_data = cred_result
     access_token = credential_data.get("access_token") or credential_data.get("token")
 
     if not access_token:
         log.error(f"[ANTIGRAVITY] No access token in credential: {current_file}")
-        return []
+        return _MODELS_CACHE if _MODELS_CACHE else []
 
     # 构建请求头
     headers = build_antigravity_headers(access_token)
@@ -871,7 +930,11 @@ async def fetch_available_models() -> List[Dict[str, Any]]:
 
             if 'models' in data and isinstance(data['models'], dict):
                 # 遍历模型字典
-                for model_id in data['models'].keys():
+                raw_model_ids = list(data['models'].keys())
+                from src.converter.gemini_fix import update_dynamic_exact_models
+                update_dynamic_exact_models(raw_model_ids)
+
+                for model_id in raw_model_ids:
                     model = Model(
                         id=model_id,
                         object='model',
@@ -879,6 +942,7 @@ async def fetch_available_models() -> List[Dict[str, Any]]:
                         owned_by='google'
                     )
                     model_list.append(model_to_dict(model))
+
             # 添加额外的 claude-sonnet-4-6-thinking 模型
             if "claude-sonnet-4-6" in data.get('models', {}):
                 model = Model(
@@ -899,16 +963,33 @@ async def fetch_available_models() -> List[Dict[str, Any]]:
                 model_list.append(model_to_dict(claude_opus_model))
 
             log.info(f"[ANTIGRAVITY] Fetched {len(model_list)} available models")
+            _MODELS_CACHE = model_list
+            _MODELS_CACHE_TIME = now
             return model_list
         else:
             log.error(f"[ANTIGRAVITY] Failed to fetch models ({response.status_code}): {response.text[:500]}")
-            return []
+            return _MODELS_CACHE if _MODELS_CACHE else []
 
     except Exception as e:
         import traceback
         log.error(f"[ANTIGRAVITY] Failed to fetch models: {e}")
         log.error(f"[ANTIGRAVITY] Traceback: {traceback.format_exc()}")
-        return []
+        return _MODELS_CACHE if _MODELS_CACHE else []
+
+
+def _parse_reset_time_to_beijing(reset_time_raw: str) -> str:
+    """辅助函数：将 ISO 格式 UTC 重置时间串转换为北京时间(%m-%d %H:%M)"""
+    if not reset_time_raw:
+        return 'N/A'
+    try:
+        clean_raw = reset_time_raw.replace('Z', '+00:00')
+        utc_date = datetime.fromisoformat(clean_raw)
+        from datetime import timedelta
+        beijing_date = utc_date + timedelta(hours=8)
+        return beijing_date.strftime('%m-%d %H:%M')
+    except Exception as e:
+        log.warning(f"[ANTIGRAVITY QUOTA] Failed to parse reset time ({reset_time_raw}): {e}")
+        return 'N/A'
 
 
 async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
@@ -957,18 +1038,7 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
                         quota = model_data['quotaInfo']
                         remaining = quota.get('remainingFraction', 0)
                         reset_time_raw = quota.get('resetTime', '')
-
-                        # 转换为北京时间
-                        reset_time_beijing = 'N/A'
-                        if reset_time_raw:
-                            try:
-                                utc_date = datetime.fromisoformat(reset_time_raw.replace('Z', '+00:00'))
-                                # 转换为北京时间 (UTC+8)
-                                from datetime import timedelta
-                                beijing_date = utc_date + timedelta(hours=8)
-                                reset_time_beijing = beijing_date.strftime('%m-%d %H:%M')
-                            except Exception as e:
-                                log.warning(f"[ANTIGRAVITY QUOTA] Failed to parse reset time: {e}")
+                        reset_time_beijing = _parse_reset_time_to_beijing(reset_time_raw)
 
                         quota_info[model_id] = {
                             "remaining": remaining,
@@ -991,6 +1061,80 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
         import traceback
         log.error(f"[ANTIGRAVITY QUOTA] Failed to fetch quota: {e}")
         log.error(f"[ANTIGRAVITY QUOTA] Traceback: {traceback.format_exc()}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+async def fetch_quota_summary(access_token: str, project_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    获取指定凭证的详细额度分组信息 (retrieveUserQuotaSummary)
+
+    Args:
+        access_token: Antigravity 访问令牌
+        project_id: 项目 ID (可选)
+
+    Returns:
+        包含额度分组信息的字典
+    """
+    headers = build_antigravity_headers(access_token)
+    payload = {"project": project_id} if project_id else {}
+
+    try:
+        antigravity_url = await get_antigravity_api_url()
+        response = await post_async(
+            url=f"{antigravity_url}/v1internal:retrieveUserQuotaSummary",
+            json=payload,
+            headers=headers,
+            timeout=30.0
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            log.debug(f"[ANTIGRAVITY QUOTA SUMMARY] Raw response: {json.dumps(data, ensure_ascii=False)[:500]}")
+
+            groups = []
+            if 'groups' in data and isinstance(data['groups'], list):
+                for group in data['groups']:
+                    buckets = []
+                    if 'buckets' in group and isinstance(group['buckets'], list):
+                        for bucket in group['buckets']:
+                            remaining = bucket.get('remainingFraction', 0.0)
+                            reset_time_raw = bucket.get('resetTime', '')
+                            reset_time_beijing = _parse_reset_time_to_beijing(reset_time_raw)
+
+                            buckets.append({
+                                "bucketId": bucket.get("bucketId", ""),
+                                "window": bucket.get("window", ""),
+                                "remainingFraction": remaining,
+                                "resetTime": reset_time_beijing,
+                                "resetTimeRaw": reset_time_raw,
+                                "displayName": bucket.get("displayName"),
+                                "description": bucket.get("description")
+                            })
+
+                    groups.append({
+                        "displayName": group.get("displayName", ""),
+                        "description": group.get("description"),
+                        "buckets": buckets
+                    })
+
+            return {
+                "success": True,
+                "groups": groups
+            }
+        else:
+            log.error(f"[ANTIGRAVITY QUOTA SUMMARY] Failed to fetch quota summary ({response.status_code}): {response.text[:500]}")
+            return {
+                "success": False,
+                "error": f"API返回错误: {response.status_code}"
+            }
+
+    except Exception as e:
+        import traceback
+        log.error(f"[ANTIGRAVITY QUOTA SUMMARY] Failed to fetch quota summary: {e}")
+        log.error(f"[ANTIGRAVITY QUOTA SUMMARY] Traceback: {traceback.format_exc()}")
         return {
             "success": False,
             "error": str(e)

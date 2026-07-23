@@ -7,9 +7,8 @@ from fastapi.responses import JSONResponse
 
 import config
 from log import log
-from src.keeplive import keepalive_service
-from src.models import ConfigSaveRequest
-from src.storage_adapter import get_storage_adapter
+from src.schemas import ConfigSaveRequest
+from src.storage import get_storage
 from src.utils import verify_panel_token
 from .utils import get_env_locked_keys
 
@@ -18,7 +17,8 @@ from .utils import get_env_locked_keys
 router = APIRouter(prefix="/config", tags=["config"])
 
 
-@router.get("/get")
+@router.get("")
+@router.get("/")
 async def get_config(token: str = Depends(verify_panel_token)):
     """获取当前配置"""
     try:
@@ -59,10 +59,7 @@ async def get_config(token: str = Depends(verify_panel_token)):
         # Antigravity流式转非流式配置
         current_config["antigravity_stream2nostream"] = await config.get_antigravity_stream2nostream()
         current_config["antigravity_switch_credential_enabled"] = await config.get_antigravity_switch_credential_enabled()
-
-        # 保活配置
-        current_config["keepalive_url"] = await config.get_keepalive_url()
-        current_config["keepalive_interval"] = await config.get_keepalive_interval()
+        current_config["antigravity_telemetry_enabled"] = await config.get_antigravity_telemetry_enabled()
 
         # 服务器配置
         current_config["host"] = await config.get_server_host()
@@ -72,7 +69,7 @@ async def get_config(token: str = Depends(verify_panel_token)):
         current_config["password"] = await config.get_server_password()
 
         # 从存储系统读取配置
-        storage_adapter = await get_storage_adapter()
+        storage_adapter = await get_storage()
         storage_config = await storage_adapter.get_all_config()
 
         # 获取环境变量锁定的配置键
@@ -90,7 +87,8 @@ async def get_config(token: str = Depends(verify_panel_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/save")
+@router.post("")
+@router.post("/")
 async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_panel_token)):
     """保存配置"""
     try:
@@ -147,19 +145,10 @@ async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_pa
             if not isinstance(new_config["antigravity_switch_credential_enabled"], bool):
                 raise HTTPException(status_code=400, detail="Antigravity切换凭证开关必须是布尔值")
 
-        # 验证保活配置
-        if "keepalive_url" in new_config:
-            if not isinstance(new_config["keepalive_url"], str):
-                raise HTTPException(status_code=400, detail="保活URL必须是字符串")
+        if "antigravity_telemetry_enabled" in new_config:
+            if not isinstance(new_config["antigravity_telemetry_enabled"], bool):
+                raise HTTPException(status_code=400, detail="Antigravity伴随流量开关必须是布尔值")
 
-        if "keepalive_interval" in new_config:
-            try:
-                interval = int(new_config["keepalive_interval"])
-                if interval < 5 or interval > 86400:
-                    raise HTTPException(status_code=400, detail="保活间隔必须在 5-86400 秒之间")
-                new_config["keepalive_interval"] = interval
-            except (ValueError, TypeError):
-                raise HTTPException(status_code=400, detail="保活间隔必须是有效整数")
         # 验证服务器配置
         if "host" in new_config:
             if not isinstance(new_config["host"], str) or not new_config["host"].strip():
@@ -189,7 +178,7 @@ async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_pa
         env_locked_keys = get_env_locked_keys()
 
         # 直接使用存储适配器保存配置
-        storage_adapter = await get_storage_adapter()
+        storage_adapter = await get_storage()
         for key, value in new_config.items():
             if key not in env_locked_keys:
                 await storage_adapter.set_config(key, value)
@@ -198,14 +187,6 @@ async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_pa
 
         # 重新加载配置缓存（关键！）
         await config.reload_config()
-
-        # 如果保活相关配置发生变化，立即重启保活服务
-        keepalive_keys = {"keepalive_url", "keepalive_interval"}
-        if keepalive_keys & set(new_config.keys()):
-            try:
-                await keepalive_service.restart()
-            except Exception as e:
-                log.warning(f"重启保活服务失败: {e}")
 
         # 验证保存后的结果
         test_api_password = await config.get_api_password()

@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from fastapi.responses import JSONResponse
 
 from log import log
-from src.utils import authenticate_gemini_flexible
-from src.models import GeminiRequest, model_to_dict
+from src.utils import authenticate_gemini_flexible, get_base_model_from_feature_model
+from src.schemas import GeminiRequest, model_to_dict
 from src.router.hi_check import is_health_check_request, create_health_check_response
 from src.router.stream_passthrough import build_streaming_response_or_error
 
@@ -31,7 +31,11 @@ async def generate_content(
     if is_health_check_request(normalized_dict, format="gemini"):
         return JSONResponse(content=create_health_check_response(format="gemini"))
 
-    normalized_dict["model"] = model
+    base_model = get_base_model_from_feature_model(model)
+    from src.model_mapping import model_mapping_manager
+    real_model = model_mapping_manager.resolve_model(base_model, router_type="vertex")
+
+    normalized_dict["model"] = real_model
 
     from src.converter.gemini_fix import normalize_gemini_request
     normalized_dict = await normalize_gemini_request(normalized_dict, mode="vertex")
@@ -40,6 +44,9 @@ async def generate_content(
         "model": normalized_dict.pop("model"),
         "request": normalized_dict,
     }
+
+    # 记录实际重定向后的最终目标模型映射
+    model_mapping_manager.record_mapping(model, api_request["model"], router_type="vertex")
 
     from src.api.vertex import non_stream_request
     response = await non_stream_request(body=api_request)
@@ -58,7 +65,15 @@ async def stream_generate_content(
     log.debug(f"[VERTEX ROUTER] Streaming request for model: {model}")
 
     normalized_dict = model_to_dict(gemini_request)
-    normalized_dict["model"] = model
+
+    base_model = get_base_model_from_feature_model(model)
+    from src.model_mapping import model_mapping_manager
+    real_model = model_mapping_manager.resolve_model(base_model, router_type="vertex")
+
+    # 记录实际重定向后的最终目标模型映射
+    model_mapping_manager.record_mapping(model, real_model, router_type="vertex")
+
+    normalized_dict["model"] = real_model
 
     async def stream_generator():
         from src.converter.gemini_fix import normalize_gemini_request

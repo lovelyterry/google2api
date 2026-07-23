@@ -45,10 +45,9 @@ from src.router.stream_passthrough import (
 )
 
 # 本地模块 - 数据模型
-from src.models import GeminiRequest, model_to_dict
+from src.schemas import GeminiRequest, model_to_dict
 
-# 本地模块 - 任务管理
-from src.task_manager import create_managed_task
+
 
 
 # ==================== 路由器初始化 ====================
@@ -85,7 +84,10 @@ async def generate_content(
 
     # 处理模型名称和功能检测
     use_anti_truncation = is_anti_truncation_model(model)
-    real_model = get_base_model_from_feature_model(model)
+    base_model = get_base_model_from_feature_model(model)
+
+    from src.model_mapping import model_mapping_manager
+    real_model = model_mapping_manager.resolve_model(base_model, router_type="geminicli")
 
     # 对于抗截断模型的非流式请求，给出警告
     if use_anti_truncation:
@@ -104,6 +106,9 @@ async def generate_content(
         "request": normalized_dict
     }
 
+    # 记录实际重定向后的最终目标模型映射
+    model_mapping_manager.record_mapping(model, api_request["model"], router_type="geminicli")
+
     # 调用 API 层的非流式请求
     from src.api.geminicli import non_stream_request
     response = await non_stream_request(body=api_request)
@@ -113,8 +118,13 @@ async def generate_content(
     try:
         if response.status_code == 200:
             response_data = json.loads(response.body if hasattr(response, 'body') else response.content)
+            target_data = response_data.get("response", response_data) if isinstance(response_data, dict) else {}
+            if isinstance(target_data, dict) and "usageMetadata" in target_data:
+                from src.token_usage import log_usage_metadata
+                log_usage_metadata(target_data["usageMetadata"], api_request.get("model", real_model), "Gemini")
+
             # 如果有 response 包装，解包装它
-            if "response" in response_data:
+            if isinstance(response_data, dict) and "response" in response_data:
                 unwrapped_data = response_data["response"]
                 return JSONResponse(content=unwrapped_data)
         # 错误响应或没有 response 字段，直接返回
@@ -146,7 +156,13 @@ async def stream_generate_content(
     # 处理模型名称和功能检测
     use_fake_streaming = is_fake_streaming_model(model)
     use_anti_truncation = is_anti_truncation_model(model)
-    real_model = get_base_model_from_feature_model(model)
+    base_model = get_base_model_from_feature_model(model)
+
+    from src.model_mapping import model_mapping_manager
+    real_model = model_mapping_manager.resolve_model(base_model, router_type="geminicli")
+
+    # 记录实际重定向后的最终目标模型映射
+    model_mapping_manager.record_mapping(model, real_model, router_type="geminicli")
 
     # 更新模型名为真实模型名
     normalized_dict["model"] = real_model
@@ -360,6 +376,11 @@ async def stream_generate_content(
                         # 解析JSON
                         data = json.loads(json_str)
 
+                        target_data = data.get("response", data) if isinstance(data, dict) else {}
+                        if isinstance(target_data, dict) and "usageMetadata" in target_data:
+                            from src.token_usage import log_usage_metadata
+                            log_usage_metadata(target_data["usageMetadata"], real_model, "Gemini流式")
+
                         # 展开 response 包装
                         if "response" in data and "candidates" not in data:
                             log.debug(f"[GEMINICLI] 展开response包装")
@@ -463,7 +484,7 @@ if __name__ == "__main__":
     }
 
     # 测试API密钥（模拟）
-    test_api_key = "pwd"
+    test_api_key = "admin"
 
     def test_non_stream_request():
         """测试非流式请求"""

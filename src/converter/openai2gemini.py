@@ -20,12 +20,13 @@ from src.converter.utils import merge_system_messages
 
 from log import log
 
-def _convert_usage_metadata(usage_metadata: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _convert_usage_metadata(usage_metadata: Dict[str, Any], model: str = "") -> Optional[Dict[str, Any]]:
     """
     将Gemini的usageMetadata转换为OpenAI格式的usage字段
 
     Args:
         usage_metadata: Gemini API的usageMetadata字段
+        model: 实际使用的模型名称
 
     Returns:
         OpenAI格式的usage字典，如果没有usage数据则返回None
@@ -33,16 +34,19 @@ def _convert_usage_metadata(usage_metadata: Dict[str, Any]) -> Optional[Dict[str
     if not usage_metadata:
         return None
 
-    prompt_tokens_total = int(usage_metadata.get("promptTokenCount", 0) or 0)
-    cached_tokens = int(usage_metadata.get("cachedContentTokenCount", 0) or 0)
+    from src.token_usage import log_usage_metadata
+    log_usage_metadata(usage_metadata, model, "OpenAI")
+
+    prompt_token_count = usage_metadata.get("promptTokenCount")
+    cached_content_token_count = usage_metadata.get("cachedContentTokenCount")
+
+    prompt_tokens_total = int(prompt_token_count or 0)
+    cached_tokens = int(cached_content_token_count or 0)
     prompt_tokens = max(prompt_tokens_total - cached_tokens, 0)
-    completion_tokens = int(usage_metadata.get("candidatesTokenCount", 0) or 0)
+    completion_tokens = int(candidates_token_count or 0)
     raw_total_tokens = int(
-        usage_metadata.get(
-            "totalTokenCount",
-            prompt_tokens_total + completion_tokens + int(usage_metadata.get("thoughtsTokenCount", 0) or 0),
-        )
-        or 0
+        total_token_count
+        or (prompt_tokens_total + completion_tokens + int(thoughts_token_count or 0))
     )
 
     usage = {
@@ -54,7 +58,7 @@ def _convert_usage_metadata(usage_metadata: Dict[str, Any]) -> Optional[Dict[str
     if cached_tokens > 0:
         usage["prompt_tokens_details"] = {"cached_tokens": cached_tokens}
 
-    reasoning_tokens = int(usage_metadata.get("thoughtsTokenCount", 0) or 0)
+    reasoning_tokens = int(thoughts_token_count or 0)
     if reasoning_tokens > 0:
         usage["completion_tokens_details"] = {"reasoning_tokens": reasoning_tokens}
 
@@ -1471,7 +1475,8 @@ async def convert_openai_to_gemini_request(openai_request: Dict[str, Any]) -> Di
 def convert_gemini_to_openai_response(
     gemini_response: Union[Dict[str, Any], Any],
     model: str,
-    status_code: int = 200
+    status_code: int = 200,
+    account: str = ""
 ) -> Dict[str, Any]:
     """
     将 Gemini 格式非流式响应转换为 OpenAI 格式非流式响应
@@ -1482,6 +1487,7 @@ def convert_gemini_to_openai_response(
         gemini_response: Gemini 格式的响应体 (字典或响应对象)
         model: 模型名称
         status_code: HTTP 状态码 (默认 200)
+        account: 账号标识信息
 
     Returns:
         OpenAI 格式的响应体字典,或原始响应 (如果状态码不是 2xx)
@@ -1548,23 +1554,19 @@ def convert_gemini_to_openai_response(
         for part in parts:
             # 处理 executableCode（代码生成）
             if "executableCode" in part:
-                exec_code = part["executableCode"]
-                lang = exec_code.get("language", "python").lower()
+                exec_code = part.get("executableCode", {})
                 code = exec_code.get("code", "")
-                # 添加代码块（前后加换行符确保 Markdown 渲染正确）
-                content_parts.append(f"\n```{lang}\n{code}\n```\n")
+                lang = exec_code.get("language", "python").lower()
+                content_parts.append(f"```{lang}\n{code}\n```")
             
             # 处理 codeExecutionResult（代码执行结果）
             elif "codeExecutionResult" in part:
-                result = part["codeExecutionResult"]
-                outcome = result.get("outcome")
-                output = result.get("output", "")
-                
-                if output:
-                    label = "output" if outcome == "OUTCOME_OK" else "error"
-                    content_parts.append(f"\n```{label}\n{output}\n```\n")
+                exec_result = part.get("codeExecutionResult", {})
+                output = exec_result.get("output", "")
+                outcome = exec_result.get("outcome", "")
+                content_parts.append(f"```\n[Code Execution Result - {outcome}]\n{output}\n```")
             
-            # 处理 thought（思考内容）
+            # 处理思考内容
             elif (
                 part.get("thought", False)
                 and "text" in part
@@ -1579,43 +1581,48 @@ def convert_gemini_to_openai_response(
             
             # 处理 inlineData（图片）
             elif "inlineData" in part:
-                inline_data = part["inlineData"]
-                mime_type = inline_data.get("mimeType", "image/png")
-                base64_data = inline_data.get("data", "")
-                # 使用 Markdown 格式
-                content_parts.append(f"![gemini-generated-content](data:{mime_type};base64,{base64_data})")
-        
-        # 合并所有内容部分
+                inline = part.get("inlineData", {})
+                mime = inline.get("mimeType", "image/png")
+                b64 = inline.get("data", "")
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"}
+                })
+
+        # 组合消息内容
+        message = {
+            "role": role,
+            "content": text_content if text_content else None,
+        }
+
+        # 如果有额外的 content_parts，追加或结构化组合
         if content_parts:
-            # 使用双换行符连接各部分，确保块之间有间距
-            additional_content = "\n\n".join(content_parts)
             if text_content:
-                text_content = text_content + "\n\n" + additional_content
+                # 如果既有 text_content 又有其他 parts，组合为 string 或 list
+                if isinstance(text_content, str):
+                    extra_str = "\n\n".join([p if isinstance(p, str) else str(p) for p in content_parts])
+                    message["content"] = text_content + "\n\n" + extra_str
             else:
-                text_content = additional_content
-        
-        # 合并 reasoning content
-        reasoning_content = "\n\n".join(reasoning_parts) if reasoning_parts else ""
+                if len(content_parts) == 1 and isinstance(content_parts[0], str):
+                    message["content"] = content_parts[0]
+                else:
+                    message["content"] = content_parts
 
-        # 构建消息对象
-        message = {"role": role}
+        # 拼接 reasoning content
+        reasoning_content = "\n\n".join(reasoning_parts) if reasoning_parts else None
 
-        # 获取 Gemini 的 finishReason
-        gemini_finish_reason = candidate.get("finishReason")
-        
-        # 如果有工具调用
+        # 如果有工具调用，添加 tool_calls 字段
         if tool_calls:
             message["tool_calls"] = tool_calls
-            message["content"] = text_content if text_content else None
-            # 只有在正常停止（STOP）时才设为 tool_calls，其他情况保持原始 finish_reason
-            # 这样可以避免在 SAFETY、MAX_TOKENS 等情况下仍然返回 tool_calls 导致循环
-            if gemini_finish_reason == "STOP":
-                finish_reason = "tool_calls"
-            else:
-                finish_reason = _map_finish_reason(gemini_finish_reason)
-        else:
-            message["content"] = text_content
-            finish_reason = _map_finish_reason(gemini_finish_reason)
+
+        # 确定 finish_reason
+        gemini_finish_reason = candidate.get("finishReason")
+        finish_reason = _map_finish_reason(gemini_finish_reason)
+
+        # 只有在正常停止（STOP）且有工具调用时才设为 tool_calls
+        # 避免在 SAFETY、MAX_TOKENS 等情况下仍然返回 tool_calls 导致循环
+        if tool_calls and gemini_finish_reason == "STOP":
+            finish_reason = "tool_calls"
 
         # 添加 reasoning content (如果有)
         if reasoning_content:
@@ -1628,7 +1635,7 @@ def convert_gemini_to_openai_response(
         })
 
     # 转换 usageMetadata
-    usage = _convert_usage_metadata(gemini_response.get("usageMetadata"))
+    usage = _convert_usage_metadata(gemini_response.get("usageMetadata"), model=model)
 
     response_data = {
         "id": str(uuid.uuid4()),
@@ -1648,7 +1655,8 @@ def convert_gemini_to_openai_stream(
     gemini_stream_chunk: str,
     model: str,
     response_id: str,
-    status_code: int = 200
+    status_code: int = 200,
+    account: str = ""
 ) -> Optional[str]:
     """
     将 Gemini 格式流式响应块转换为 OpenAI SSE 格式流式响应
@@ -1798,7 +1806,7 @@ def convert_gemini_to_openai_stream(
         })
 
     # 转换 usageMetadata (只在流结束时存在)
-    usage = _convert_usage_metadata(gemini_response.get("usageMetadata"))
+    usage = _convert_usage_metadata(gemini_response.get("usageMetadata"), model=model)
 
     # 构建 OpenAI 流式响应
     response_data = {
