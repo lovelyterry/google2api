@@ -2,7 +2,7 @@ import json
 import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
-from log import log
+from src.log import log
 
 LEGACY_MAPPING_FILE_PATH = "model_mappings.json"
 

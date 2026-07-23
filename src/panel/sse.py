@@ -6,7 +6,7 @@ SSE (Server-Sent Events) 事件推送服务模块
 import asyncio
 import json
 from typing import Any, Dict, Set
-from log import log
+from src.log import log
 
 
 class SSEService:

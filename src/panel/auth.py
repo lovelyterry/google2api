@@ -5,7 +5,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 
-from log import log
+from src.log import log
 from src.auth import (
     asyncio_complete_auth_flow,
     complete_auth_flow_from_callback_url,

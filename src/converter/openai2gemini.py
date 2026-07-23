@@ -18,7 +18,7 @@ from src.converter.thoughtSignature_fix import (
 )
 from src.converter.utils import merge_system_messages
 
-from log import log
+from src.log import log
 
 def _openai_usage_from_metadata(usage_metadata: Any, model: str = "", user_info: Optional[str] = None) -> Optional[Dict[str, int]]:
     """

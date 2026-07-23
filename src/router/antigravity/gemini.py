@@ -20,8 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 # 本地模块 - 配置和日志
-from config import get_anti_truncation_max_attempts
-from log import log
+from src.config import get_anti_truncation_max_attempts
+from src.log import log
 
 # 本地模块 - 工具和认证
 from src.utils import (

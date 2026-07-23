@@ -10,14 +10,14 @@ from typing import Any, Dict, Optional
 
 from fastapi import Response
 
-from config import (
+from src.config import (
     get_auto_ban_enabled,
     get_auto_ban_error_codes,
     get_retry_429_enabled,
     get_retry_429_interval,
     get_retry_429_max_retries,
 )
-from log import log
+from src.log import log
 from src.auth import CredentialManager
 
 

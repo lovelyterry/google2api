@@ -10,7 +10,7 @@ from typing import Any, AsyncGenerator, Dict, List, Tuple
 
 from fastapi.responses import StreamingResponse
 
-from log import log
+from src.log import log
 
 # 反截断配置
 DONE_MARKER = "[done]"

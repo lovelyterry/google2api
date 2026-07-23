@@ -9,8 +9,8 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, Optional, Tuple
 
-from config import get_proxy_config
-from log import log
+from src.config import get_proxy_config
+from src.log import log
 
 try:
     from curl_cffi.requests import AsyncSession as CurlAsyncSession, Response as CurlResponse

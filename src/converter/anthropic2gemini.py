@@ -11,7 +11,7 @@ import uuid
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import Response
-from log import log
+from src.log import log
 from src.converter.utils import merge_system_messages
 
 from src.converter.thoughtSignature_fix import (

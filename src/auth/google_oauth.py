@@ -10,13 +10,13 @@ from urllib.parse import urlencode
 
 import jwt
 
-from config import (
+from src.config import (
     get_googleapis_proxy_url,
     get_oauth_proxy_url,
     get_resource_manager_api_url,
     get_service_usage_api_url,
 )
-from log import log
+from src.log import log
 
 from src.client import get_async, post_async
 

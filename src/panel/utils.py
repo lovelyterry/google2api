@@ -10,8 +10,8 @@ from typing import Set
 from fastapi import HTTPException, WebSocket
 from starlette.websockets import WebSocketState
 
-import config
-from log import log
+import src.config as config
+from src.log import log
 
 
 # =============================================================================

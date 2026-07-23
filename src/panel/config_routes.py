@@ -5,8 +5,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-import config
-from log import log
+import src.config as config
+from src.log import log
 from src.schemas import ConfigSaveRequest
 from src.storage import get_storage
 from src.utils import verify_panel_token

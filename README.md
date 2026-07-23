@@ -124,4 +124,4 @@ INFO: Uvicorn running on http://0.0.0.0:8051 (Press CTRL+C to quit)
 
 ## 📜 开源协议
 
-本项目基于 [MIT License](LICENSE) 协议开源。
+本项目基于 [Cooperative Non-Commercial License (CNC-1.0)](LICENSE) 协议开源。仅限非商业用途，商业使用需获得版权所有者的明确书面许可。

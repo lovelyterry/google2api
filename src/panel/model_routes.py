@@ -8,7 +8,7 @@ from typing import Dict, Any
 
 from src.utils import verify_panel_token
 from src.model_mapping import model_mapping_manager
-from log import log
+from src.log import log
 
 router = APIRouter(prefix="/model-mappings", tags=["model-mappings"])
 

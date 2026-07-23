@@ -6,7 +6,7 @@ Antigravity 凭证额度定时刷新服务
 import asyncio
 from typing import Optional
 
-from log import log
+from src.log import log
 from src.storage import get_storage
 
 

@@ -18,8 +18,8 @@ import json
 from typing import Any, Dict, Optional, Callable, Tuple
 
 from fastapi import Response
-from config import get_code_assist_endpoint, get_auto_ban_error_codes
-from log import log
+from src.config import get_code_assist_endpoint, get_auto_ban_error_codes
+from src.log import log
 
 from src.auth import credential_manager
 from src.client import stream_post_async, post_async

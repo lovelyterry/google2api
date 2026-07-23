@@ -13,7 +13,7 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Response
 from fastapi.responses import JSONResponse
 
-from log import log
+from src.log import log
 from src.auth import (
     credential_manager,
     Credentials,
@@ -29,7 +29,7 @@ from src.schemas import (
 from src.storage import get_storage
 from src.utils import verify_panel_token, GEMINICLI_USER_AGENT, ANTIGRAVITY_USER_AGENT
 from src.api.antigravity import fetch_quota_info
-from config import get_code_assist_endpoint, get_antigravity_api_url
+from src.config import get_code_assist_endpoint, get_antigravity_api_url
 from .utils import validate_mode
 
 
@@ -1123,7 +1123,7 @@ async def get_credential_quota(
             try:
                 from src.auth import fetch_project_id_and_tier
                 from src.utils import ANTIGRAVITY_USER_AGENT
-                from config import get_antigravity_api_url
+                from src.config import get_antigravity_api_url
                 api_base_url = await get_antigravity_api_url()
                 project_id, subscription_tier = await fetch_project_id_and_tier(
                     access_token=access_token,

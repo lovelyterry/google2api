@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 import signal
 
 
-from log import log
+from src.log import log
 
 
 _shutdown_event = None
@@ -63,7 +63,7 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from config import get_server_host, get_server_port
+from src.config import get_server_host, get_server_port
 
 # Import managers and utilities
 from src.auth import credential_manager
@@ -96,7 +96,7 @@ async def lifespan(app: FastAPI):
 
     # 初始化配置缓存（优先执行）
     try:
-        import config
+        import src.config as config
         await config.init_config()
         log.info("配置缓存初始化成功")
     except Exception as e:

@@ -6,7 +6,7 @@ Vertex AI Router - Handles native Gemini format API requests via anonymous Verte
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from fastapi.responses import JSONResponse
 
-from log import log
+from src.log import log
 from src.utils import authenticate_gemini_flexible, get_base_model_from_feature_model
 from src.schemas import GeminiRequest, model_to_dict
 from src.router.hi_check import is_health_check_request, create_health_check_response

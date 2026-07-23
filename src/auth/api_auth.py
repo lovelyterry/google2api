@@ -4,10 +4,10 @@ API 请求与 Panel 控制面板访问权限验证模块
 
 from typing import Optional
 
-from config import get_api_password, get_panel_password
+from src.config import get_api_password, get_panel_password
 from fastapi import Depends, HTTPException, Header, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from log import log
+from src.log import log
 
 # HTTP Bearer security scheme
 security = HTTPBearer()

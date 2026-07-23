@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiofiles
-from log import log
+from src.log import log
 
 # 北京时间区 (UTC+8)
 BEIJING_TZ = timezone(timedelta(hours=8))

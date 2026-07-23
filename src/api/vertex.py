@@ -13,7 +13,7 @@ import string
 from typing import Any, Dict, Optional, Tuple
 
 from fastapi import Response
-from log import log
+from src.log import log
 from src.converter.thoughtSignature_fix import decode_tool_id_and_signature
 
 try:

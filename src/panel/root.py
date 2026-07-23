@@ -4,7 +4,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
 
-from log import log
+from src.log import log
 from .sse import sse_manager
 
 

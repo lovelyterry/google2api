@@ -6,7 +6,7 @@ Gemini Format Utilities - 统一的 Gemini 格式处理和转换工具
 import json
 from typing import Any, Dict, Optional
 
-from log import log
+from src.log import log
 from src.converter.thoughtSignature_fix import SKIP_THOUGHT_SIGNATURE_VALIDATOR
 
 # ==================== Gemini API 配置 ====================
@@ -748,7 +748,7 @@ async def normalize_gemini_request(
         规范化后的请求
     """
     # 导入配置函数
-    from config import get_return_thoughts_to_frontend
+    from src.config import get_return_thoughts_to_frontend
 
     result = request.copy()
     model = result.get("model", "")

@@ -12,8 +12,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
-from config import get_config_value, get_antigravity_api_url
-from log import log
+from src.config import get_config_value, get_antigravity_api_url
+from src.log import log
 
 from .google_oauth import (
     Credentials,
@@ -926,7 +926,7 @@ TOKEN_EXPIRY = 3600  # 1小时令牌过期时间
 
 async def verify_password(password: str) -> bool:
     """验证密码（面板登录使用）"""
-    from config import get_panel_password
+    from src.config import get_panel_password
 
     correct_password = await get_panel_password()
     return password == correct_password

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import aiofiles
 
-from log import log
+from src.log import log
 
 
 class Storage:

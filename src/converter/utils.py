@@ -131,7 +131,7 @@ async def merge_system_messages(request_body: Dict[str, Any]) -> Dict[str, Any]:
             ]
         }
     """
-    from config import get_compatibility_mode_enabled
+    from src.config import get_compatibility_mode_enabled
 
     compatibility_mode = await get_compatibility_mode_enabled()
     

@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Tuple
 import json
 from src.converter.utils import extract_content_and_reasoning
-from log import log
+from src.log import log
 from src.converter.openai2gemini import _convert_usage_metadata
 
 def safe_get_nested(obj: Any, *keys: str, default: Any = None) -> Any:

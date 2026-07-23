@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from log import log
+from src.log import log
 
 from .google_oauth import Credentials
 from src.storage import get_storage

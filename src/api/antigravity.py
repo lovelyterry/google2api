@@ -14,13 +14,13 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Callable, Tuple
 
 from fastapi import Response
-from config import (
+from src.config import (
     get_antigravity_api_url,
     get_antigravity_stream2nostream,
     get_auto_ban_error_codes,
     get_antigravity_telemetry_enabled,
 )
-from log import log
+from src.log import log
 
 from src.auth import credential_manager
 from src.client import stream_post_async, post_async, get_async
