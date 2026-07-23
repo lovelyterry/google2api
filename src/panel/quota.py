@@ -1,6 +1,6 @@
 """
 Antigravity 凭证额度定时刷新服务
-默认每 5 分钟自动向 API 查询并更新 Antigravity 凭证的最新额度
+默认一个账号每 1 分钟自动向 API 查询并更新 Antigravity 凭证的最新额度
 """
 
 import asyncio
@@ -15,7 +15,7 @@ class QuotaRefreshService:
 
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
-        self._interval: int = 5 * 60  # 5 分钟 (300秒)
+        self._interval: int = 1 * 60  # 1 分钟 (60秒)
 
     async def _refresh_credential_quota(self, filename: str, storage_adapter) -> bool:
         try:
@@ -58,7 +58,7 @@ class QuotaRefreshService:
         return False
 
     async def refresh_all(self):
-        """均衡平滑地在 5 分钟内完成所有 Antigravity 凭证额度刷新"""
+        """均衡平滑地在 1 分钟内完成所有 Antigravity 凭证额度刷新"""
         try:
             storage_adapter = await get_storage()
             filenames = await storage_adapter.list_credentials(mode="antigravity")
@@ -75,20 +75,20 @@ class QuotaRefreshService:
             if count == 0:
                 return
 
-            # 将 5 分钟 (300 秒) 均匀平摊给所有活跃账号
+            # 将 1 分钟 (60 秒) 均匀平摊给所有活跃账号
             step_delay = max(1.0, self._interval / count)
 
-            log.info(f"⏰ [QuotaRefresh] 开始平滑定时刷新 {count} 个 Antigravity 凭证额度 (平均每 {step_delay:.1f} 秒刷新 1 个账号)...")
+            log.debug(f"⏰ [QuotaRefresh] 开始平滑定时刷新 {count} 个 Antigravity 凭证额度 (平均每 {step_delay:.1f} 秒刷新 1 个账号)...")
             for fn in active_filenames:
                 await self._refresh_credential_quota(fn, storage_adapter)
                 await asyncio.sleep(step_delay)
-            log.info("✅ [QuotaRefresh] 完成本轮 Antigravity 凭证额度平滑刷新")
+            log.debug("✅ [QuotaRefresh] 完成本轮 Antigravity 凭证额度平滑刷新")
         except Exception as e:
             log.error(f"[QuotaRefresh] 自动刷新额度过程出错: {e}")
 
     async def _run(self):
         """后台轮询主循环"""
-        log.info("[QuotaRefresh] Antigravity 额度 5 分钟均匀平滑刷新任务已启动")
+        log.debug("[QuotaRefresh] Antigravity 额度 1 分钟均匀平滑刷新任务已启动")
         while True:
             try:
                 await self.refresh_all()

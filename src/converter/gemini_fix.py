@@ -854,7 +854,7 @@ async def normalize_gemini_request(
             # 针对 Gemini 模型：根据思考设置映射至真实的 Antigravity 后端模型 ID
             if "gemini" in model.lower():
                 mapped_model = map_antigravity_gemini_model(model, thinking_level, thinking_budget)
-                log.info(f"[ANTIGRAVITY] Mapped Gemini model: {model} -> {mapped_model}")
+                log.debug(f"[ANTIGRAVITY] Mapped Gemini model: {model} -> {mapped_model}")
                 model = mapped_model
                 result["model"] = model
                 

@@ -1,6 +1,5 @@
 from typing import Any, Dict
 
-from src.token_usage import log_usage_metadata
 from src.converter.thoughtSignature_fix import (
     is_internal_placeholder_text,
     is_skip_thought_signature_placeholder,

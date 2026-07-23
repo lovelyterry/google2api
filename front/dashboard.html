@@ -17,6 +17,8 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"><\/script>');
         }
     </script>
+    <!-- Chart.js 静态文件引入（带有 CDN 回退保障） -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -179,11 +181,21 @@
                                         <div class="toolbar-stat-item" title="正常凭证"><span class="toolbar-stat-label">正常:</span><span class="toolbar-stat-val">{{ ag.stats.normal }}</span></div>
                                         <div class="toolbar-stat-item" title="禁用凭证"><span class="toolbar-stat-label">禁用:</span><span class="toolbar-stat-val">{{ ag.stats.disabled }}</span></div>
                                     </div>
-                                    <div class="api-pill-group m-0">
-                                        <span class="api-label cursor-pointer" @click="cpAllUrls('antigravity')" title="点击一键复制所有 API 地址">📡 API:</span>
-                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1/chat/completions')">OpenAI</span>
-                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1/messages')">Claude</span>
-                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1beta/models')">Gemini</span>
+                                    <div class="quota-progress-wrapper" style="display: flex; flex-direction: column; gap: 4px; min-width: 140px; justify-content: center; margin-right: 8px;">
+                                        <div class="quota-progress-item" style="display: flex; align-items: center; gap: 6px; font-size: 11px;" title="所有正常启用账号当前整体已消耗周额度的平均占比">
+                                            <span style="font-size: 10px; opacity: 0.75; min-width: 32px;">周已用</span>
+                                            <div style="flex: 1; height: 6px; background: var(--bg-surface); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-color);">
+                                                <div :style="{ width: getWeeklyQuotaUsedAvg('antigravity'), background: 'linear-gradient(90deg, #f87171, #ef4444)' }" style="height: 100%; border-radius: 4px; transition: width 0.3s;"></div>
+                                            </div>
+                                            <span style="font-weight: 700; font-family: var(--font-mono); color: #ef4444; min-width: 38px; text-align: right;">{{ getWeeklyQuotaUsedAvg('antigravity') }}</span>
+                                        </div>
+                                        <div class="quota-progress-item" style="display: flex; align-items: center; gap: 6px; font-size: 11px;" title="根据每个账号重置时间加权推算，所有正常启用账号在未来24小时内已消耗的日均额度占比">
+                                            <span style="font-size: 10px; opacity: 0.75; min-width: 32px;">日已用</span>
+                                            <div style="flex: 1; height: 6px; background: var(--bg-surface); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-color);">
+                                                <div :style="{ width: (100 - parseFloat(getDailyQuotaAvg('antigravity'))).toFixed(1) + '%', background: 'linear-gradient(90deg, #fbbf24, #f59e0b)' }" style="height: 100%; border-radius: 4px; transition: width 0.3s;"></div>
+                                            </div>
+                                            <span style="font-weight: 700; font-family: var(--font-mono); color: #f59e0b; min-width: 38px; text-align: right;">{{ (100 - parseFloat(getDailyQuotaAvg('antigravity'))).toFixed(1) }}%</span>
+                                        </div>
                                     </div>
                                     <div v-if="ag.currentSelected" class="selected-account-indicator" title="当前调度算法选中的账号">
                                         <span class="indicator-icon">🎯</span>
@@ -205,7 +217,6 @@
                                         <span class="button-group-separator"></span>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchVerifyProjectIds('antigravity')">检验账号</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchTestCredentials('antigravity')">冒烟测试</button>
-                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchToggleContentDetails('antigravity')">查看内容</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchRefreshQuotas('antigravity')">刷新额度</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchToggleErrorDetails('antigravity')">查看报错</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'enable')">启用账号</button>
@@ -340,11 +351,11 @@
                                     <div class="account-card-actions">
                                         <div class="action-group action-group-stretch">
                                             <div class="action-subgroup flex-between">
+                                                <button class="btn-xs flex-1" @click="switchActiveCredential('antigravity', item.filename)">手动调度</button>
                                                 <button class="btn-xs flex-1" @click="verifyProjectId('antigravity', item.filename)">检验账号</button>
                                                 <button class="btn-xs flex-1" @click="testCredential('antigravity', item.filename)">冒烟测试</button>
                                             </div>
                                             <div class="action-subgroup flex-between">
-                                                <button class="btn-xs flex-1" @click="toggleContentDetails('antigravity', item.filename, item.pathId)">查看内容</button>
                                                 <button class="btn-xs flex-1" @click="refreshSingleQuota('antigravity', item.filename)">刷新额度</button>
                                                 <button class="btn-xs flex-1" @click="toggleErrorDetails('antigravity', item.filename, item.pathId)">查看报错</button>
                                             </div>
@@ -356,10 +367,6 @@
                                         </div>
                                     </div>
 
-                                    <!-- 展开查看内容 -->
-                                    <div v-if="ag.expandedDetails[item.pathId]" class="cred-details show">
-                                        <pre class="cred-content">{{ ag.expandedDetails[item.pathId] }}</pre>
-                                    </div>
                                     <!-- 展开查看报错 -->
                                     <div v-if="ag.expandedErrors[item.pathId]" class="cred-details show">
                                         <div class="cred-content cred-content-error">
@@ -432,9 +439,9 @@
                                                     <span v-for="(until, model) in getActiveCooldowns(item.model_cooldowns)" :key="model" class="badge cooldown-badge" :title="'模型: ' + model">⏰ {{ formatCooldownBadge(model, until) }}</span>
                                                 </td>
                                                 <td style="text-align: right; white-space: nowrap;">
+                                                    <button class="btn-xs mr-1" @click="switchActiveCredential('antigravity', item.filename)">手动调度</button>
                                                     <button class="btn-xs mr-1" @click="verifyProjectId('antigravity', item.filename)">检验账号</button>
                                                     <button class="btn-xs mr-1" @click="testCredential('antigravity', item.filename)">冒烟测试</button>
-                                                    <button class="btn-xs mr-1" @click="toggleContentDetails('antigravity', item.filename, item.pathId)">查看内容</button>
                                                     <button class="btn-xs mr-1" @click="refreshSingleQuota('antigravity', item.filename)">刷新额度</button>
                                                     <button class="btn-xs mr-1" @click="toggleErrorDetails('antigravity', item.filename, item.pathId)">查看报错</button>
                                                     <button class="btn-xs mr-1" @click="singleAction('antigravity', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
@@ -442,11 +449,8 @@
                                                     <button class="btn-xs btn-danger-outline" @click="deleteSingleCredential('antigravity', item.filename)">删除账号</button>
                                                 </td>
                                             </tr>
-                                            <tr v-if="ag.expandedDetails[item.pathId] || ag.expandedErrors[item.pathId]" :key="item.filename + '_sub'">
+                                            <tr v-if="ag.expandedErrors[item.pathId]" :key="item.filename + '_sub'">
                                                 <td colspan="6" style="padding: 8px 16px; background: rgba(0, 0, 0, 0.02);">
-                                                    <div v-if="ag.expandedDetails[item.pathId]" class="cred-details show" style="margin: 0;">
-                                                        <pre class="cred-content">{{ ag.expandedDetails[item.pathId] }}</pre>
-                                                    </div>
                                                     <div v-if="ag.expandedErrors[item.pathId]" class="cred-details show" style="margin: 0;">
                                                         <div class="cred-content cred-content-error">
                                                             <div v-if="ag.expandedErrors[item.pathId].loading" class="loading-placeholder">⏳ 正在加载报错信息...</div>
@@ -497,11 +501,21 @@
                                         <div class="toolbar-stat-item" title="正常凭证"><span class="toolbar-stat-label">正常:</span><span class="toolbar-stat-val">{{ oauth.stats.normal }}</span></div>
                                         <div class="toolbar-stat-item" title="禁用凭证"><span class="toolbar-stat-label">禁用:</span><span class="toolbar-stat-val">{{ oauth.stats.disabled }}</span></div>
                                     </div>
-                                    <div class="api-pill-group m-0">
-                                        <span class="api-label cursor-pointer" @click="cpAllUrls('oauth')" title="点击一键复制所有 API 地址">📡 API:</span>
-                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1/chat/completions')">OpenAI</span>
-                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1/messages')">Claude</span>
-                                        <span class="api-pill" @click="cpUrl(getBaseUrl() + '/v1beta/models')">Gemini</span>
+                                    <div class="quota-progress-wrapper" style="display: flex; flex-direction: column; gap: 4px; min-width: 140px; justify-content: center; margin-right: 8px;">
+                                        <div class="quota-progress-item" style="display: flex; align-items: center; gap: 6px; font-size: 11px;" title="所有正常启用账号当前整体已消耗周额度的平均占比">
+                                            <span style="font-size: 10px; opacity: 0.75; min-width: 32px;">周已用</span>
+                                            <div style="flex: 1; height: 6px; background: var(--bg-surface); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-color);">
+                                                <div :style="{ width: getWeeklyQuotaUsedAvg('oauth'), background: 'linear-gradient(90deg, #f87171, #ef4444)' }" style="height: 100%; border-radius: 4px; transition: width 0.3s;"></div>
+                                            </div>
+                                            <span style="font-weight: 700; font-family: var(--font-mono); color: #ef4444; min-width: 38px; text-align: right;">{{ getWeeklyQuotaUsedAvg('oauth') }}</span>
+                                        </div>
+                                        <div class="quota-progress-item" style="display: flex; align-items: center; gap: 6px; font-size: 11px;" title="根据每个账号重置时间加权推算，所有正常启用账号在未来24小时内已消耗的日均额度占比">
+                                            <span style="font-size: 10px; opacity: 0.75; min-width: 32px;">日已用</span>
+                                            <div style="flex: 1; height: 6px; background: var(--bg-surface); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-color);">
+                                                <div :style="{ width: (100 - parseFloat(getDailyQuotaAvg('oauth'))).toFixed(1) + '%', background: 'linear-gradient(90deg, #fbbf24, #f59e0b)' }" style="height: 100%; border-radius: 4px; transition: width 0.3s;"></div>
+                                            </div>
+                                            <span style="font-weight: 700; font-family: var(--font-mono); color: #f59e0b; min-width: 38px; text-align: right;">{{ (100 - parseFloat(getDailyQuotaAvg('oauth'))).toFixed(1) }}%</span>
+                                        </div>
                                     </div>
                                     <div v-if="oauth.currentSelected" class="selected-account-indicator" title="当前调度算法选中的账号">
                                         <span class="indicator-icon">🎯</span>
@@ -523,7 +537,6 @@
                                         <span class="button-group-separator"></span>
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchVerifyProjectIds('oauth')">检验账号</button>
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchTestCredentials('oauth')">冒烟测试</button>
-                                        <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchToggleContentDetails('oauth')">查看内容</button>
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchToggleErrorDetails('oauth')">查看报错</button>
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchAction('oauth', 'enable')">启用账号</button>
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchAction('oauth', 'disable')">禁用账号</button>
@@ -635,22 +648,16 @@
                                     <div class="account-card-actions">
                                         <div class="action-group" style="align-items: stretch; gap: 6px;">
                                             <div class="action-subgroup" style="justify-content: space-between;">
+                                                <button class="btn-xs" style="flex: 1;" @click="switchActiveCredential('oauth', item.filename)">手动调度</button>
                                                 <button class="btn-xs" style="flex: 1;" @click="verifyProjectId('oauth', item.filename)">检验账号</button>
                                                 <button class="btn-xs" style="flex: 1;" @click="testCredential('oauth', item.filename)">冒烟测试</button>
                                             </div>
                                             <div class="action-subgroup" style="justify-content: space-between;">
-                                                <button class="btn-xs" style="flex: 1;" @click="toggleContentDetails('oauth', item.filename, item.pathId)">查看内容</button>
                                                 <button class="btn-xs" style="flex: 1;" @click="toggleErrorDetails('oauth', item.filename, item.pathId)">查看报错</button>
-                                            </div>
-                                            <div class="action-subgroup" style="justify-content: space-between;">
                                                 <button class="btn-xs" style="flex: 1;" @click="singleAction('oauth', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
                                                 <button class="btn-xs btn-danger-outline" style="flex: 1;" @click="deleteSingleCredential('oauth', item.filename)">删除账号</button>
                                             </div>
                                         </div>
-                                    </div>
-                                    <!-- 展开查看内容 -->
-                                    <div v-if="oauth.expandedDetails[item.pathId]" class="cred-details show">
-                                        <pre class="cred-content">{{ oauth.expandedDetails[item.pathId] }}</pre>
                                     </div>
                                     <!-- 展开查看报错 -->
                                     <div v-if="oauth.expandedErrors[item.pathId]" class="cred-details show">
@@ -697,19 +704,16 @@
                                                     <span v-for="(until, model) in getActiveCooldowns(item.model_cooldowns)" :key="model" class="badge cooldown-badge" :title="'模型: ' + model">⏰ {{ formatCooldownBadge(model, until) }}</span>
                                                 </td>
                                                 <td style="text-align: right; white-space: nowrap;">
+                                                    <button class="btn-xs mr-1" @click="switchActiveCredential('oauth', item.filename)">手动调度</button>
                                                     <button class="btn-xs mr-1" @click="verifyProjectId('oauth', item.filename)">检验账号</button>
                                                     <button class="btn-xs mr-1" @click="testCredential('oauth', item.filename)">冒烟测试</button>
-                                                    <button class="btn-xs mr-1" @click="toggleContentDetails('oauth', item.filename, item.pathId)">查看内容</button>
                                                     <button class="btn-xs mr-1" @click="toggleErrorDetails('oauth', item.filename, item.pathId)">查看报错</button>
                                                     <button class="btn-xs mr-1" @click="singleAction('oauth', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
                                                     <button class="btn-xs btn-danger-outline" @click="deleteSingleCredential('oauth', item.filename)">删除账号</button>
                                                 </td>
                                             </tr>
-                                            <tr v-if="oauth.expandedDetails[item.pathId] || oauth.expandedErrors[item.pathId]" :key="item.filename + '_sub'">
+                                            <tr v-if="oauth.expandedErrors[item.pathId]" :key="item.filename + '_sub'">
                                                 <td colspan="5" style="padding: 8px 16px; background: rgba(0, 0, 0, 0.02);">
-                                                    <div v-if="oauth.expandedDetails[item.pathId]" class="cred-details show" style="margin: 0;">
-                                                        <pre class="cred-content">{{ oauth.expandedDetails[item.pathId] }}</pre>
-                                                    </div>
                                                     <div v-if="oauth.expandedErrors[item.pathId]" class="cred-details show" style="margin: 0;">
                                                         <div class="cred-content cred-content-error">
                                                             <div v-if="oauth.expandedErrors[item.pathId].loading" class="loading-placeholder">⏳ 正在加载报错信息...</div>
@@ -833,53 +837,60 @@
                                     </div>
                                 </div>
                                 <div class="hero-actions">
-                                    <button class="btn btn-secondary btn-hero-action" @click="loadTokenDashboard" :disabled="tokenDashboard.loading">
-                                        🔄 {{ tokenDashboard.loading ? '同步中...' : '刷新看板' }}
-                                    </button>
                                     <button class="btn btn-danger-outline btn-hero-action" @click="clearTokenDashboard">
                                         🗑️ 清空历史
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- 顶部 4 大核心指标卡片 -->
-                            <div class="grid-stats-4">
+                            <!-- 顶部 6 大核心指标卡片行 -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; margin-bottom: 20px;">
                                 <div class="token-card-stat stat-card-blue">
                                     <div class="stat-header-row">
-                                        <span>💎 总 Token 消耗</span>
-                                        <span class="stat-tag-blue">TOTAL</span>
+                                        <span>📥 输入 Token (prompt)</span>
+                                        <span class="stat-tag-blue">PROMPT</span>
                                     </div>
-                                    <div class="stat-value-lg">{{ formatTokenCount(tokenDashboard.summary.total_tokens) }}</div>
+                                    <div class="stat-value-lg">{{ formatTokenCount(tokenDashboard.summary.prompt_tokens) }}</div>
                                 </div>
 
                                 <div class="token-card-stat stat-card-green">
                                     <div class="stat-header-row">
-                                        <span>📥 输入 / 📤 输出 Token</span>
-                                        <span class="stat-tag-green">IN / OUT</span>
+                                        <span>📤 输出 Token (candidates)</span>
+                                        <span class="stat-tag-green">CANDIDATES</span>
                                     </div>
-                                    <div class="stat-value-md">
-                                        {{ formatTokenCount(tokenDashboard.summary.prompt_tokens) }} <span class="hero-desc">/</span> {{ formatTokenCount(tokenDashboard.summary.completion_tokens) }}
-                                    </div>
+                                    <div class="stat-value-lg">{{ formatTokenCount(tokenDashboard.summary.completion_tokens) }}</div>
                                 </div>
 
-                                <div class="token-card-stat stat-card-purple">
-                                    <div class="stat-header-row">
-                                        <span>⚡ API 请求总次数</span>
-                                        <span class="stat-tag-purple">CALLS</span>
+                                <div class="token-card-stat stat-card-cyan" style="background: rgba(6, 182, 212, 0.05); border: 1px solid rgba(6, 182, 212, 0.15); border-radius: 12px; padding: 16px;">
+                                    <div class="stat-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                        <span style="font-size: 13px; font-weight: 600; opacity: 0.85;">⚡ 缓存 Token (cached)</span>
+                                        <span style="font-size: 10px; font-weight: 700; background: rgba(6, 182, 212, 0.15); color: #06b6d4; padding: 2px 6px; border-radius: 4px;">CACHED</span>
                                     </div>
-                                    <div class="stat-value-lg">{{ (tokenDashboard.summary.total_requests || 0).toLocaleString() }} <span class="hero-desc">次</span></div>
+                                    <div style="font-size: 24px; font-weight: 800; color: #06b6d4; font-family: var(--font-mono);">{{ formatTokenCount(tokenDashboard.summary.cached_tokens || 0) }}</div>
                                 </div>
 
                                 <div class="token-card-stat stat-card-amber">
                                     <div class="stat-header-row">
-                                        <span>📅 日 / 周 / 月 动态速览</span>
-                                        <span class="stat-tag-amber">PERIOD</span>
+                                        <span>🧠 思考 Token (thoughts)</span>
+                                        <span class="stat-tag-amber">THOUGHTS</span>
                                     </div>
-                                    <div class="stat-value-sm">
-                                        <span>今: {{ formatTokenCount(tokenDashboard.summary.today_tokens) }}</span>
-                                        <span>周: {{ formatTokenCount(tokenDashboard.summary.this_week_tokens) }}</span>
-                                        <span>月: {{ formatTokenCount(tokenDashboard.summary.this_month_tokens) }}</span>
+                                    <div class="stat-value-lg" style="color: #f59e0b;">{{ formatTokenCount(tokenDashboard.summary.thoughts_tokens || 0) }}</div>
+                                </div>
+
+                                <div class="token-card-stat stat-card-purple">
+                                    <div class="stat-header-row">
+                                        <span>💎 总 Token (total)</span>
+                                        <span class="stat-tag-purple">TOTAL</span>
                                     </div>
+                                    <div class="stat-value-lg">{{ formatTokenCount(tokenDashboard.summary.total_tokens) }}</div>
+                                </div>
+
+                                <div class="token-card-stat stat-card-purple" style="background: rgba(236, 72, 153, 0.05); border: 1px solid rgba(236, 72, 153, 0.15); border-radius: 12px; padding: 16px;">
+                                    <div class="stat-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                        <span style="font-size: 13px; font-weight: 600; opacity: 0.85;">🚀 API 请求总次数</span>
+                                        <span style="font-size: 10px; font-weight: 700; background: rgba(236, 72, 153, 0.15); color: #ec4899; padding: 2px 6px; border-radius: 4px;">CALLS</span>
+                                    </div>
+                                    <div style="font-size: 24px; font-weight: 800; color: #ec4899; font-family: var(--font-mono);">{{ (tokenDashboard.summary.total_requests || 0).toLocaleString() }} <span style="font-size: 12px; font-weight: 600; opacity: 0.7;">次</span></div>
                                 </div>
                             </div>
 
@@ -897,82 +908,13 @@
                                     </div>
                                 </div>
 
-                                <!-- 纯 CSS/SVG 折线图 -->
+                                <!-- Chart.js 折线图容器 -->
                                 <div class="chart-container-box">
-                                    <!-- 图例 (Legend) -->
-                                    <div class="legend-group">
-                                        <span class="legend-item">
-                                            <span class="legend-line-blue"></span>
-                                            <span class="stat-tag-blue">总 Token 消耗</span>
-                                        </span>
-                                        <span class="legend-item">
-                                            <span class="legend-line-green"></span>
-                                            <span class="stat-tag-green">输入 (Prompt)</span>
-                                        </span>
-                                        <span class="legend-item">
-                                            <span class="legend-line-green"></span>
-                                            <span class="stat-tag-amber">输出 (Completion)</span>
-                                        </span>
-                                    </div>
-
-                                    <div v-if="!activeTrendList.length" class="text-center p-2 hero-desc">
+                                    <div v-show="!activeTrendList.length" class="text-center p-2 hero-desc" style="padding-top: 100px;">
                                         暂无该视图周期下的 Token 消耗趋势数据
                                     </div>
-                                    <div v-else class="chart-box-relative">
-                                        <svg viewBox="0 0 800 160" preserveAspectRatio="none" class="chart-svg-full">
-                                            <defs>
-                                                <!-- 渐变填充背景色 -->
-                                                <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.22"/>
-                                                    <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0"/>
-                                                </linearGradient>
-                                            </defs>
-
-                                            <!-- 网格参考线 -->
-                                            <line x1="40" y1="20" x2="760" y2="20" stroke="rgba(0,0,0,0.06)" stroke-dasharray="3,3" />
-                                            <line x1="40" y1="60" x2="760" y2="60" stroke="rgba(0,0,0,0.06)" stroke-dasharray="3,3" />
-                                            <line x1="40" y1="100" x2="760" y2="100" stroke="rgba(0,0,0,0.06)" stroke-dasharray="3,3" />
-                                            <line x1="40" y1="140" x2="760" y2="140" stroke="rgba(0,0,0,0.12)" />
-
-                                            <!-- 面积渐变 -->
-                                            <polygon v-if="trendChartData.areaPolygon" :points="trendChartData.areaPolygon" fill="url(#areaGradient)" />
-
-                                            <!-- 输入 Token 曲线 (绿) -->
-                                            <polyline v-if="trendChartData.promptPolyline" :points="trendChartData.promptPolyline" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="4,2" stroke-linecap="round" stroke-linejoin="round" />
-
-                                            <!-- 输出 Token 曲线 (橙) -->
-                                            <polyline v-if="trendChartData.completionPolyline" :points="trendChartData.completionPolyline" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="2,2" stroke-linecap="round" stroke-linejoin="round" />
-
-                                            <!-- 总 Token 核心折线 (蓝) -->
-                                            <polyline v-if="trendChartData.totalPolyline" :points="trendChartData.totalPolyline" fill="none" stroke="#2563eb" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
-
-                                            <!-- 拐点圆圈 -->
-                                            <g v-for="(dot, dIdx) in trendChartData.dots" :key="dIdx">
-                                                <circle :cx="dot.cx" :cy="dot.cy" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="2.5" />
-                                            </g>
-                                        </svg>
-
-                                        <!-- 悬浮 Tooltip 盒子及 X 轴日期 -->
-                                        <div class="chart-overlay-container">
-                                            <div v-for="(dot, dIdx) in trendChartData.dots" :key="dIdx" 
-                                                 class="chart-hover-col chart-column-hover"
-                                                 :style="{ left: (dot.cx / 800 * 100) + '%', width: (100 / Math.max(1, trendChartData.dots.length)) + '%', transform: 'translateX(-50%)' }">
-                                                
-                                                <!-- 悬浮 Tooltip -->
-                                                <div class="chart-tooltip">
-                                                    <div class="chart-tooltip-title">{{ dot.label }}</div>
-                                                    <div class="chart-tooltip-row"><span>总 Tokens:</span><span class="font-mono-val">{{ dot.item.total_tokens.toLocaleString() }}</span></div>
-                                                    <div class="chart-tooltip-row"><span>📥 输入:</span><span class="font-mono-val">{{ dot.item.prompt_tokens.toLocaleString() }}</span></div>
-                                                    <div class="chart-tooltip-row"><span>📤 输出:</span><span class="font-mono-val">{{ dot.item.completion_tokens.toLocaleString() }}</span></div>
-                                                    <div class="chart-tooltip-row"><span>⚡ 请求数:</span><span class="font-mono-val">{{ dot.item.request_count }} 次</span></div>
-                                                </div>
-
-                                                <!-- X 轴日期文字 -->
-                                                <div class="chart-x-axis-lbl">
-                                                    {{ (dot.item.date || '').slice(-5) }}
-                                                </div>
-                                            </div>
-                                        </div>
+                                    <div v-show="activeTrendList.length" class="chart-box-relative" style="height: 320px;">
+                                        <canvas id="tokenTrendChartCanvas"></canvas>
                                     </div>
                                 </div>
                             </div>
@@ -994,9 +936,8 @@
                                                 <tr>
                                                     <th style="width: 54px; text-align: center;">排名</th>
                                                     <th>谷歌账号 Email / 文件</th>
-                                                    <th>输入 / 输出</th>
-                                                    <th>总 Token 消耗</th>
-                                                    <th style="width: 110px;">消耗占比</th>
+                                                    <th>Token 详细明细 (UsageMetadata)</th>
+                                                    <th>总 Token</th>
                                                     <th style="text-align: right;">请求数</th>
                                                 </tr>
                                             </thead>
@@ -1014,33 +955,22 @@
                                                         </span>
                                                     </td>
                                                     <td>
-                                                        <span style="font-size: 11px; opacity: 0.85; font-family: var(--font-mono);">
-                                                            📥 {{ formatTokenCount(acc.prompt_tokens) }} / 📤 {{ formatTokenCount(acc.completion_tokens) }}
-                                                        </span>
+                                                        <div style="font-size: 11px; opacity: 0.85; font-family: var(--font-mono); display: flex; flex-direction: column; gap: 2px;">
+                                                            <div>📥 输入(prompt): <strong>{{ formatTokenCount(acc.prompt_tokens) }}</strong> | 📤 输出(candidates): <strong>{{ formatTokenCount(acc.completion_tokens) }}</strong></div>
+                                                            <div style="opacity: 0.75;">⚡ 缓存(cached): {{ formatTokenCount(acc.cached_tokens || 0) }} | 🧠 思考(thoughts): {{ formatTokenCount(acc.thoughts_tokens || 0) }}</div>
+                                                        </div>
                                                     </td>
                                                     <td>
                                                         <span style="font-weight: 800; color: #2563eb; font-family: var(--font-mono); font-size: 13px;">
                                                             {{ formatTokenCount(acc.total_tokens) }}
                                                         </span>
                                                     </td>
-                                                    <td>
-                                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                                            <div class="token-progress-bar-bg">
-                                                                <div class="token-progress-bar-fill" style="background: linear-gradient(90deg, #3b82f6, #8b5cf6);"
-                                                                     :style="{ width: ((acc.total_tokens / maxAccountTokens) * 100) + '%' }">
-                                                                </div>
-                                                            </div>
-                                                            <span style="font-size: 11px; opacity: 0.75; font-family: var(--font-mono); font-weight: 600;">
-                                                                {{ Math.round((acc.total_tokens / maxAccountTokens) * 100) }}%
-                                                            </span>
-                                                        </div>
-                                                    </td>
                                                     <td style="text-align: right; font-family: var(--font-mono); font-weight: 700; font-size: 13px;">
                                                         {{ acc.request_count }} 次
                                                     </td>
                                                 </tr>
                                                 <tr v-if="!tokenDashboard.accountRanking.length">
-                                                    <td colspan="6" style="text-align: center; padding: 32px; opacity: 0.6; font-size: 13px;">暂无账号 Token 消耗排名数据</td>
+                                                    <td colspan="5" style="text-align: center; padding: 32px; opacity: 0.6; font-size: 13px;">暂无账号 Token 消耗排名数据</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -1062,9 +992,8 @@
                                                 <tr>
                                                     <th style="width: 54px; text-align: center;">排名</th>
                                                     <th>模型名称 (Model)</th>
-                                                    <th>输入 / 输出</th>
-                                                    <th>总 Token 消耗</th>
-                                                    <th style="width: 110px;">消耗占比</th>
+                                                    <th>Token 详细明细 (UsageMetadata)</th>
+                                                    <th>总 Token</th>
                                                     <th style="text-align: right;">请求数</th>
                                                 </tr>
                                             </thead>
@@ -1082,33 +1011,22 @@
                                                         </span>
                                                     </td>
                                                     <td>
-                                                        <span style="font-size: 11px; opacity: 0.85; font-family: var(--font-mono);">
-                                                            📥 {{ formatTokenCount(mdl.prompt_tokens) }} / 📤 {{ formatTokenCount(mdl.completion_tokens) }}
-                                                        </span>
+                                                        <div style="font-size: 11px; opacity: 0.85; font-family: var(--font-mono); display: flex; flex-direction: column; gap: 2px;">
+                                                            <div>📥 输入(prompt): <strong>{{ formatTokenCount(mdl.prompt_tokens) }}</strong> | 📤 输出(candidates): <strong>{{ formatTokenCount(mdl.completion_tokens) }}</strong></div>
+                                                            <div style="opacity: 0.75;">⚡ 缓存(cached): {{ formatTokenCount(mdl.cached_tokens || 0) }} | 🧠 思考(thoughts): {{ formatTokenCount(mdl.thoughts_tokens || 0) }}</div>
+                                                        </div>
                                                     </td>
                                                     <td>
                                                         <span style="font-weight: 800; color: #10b981; font-family: var(--font-mono); font-size: 13px;">
                                                             {{ formatTokenCount(mdl.total_tokens) }}
                                                         </span>
                                                     </td>
-                                                    <td>
-                                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                                            <div class="token-progress-bar-bg">
-                                                                <div class="token-progress-bar-fill" style="background: linear-gradient(90deg, #10b981, #06b6d4);"
-                                                                     :style="{ width: ((mdl.total_tokens / maxModelTokens) * 100) + '%' }">
-                                                                </div>
-                                                            </div>
-                                                            <span style="font-size: 11px; opacity: 0.75; font-family: var(--font-mono); font-weight: 600;">
-                                                                {{ Math.round((mdl.total_tokens / maxModelTokens) * 100) }}%
-                                                            </span>
-                                                        </div>
-                                                    </td>
                                                     <td style="text-align: right; font-family: var(--font-mono); font-weight: 700; font-size: 13px;">
                                                         {{ mdl.request_count }} 次
                                                     </td>
                                                 </tr>
                                                 <tr v-if="!tokenDashboard.modelRanking.length">
-                                                    <td colspan="6" style="text-align: center; padding: 32px; opacity: 0.6; font-size: 13px;">暂无模型 Token 消耗排名数据</td>
+                                                    <td colspan="5" style="text-align: center; padding: 32px; opacity: 0.6; font-size: 13px;">暂无模型 Token 消耗排名数据</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -1265,8 +1183,6 @@
                                                 <th>路由类型</th>
                                                 <th style="width: 60px; text-align: center;">重定向</th>
                                                 <th>实际处理目标模型 (Target)</th>
-                                                <th>调用次数</th>
-                                                <th>最后使用时间</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1275,11 +1191,9 @@
                                                 <td><span class="badge badge-info">{{ item.router_type }}</span></td>
                                                 <td style="text-align: center;"><span class="model-arrow-badge">➔</span></td>
                                                 <td><span class="model-tag-target">🎯 {{ item.target_model }}</span></td>
-                                                <td><span class="badge badge-secondary">{{ item.count }} 次</span></td>
-                                                <td style="font-size: 12px; opacity: 0.85;">{{ item.last_used_at }}</td>
                                             </tr>
                                             <tr v-if="!models.dynamicMappings || models.dynamicMappings.length === 0">
-                                                <td colspan="6" style="text-align: center; padding: 32px; opacity: 0.65;">
+                                                <td colspan="4" style="text-align: center; padding: 32px; opacity: 0.65;">
                                                     <div style="font-size: 28px; margin-bottom: 6px;">📡</div>
                                                     <div>暂无实时捕捉到的动态映射记录</div>
                                                 </td>

@@ -3,6 +3,8 @@
 """
 
 import asyncio
+from contextvars import ContextVar
+import os
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -12,16 +14,30 @@ from log import log
 from .google_oauth import Credentials
 from src.storage import get_storage
 
+# 线程/协程级别的当前调度账号上下文
+_current_account_var: ContextVar[Optional[str]] = ContextVar("current_scheduled_account", default=None)
+
 class CredentialManager:
     """
     统一凭证管理器
     所有存储操作通过storage_adapter进行
     """
 
+    def set_current_account(self, account: Optional[str]) -> None:
+        """设置当前协程/任务上下文调度的账号标识"""
+        _current_account_var.set(account)
+
+    def get_current_account(self) -> Optional[str]:
+        """获取当前协程/任务上下文调度的账号标识"""
+        return _current_account_var.get()
+
+
+
     def __init__(self):
         # 核心状态
         self._initialized = False
         self._storage_adapter = None
+        self._last_selected_account: Dict[str, str] = {}
 
         # 并发控制（简化）
         # 后端数据库自行处理并发，credential_manager 不再使用本地锁
@@ -47,59 +63,94 @@ class CredentialManager:
         log.debug("Credential manager closed")
 
     async def get_valid_credential(
-        self, mode: str = "geminicli", model_name: Optional[str] = None
+        self, mode: str = "geminicli", model_name: Optional[str] = None, force_rotate: bool = False
     ) -> Optional[Tuple[str, Dict[str, Any]]]:
         """
-        获取有效的凭证 - 随机负载均衡版
-        每次随机选择一个可用的凭证（未禁用、未冷却、符合preview要求）
-        如果刷新失败会自动禁用失效凭证并重试获取下一个可用凭证
+        获取有效的凭证 (账号粘性与零冗余调度版)
+        只要当前激活账号正常（未禁用、未处于当前模型冷却期、Token有效），
+        API 请求直接复用当前账号，零算法重新调度，零 SSE 广播。
 
-        Args:
-            mode: 凭证模式 ("geminicli" 或 "antigravity")
-            model_name: 完整模型名，用于模型级冷却检查和preview筛选
-                       - geminicli: 完整模型名
-                                   - 包含 "preview" 的模型只能使用 preview=True 的凭证
-                                   - 不包含 "preview" 的模型优先使用 preview=False 的凭证
-                       - antigravity: 完整模型名（如 "gemini-2.0-flash-exp"）
+        仅在当前账号出现异常（冷却/禁用/Token刷新失败）或显式要求 force_rotate 时，
+        才调用调度算法重新选出下一个最优账号并广播 SSE。
         """
         await self._ensure_initialized()
+        current_time = time.time()
 
-        # 最多重试3次
+        # 1. 如果没有强制要求重新调度，优先检测复用当前激活账号
+        if not force_rotate:
+            active_filename = self._last_selected_account.get(mode)
+            if active_filename:
+                # 检查该账号目前的状态 (是否禁用、模型冷却)
+                st = await self._storage_adapter.get_credential_state(active_filename, mode=mode)
+                is_disabled = st.get("disabled", False)
+
+                cooldown_until = 0
+                if model_name:
+                    cooldown_until = st.get("model_cooldowns", {}).get(model_name, 0)
+
+                # 若未禁用且未在该模型的冷却中，尝试读取凭证数据
+                if not is_disabled and cooldown_until <= current_time:
+                    cred_data = await self._storage_adapter.get_credential(active_filename, mode=mode)
+                    if cred_data:
+                        # 检查 Token 是否需要刷新
+                        if await self._should_refresh_token(cred_data):
+                            refreshed_data = await self._refresh_token(cred_data, active_filename, mode=mode)
+                            if refreshed_data:
+                                cred_data = refreshed_data
+                                self.set_current_account(active_filename)
+                                return active_filename, cred_data
+                            else:
+                                log.warning(f"当前激活账号 Token 刷新失败，将重新调度: {active_filename}")
+                                self._last_selected_account.pop(mode, None)
+                        else:
+                            # Token 有效，直接复用当前激活账号 (零重新调度、零 SSE 广播)
+                            self.set_current_account(active_filename)
+                            return active_filename, cred_data
+
+        # 2. 当前激活账号不存在 / 禁用 / 处于冷却 / 报错重试 -> 执行调度算法选中新账号
         max_retries = 3
         for attempt in range(max_retries):
             result = await self._storage_adapter._backend.get_next_available_credential(
                 mode=mode, model_name=model_name
             )
 
-            # 如果没有可用凭证，直接返回None
             if not result:
                 if attempt == 0:
                     log.warning(f"没有可用凭证 (mode={mode}, model_name={model_name})")
+                self._last_selected_account.pop(mode, None)
                 return None
 
             filename, credential_data = result
 
-            # Token 刷新检查
             if await self._should_refresh_token(credential_data):
                 log.debug(f"Token需要刷新 - 文件: {filename} (mode={mode})")
                 refreshed_data = await self._refresh_token(credential_data, filename, mode=mode)
                 if refreshed_data:
-                    # 刷新成功，返回凭证
                     credential_data = refreshed_data
                     log.debug(f"Token刷新成功: {filename} (mode={mode})")
+                    self._notify_dispatch(mode, filename)
+                    self.set_current_account(filename)
                     return filename, credential_data
                 else:
-                    # 刷新失败（_refresh_token内部已自动禁用失效凭证）
                     log.warning(f"Token刷新失败，尝试获取下一个凭证: {filename} (mode={mode}, attempt={attempt+1}/{max_retries})")
-                    # 继续循环，尝试获取下一个可用凭证
                     continue
             else:
-                # Token有效，直接返回
+                self._notify_dispatch(mode, filename)
+                self.set_current_account(filename)
                 return filename, credential_data
 
-        # 重试次数用尽
+        self._last_selected_account.pop(mode, None)
         log.error(f"重试{max_retries}次后仍无可用凭证 (mode={mode}, model_name={model_name})")
         return None
+
+    def _notify_dispatch(self, mode: str, filename: str):
+        """异步广播 SSE 调度高亮通知"""
+        try:
+            self._last_selected_account[mode] = os.path.basename(filename)
+            from src.panel.sse import sse_manager
+            asyncio.create_task(sse_manager.broadcast("dispatch_updated", {"mode": mode, "selected": filename}))
+        except Exception:
+            pass
 
     async def add_credential(self, credential_name: str, credential_data: Dict[str, Any]):
         """
@@ -162,12 +213,48 @@ class CredentialManager:
             if success:
                 action = "disabled" if disabled else "enabled"
                 log.info(f"Credential {action}: {credential_name} (mode={mode})")
+                # 只有当禁用的账号属于当前正在使用的账号时，才重新触发调度切走账号
+                if disabled:
+                    target_name = os.path.basename(credential_name)
+                    current_context_acc = self.get_current_account()
+                    last_active_acc = self._last_selected_account.get(mode)
+
+                    is_in_use = (
+                        (current_context_acc and os.path.basename(current_context_acc) == target_name) or
+                        (last_active_acc and os.path.basename(last_active_acc) == target_name)
+                    )
+
+                    if is_in_use:
+                        log.info(f"[CredMgr] 被禁用的账号 {target_name} 为当前在用账号，触发重新调度...")
+                        asyncio.create_task(self.get_valid_credential(mode=mode))
             else:
                 log.warning(f"[CredMgr] 设置禁用状态失败: credential_name={credential_name}, disabled={disabled}")
             return success
         except Exception as e:
             log.error(f"Error setting credential disabled state {credential_name}: {e}")
             return False
+
+    async def set_active_account(self, credential_name: str, mode: str = "geminicli"):
+        """手动设定指定模式的当前激活/调度账号，并广播 SSE 高亮"""
+        filename = os.path.basename(credential_name)
+        self._last_selected_account[mode] = filename
+        self._notify_dispatch(mode, filename)
+
+    async def get_active_account_filename(self, mode: str = "geminicli") -> Optional[str]:
+        """获取当前激活的账号文件名（只读检索，若已手动/上次调度且有效则返回，否则返回 None，绝对不触发自动调度）"""
+        await self._ensure_initialized()
+        active_filename = self._last_selected_account.get(mode)
+
+        if active_filename:
+            st = await self._storage_adapter.get_credential_state(active_filename, mode=mode)
+            if not st.get("disabled", False):
+                cred_data = await self._storage_adapter.get_credential(active_filename, mode=mode)
+                if cred_data:
+                    return active_filename
+            # 若设定的账号已被禁用或删除，清除失效激活记录
+            self._last_selected_account.pop(mode, None)
+
+        return None
 
     async def get_creds_status(self) -> Dict[str, Dict[str, Any]]:
         """获取所有凭证的状态"""
@@ -286,14 +373,19 @@ class CredentialManager:
 
                 await self.update_credential_state(credential_name, state_updates, mode=mode)
 
+                # 针对 429/503 等限流/服务不可用错误：若未能从响应体解析出具体 reset 时间，使用默认 5 分钟 (300 秒) 冷却
+                if (error_code in (429, 503)) and (cooldown_until is None or cooldown_until <= time.time()):
+                    cooldown_until = time.time() + 300
+
                 # 设置模型级冷却
-                if cooldown_until is not None and model_name:
+                if cooldown_until is not None:
+                    target_model = model_name or "default"
                     if hasattr(self._storage_adapter._backend, 'set_model_cooldown'):
                         await self._storage_adapter._backend.set_model_cooldown(
-                            credential_name, model_name, cooldown_until, mode=mode
+                            credential_name, target_model, cooldown_until, mode=mode
                         )
                         log.info(
-                            f"设置模型级冷却: {credential_name}, model_name={model_name}, "
+                            f"[CredMgr] 设置模型级冷却: {credential_name}, model_name={target_model}, "
                             f"冷却至: {datetime.fromtimestamp(cooldown_until, timezone.utc).isoformat()}"
                         )
 
@@ -495,6 +587,19 @@ class _CredentialManagerSingleton:
                 log.debug("CredentialManager singleton initialized")
 
         return self._instance
+
+    def get_current_account(self) -> Optional[str]:
+        """获取当前协程/任务上下文调度的账号标识"""
+        if self._instance:
+            return self._instance.get_current_account()
+        return _current_account_var.get()
+
+    def set_current_account(self, account: Optional[str]) -> None:
+        """设置当前协程/任务上下文调度的账号标识"""
+        if self._instance:
+            self._instance.set_current_account(account)
+        else:
+            _current_account_var.set(account)
 
     def __getattr__(self, name):
         """代理所有方法调用到真实的 CredentialManager 实例"""

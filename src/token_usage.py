@@ -1,20 +1,360 @@
 """
-Token 统计与估算器模块 (Token Tracker)
+Token 统计、估算与看板持久化服务 (Token Usage & Tracker Module)
 包含：
 1. tiktoken BPE 输入 Prompt Token 估算 (estimate_input_tokens)
-2. API 响应包 usageMetadata 结构体解析与中文日志打印 (extract_usage_tokens, log_usage_metadata)
+2. API 响应包 usageMetadata 解析与日志记录 (count_token_usage)
+3. Token 流量与请求次数的按天/按账号/按模型持久化统计与看板 API 支持 (token_tracker)
 """
+
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
+import os
 import struct
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+import aiofiles
 from log import log
 
+# 北京时间区 (UTC+8)
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
 # ==============================================================================
-# 1. Token 预估 (Estimator) - 基于 tiktoken (BPE 词表) 与结构化 Payload 解析
+# 1. Token 持久化统计与看板服务 (Token Tracker & Dashboard Service)
+# ==============================================================================
+
+class TokenTracker:
+    """Token 消耗统计与持久化管理类"""
+
+    def __init__(self):
+        self._stats_dir: Optional[str] = None
+        self._stats_file: Optional[str] = None
+        self._lock = asyncio.Lock()
+        self._initialized = False
+
+        self._data: Dict[str, Any] = {
+            "daily": {},
+            "accounts": {},
+            "models": {},
+        }
+
+    async def initialize(self) -> None:
+        """初始化存储与数据加载"""
+        if self._initialized:
+            return
+
+        async with self._lock:
+            if self._initialized:
+                return
+
+            try:
+                creds_dir = os.getenv("CREDENTIALS_DIR", "./creds")
+                self._stats_dir = creds_dir
+                os.makedirs(self._stats_dir, exist_ok=True)
+                self._stats_file = os.path.join(self._stats_dir, "token_stats.json")
+
+                if os.path.exists(self._stats_file):
+                    try:
+                        async with aiofiles.open(self._stats_file, "r", encoding="utf-8") as f:
+                            content = await f.read()
+                            if content.strip():
+                                loaded = json.loads(content)
+                                if isinstance(loaded, dict):
+                                    self._data["daily"] = loaded.get("daily", {})
+                                    self._data["accounts"] = loaded.get("accounts", {})
+                                    self._data["models"] = loaded.get("models", {})
+                    except Exception as e:
+                        log.error(f"[TokenTracker] 读取统计文件 {self._stats_file} 失败: {e}")
+
+                self._initialized = True
+            except Exception as e:
+                log.error(f"[TokenTracker] 初始化失败: {e}")
+
+    async def _save(self) -> None:
+        """保存统计数据到磁盘文件"""
+        if not self._stats_file:
+            return
+        temp_file = self._stats_file + ".tmp"
+        try:
+            content = json.dumps(self._data, ensure_ascii=False, indent=2)
+            async with aiofiles.open(temp_file, "w", encoding="utf-8") as f:
+                await f.write(content)
+            os.replace(temp_file, self._stats_file)
+        except Exception as e:
+            log.error(f"[TokenTracker] 保存统计数据失败: {e}")
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except Exception:
+                    pass
+
+    async def record_usage(
+        self,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        cached_tokens: int = 0,
+        thoughts_tokens: int = 0,
+        model: str = "unknown",
+        user_info: Optional[str] = None,
+    ) -> None:
+        """记录一次调用的 Token 消耗"""
+        if not self._initialized:
+            await self.initialize()
+
+        prompt_cnt = max(0, int(prompt_tokens or 0))
+        comp_cnt = max(0, int(completion_tokens or 0))
+        cached_cnt = max(0, int(cached_tokens or 0))
+        thoughts_cnt = max(0, int(thoughts_tokens or 0))
+        net_prompt_cnt = max(0, prompt_cnt - cached_cnt)
+        total_cnt = net_prompt_cnt + comp_cnt
+
+        today_str = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+        account_name = str(user_info or "anonymous").strip()
+        model_name = str(model or "unknown").strip()
+
+        async with self._lock:
+            # 1. 每日统计
+            if today_str not in self._data["daily"]:
+                self._data["daily"][today_str] = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "cached_tokens": 0,
+                    "thoughts_tokens": 0,
+                    "total_tokens": 0,
+                    "request_count": 0,
+                }
+            d_item = self._data["daily"][today_str]
+            d_item["prompt_tokens"] += prompt_cnt
+            d_item["completion_tokens"] += comp_cnt
+            d_item["cached_tokens"] = d_item.get("cached_tokens", 0) + cached_cnt
+            d_item["thoughts_tokens"] = d_item.get("thoughts_tokens", 0) + thoughts_cnt
+            d_item["total_tokens"] += total_cnt
+            d_item["request_count"] += 1
+
+            # 2. 账号统计
+            if account_name not in self._data["accounts"]:
+                self._data["accounts"][account_name] = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "cached_tokens": 0,
+                    "thoughts_tokens": 0,
+                    "total_tokens": 0,
+                    "request_count": 0,
+                }
+            a_item = self._data["accounts"][account_name]
+            a_item["prompt_tokens"] += prompt_cnt
+            a_item["completion_tokens"] += comp_cnt
+            a_item["cached_tokens"] = a_item.get("cached_tokens", 0) + cached_cnt
+            a_item["thoughts_tokens"] = a_item.get("thoughts_tokens", 0) + thoughts_cnt
+            a_item["total_tokens"] += total_cnt
+            a_item["request_count"] += 1
+
+            # 3. 模型统计
+            if model_name not in self._data["models"]:
+                self._data["models"][model_name] = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "cached_tokens": 0,
+                    "thoughts_tokens": 0,
+                    "total_tokens": 0,
+                    "request_count": 0,
+                }
+            m_item = self._data["models"][model_name]
+            m_item["prompt_tokens"] += prompt_cnt
+            m_item["completion_tokens"] += comp_cnt
+            m_item["cached_tokens"] = m_item.get("cached_tokens", 0) + cached_cnt
+            m_item["thoughts_tokens"] = m_item.get("thoughts_tokens", 0) + thoughts_cnt
+            m_item["total_tokens"] += total_cnt
+            m_item["request_count"] += 1
+
+            await self._save()
+
+        try:
+            from src.panel.sse import sse_manager
+            asyncio.create_task(sse_manager.broadcast("tokens_updated", {}))
+        except Exception:
+            pass
+
+    async def get_dashboard_stats(self) -> Dict[str, Any]:
+        """组装前端 TOKEN 看板所需的所有聚合指标与趋势数据"""
+        if not self._initialized:
+            await self.initialize()
+
+        async with self._lock:
+            daily_dict = self._data.get("daily", {})
+            accounts_dict = self._data.get("accounts", {})
+            models_dict = self._data.get("models", {})
+
+            total_tokens = sum(item.get("total_tokens", 0) for item in daily_dict.values())
+            prompt_tokens = sum(item.get("prompt_tokens", 0) for item in daily_dict.values())
+            completion_tokens = sum(item.get("completion_tokens", 0) for item in daily_dict.values())
+            cached_tokens = sum(item.get("cached_tokens", 0) for item in daily_dict.values())
+            thoughts_tokens = sum(item.get("thoughts_tokens", 0) for item in daily_dict.values())
+            total_requests = sum(item.get("request_count", 0) for item in daily_dict.values())
+
+            now = datetime.now(BEIJING_TZ)
+            today_str = now.strftime("%Y-%m-%d")
+            today_tokens = daily_dict.get(today_str, {}).get("total_tokens", 0)
+
+            monday = now - timedelta(days=now.weekday())
+            monday_str = monday.strftime("%Y-%m-%d")
+            this_week_tokens = sum(
+                item.get("total_tokens", 0)
+                for d_str, item in daily_dict.items()
+                if d_str >= monday_str
+            )
+
+            month_prefix = now.strftime("%Y-%m")
+            this_month_tokens = sum(
+                item.get("total_tokens", 0)
+                for d_str, item in daily_dict.items()
+                if d_str.startswith(month_prefix)
+            )
+
+            summary = {
+                "total_tokens": total_tokens,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "cached_tokens": cached_tokens,
+                "thoughts_tokens": thoughts_tokens,
+                "total_requests": total_requests,
+                "today_tokens": today_tokens,
+                "this_week_tokens": this_week_tokens,
+                "this_month_tokens": this_month_tokens,
+            }
+
+            account_ranking = []
+            for acc, item in accounts_dict.items():
+                account_ranking.append({
+                    "account": acc,
+                    "prompt_tokens": item.get("prompt_tokens", 0),
+                    "completion_tokens": item.get("completion_tokens", 0),
+                    "cached_tokens": item.get("cached_tokens", 0),
+                    "thoughts_tokens": item.get("thoughts_tokens", 0),
+                    "total_tokens": item.get("total_tokens", 0),
+                    "request_count": item.get("request_count", 0),
+                })
+            account_ranking.sort(key=lambda x: x["total_tokens"], reverse=True)
+
+            model_ranking = []
+            for mdl, item in models_dict.items():
+                model_ranking.append({
+                    "model": mdl,
+                    "prompt_tokens": item.get("prompt_tokens", 0),
+                    "completion_tokens": item.get("completion_tokens", 0),
+                    "cached_tokens": item.get("cached_tokens", 0),
+                    "thoughts_tokens": item.get("thoughts_tokens", 0),
+                    "total_tokens": item.get("total_tokens", 0),
+                    "request_count": item.get("request_count", 0),
+                })
+            model_ranking.sort(key=lambda x: x["total_tokens"], reverse=True)
+
+            daily_list = []
+            for i in range(29, -1, -1):
+                day_date = now - timedelta(days=i)
+                d_str = day_date.strftime("%Y-%m-%d")
+                day_item = daily_dict.get(d_str, {})
+                daily_list.append({
+                    "date": d_str,
+                    "prompt_tokens": day_item.get("prompt_tokens", 0),
+                    "completion_tokens": day_item.get("completion_tokens", 0),
+                    "cached_tokens": day_item.get("cached_tokens", 0),
+                    "thoughts_tokens": day_item.get("thoughts_tokens", 0),
+                    "total_tokens": day_item.get("total_tokens", 0),
+                    "request_count": day_item.get("request_count", 0),
+                })
+
+            weekly_dict: Dict[str, Dict[str, int]] = {}
+            for d_str, item in daily_dict.items():
+                try:
+                    dt = datetime.strptime(d_str, "%Y-%m-%d")
+                    w_monday = dt - timedelta(days=dt.weekday())
+                    w_str = w_monday.strftime("%Y-%m-%d")
+                    if w_str not in weekly_dict:
+                        weekly_dict[w_str] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "request_count": 0}
+                    weekly_dict[w_str]["prompt_tokens"] += item.get("prompt_tokens", 0)
+                    weekly_dict[w_str]["completion_tokens"] += item.get("completion_tokens", 0)
+                    weekly_dict[w_str]["total_tokens"] += item.get("total_tokens", 0)
+                    weekly_dict[w_str]["request_count"] += item.get("request_count", 0)
+                except Exception:
+                    pass
+
+            weekly_list = []
+            for i in range(11, -1, -1):
+                w_monday = (now - timedelta(days=now.weekday())) - timedelta(weeks=i)
+                w_str = w_monday.strftime("%Y-%m-%d")
+                w_item = weekly_dict.get(w_str, {})
+                weekly_list.append({
+                    "date": f"周({w_str[5:]})",
+                    "prompt_tokens": w_item.get("prompt_tokens", 0),
+                    "completion_tokens": w_item.get("completion_tokens", 0),
+                    "total_tokens": w_item.get("total_tokens", 0),
+                    "request_count": w_item.get("request_count", 0),
+                })
+
+            monthly_dict: Dict[str, Dict[str, int]] = {}
+            for d_str, item in daily_dict.items():
+                m_str = d_str[:7]
+                if m_str not in monthly_dict:
+                    monthly_dict[m_str] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "request_count": 0}
+                monthly_dict[m_str]["prompt_tokens"] += item.get("prompt_tokens", 0)
+                monthly_dict[m_str]["completion_tokens"] += item.get("completion_tokens", 0)
+                monthly_dict[m_str]["total_tokens"] += item.get("total_tokens", 0)
+                monthly_dict[m_str]["request_count"] += item.get("request_count", 0)
+
+            monthly_list = []
+            for m_str, m_item in sorted(monthly_dict.items())[-12:]:
+                monthly_list.append({
+                    "date": m_str,
+                    "prompt_tokens": m_item.get("prompt_tokens", 0),
+                    "completion_tokens": m_item.get("completion_tokens", 0),
+                    "total_tokens": m_item.get("total_tokens", 0),
+                    "request_count": m_item.get("request_count", 0),
+                })
+
+            trend = {
+                "daily": daily_list,
+                "weekly": weekly_list,
+                "monthly": monthly_list,
+            }
+
+            return {
+                "summary": summary,
+                "account_ranking": account_ranking,
+                "model_ranking": model_ranking,
+                "trend": trend,
+            }
+
+    async def clear_stats(self) -> None:
+        """清空统计数据"""
+        if not self._initialized:
+            await self.initialize()
+
+        async with self._lock:
+            self._data = {
+                "daily": {},
+                "accounts": {},
+                "models": {},
+            }
+            await self._save()
+
+        try:
+            from src.panel.sse import sse_manager
+            asyncio.create_task(sse_manager.broadcast("tokens_updated", {}))
+        except Exception:
+            pass
+
+
+# 全局单例
+token_tracker = TokenTracker()
+
+
+# ==============================================================================
+# 2. Token 预估 (Estimator) - 基于 tiktoken (BPE 词表) 与结构化 Payload 解析
 # ==============================================================================
 
 _tiktoken_encoding = None
@@ -62,17 +402,14 @@ def _parse_image_dimensions(base64_str: str) -> Tuple[Optional[int], Optional[in
         if len(data_bytes) < 16:
             return None, None
 
-        # PNG
         if data_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
             w, h = struct.unpack(">II", data_bytes[16:24])
             return w, h
 
-        # GIF
         if data_bytes.startswith(b"GIF87a") or data_bytes.startswith(b"GIF89a"):
             w, h = struct.unpack("<HH", data_bytes[6:10])
             return w, h
 
-        # WEBP
         if data_bytes.startswith(b"RIFF") and data_bytes[8:12] == b"WEBP":
             if data_bytes[12:16] == b"VP8 ":
                 w, h = struct.unpack("<HH", data_bytes[26:30])
@@ -87,7 +424,6 @@ def _parse_image_dimensions(base64_str: str) -> Tuple[Optional[int], Optional[in
                 h = 1 + struct.unpack("<I", data_bytes[27:30] + b"\x00")[0]
                 return w, h
 
-        # JPEG
         if data_bytes.startswith(b"\xff\xd8"):
             idx = 2
             while idx + 4 < len(data_bytes):
@@ -131,17 +467,13 @@ def _calculate_image_tokens(image_item: Dict[str, Any]) -> int:
 
 
 def estimate_input_tokens(payload: Dict[str, Any]) -> int:
-    """
-    高精度估算 payload 输入的 Prompt Token 数（基于 tiktoken BPE）。
-    精细解析 system、messages/contents、tools 纯文本，动态换算图片 Token 并补充角色 Overhead。
-    """
+    """高精度估算 payload 输入的 Prompt Token 数"""
     if not isinstance(payload, dict):
         return 0
 
     total_tokens = 0
     message_count = 0
 
-    # 1. System Prompt
     system = payload.get("system") or payload.get("systemInstruction")
     if system:
         if isinstance(system, str):
@@ -159,14 +491,13 @@ def estimate_input_tokens(payload: Dict[str, Any]) -> int:
                                 total_tokens += _count_text_tokens(str(part["text"]))
             total_tokens += 3
 
-    # 2. Messages / Contents
     messages = payload.get("messages") or payload.get("contents")
     if isinstance(messages, list):
         for msg in messages:
             if not isinstance(msg, dict):
                 continue
             message_count += 1
-            total_tokens += 4  # 消息角色 Tag 开销
+            total_tokens += 4
 
             content = msg.get("content") or msg.get("parts")
             if isinstance(content, str):
@@ -178,13 +509,10 @@ def estimate_input_tokens(payload: Dict[str, Any]) -> int:
                     elif isinstance(item, dict):
                         item_type = item.get("type")
 
-                        # 文本
                         if item_type == "text" or ("text" in item and not item_type):
                             text_val = item.get("text", "")
                             if text_val:
                                 total_tokens += _count_text_tokens(str(text_val))
-
-                        # 工具调用
                         elif item_type == "tool_use":
                             name = item.get("name", "")
                             input_data = item.get("input", {})
@@ -198,12 +526,9 @@ def estimate_input_tokens(payload: Dict[str, Any]) -> int:
                                 for res_item in res_content:
                                     if isinstance(res_item, dict) and res_item.get("text"):
                                         total_tokens += _count_text_tokens(str(res_item["text"]))
-
-                        # 多模态图片
                         elif item_type in ("image", "image_url") or "inlineData" in item or "source" in item:
                             total_tokens += _calculate_image_tokens(item)
 
-    # 3. Tools 定义
     tools = payload.get("tools")
     if isinstance(tools, list):
         for tool in tools:
@@ -215,7 +540,6 @@ def estimate_input_tokens(payload: Dict[str, Any]) -> int:
                 }, ensure_ascii=False)
                 total_tokens += _count_text_tokens(tool_str) + 6
 
-    # 4. 对话末尾 Assistant 引言引导
     if message_count > 0:
         total_tokens += 3
 
@@ -236,58 +560,56 @@ def _fallback_text_tokens(text: str) -> int:
 
 
 # ==============================================================================
-# 2. Token 日志与结果解析 (Logger & Usage Parser)
+# 3. Token 日志与结果解析 (Logger & Usage Parser)
 # ==============================================================================
 
-def extract_usage_tokens(usage_metadata: Any) -> Dict[str, Optional[int]]:
+def count_token_usage(
+    usage_metadata: Any,
+    model: str,
+) -> None:
     """
-    从 usageMetadata 结构体/字典中提取 Token 详细数据
-
-    Args:
-        usage_metadata: 包含 promptTokenCount 等字段的字典或对象
-
-    Returns:
-        包含 prompt_token_count, candidates_token_count, total_token_count,
-        cached_content_token_count, thoughts_token_count 的字典
-    """
-    if not isinstance(usage_metadata, dict):
-        return {
-            "prompt_token_count": None,
-            "candidates_token_count": None,
-            "total_token_count": None,
-            "cached_content_token_count": None,
-            "thoughts_token_count": None,
-        }
-
-    return {
-        "prompt_token_count": usage_metadata.get("promptTokenCount"),
-        "candidates_token_count": usage_metadata.get("candidatesTokenCount"),
-        "total_token_count": usage_metadata.get("totalTokenCount"),
-        "cached_content_token_count": usage_metadata.get("cachedContentTokenCount"),
-        "thoughts_token_count": usage_metadata.get("thoughtsTokenCount"),
-    }
-
-
-def log_usage_metadata(usage_metadata: Any, model: str, format_name: str = "Gemini") -> None:
-    """
-    统一打印 UsageMetadata 中文日志
-
-    Args:
-        usage_metadata: 包含 promptTokenCount 等字段的字典
-        model: 实际调用的模型名称
-        format_name: 协议格式名称 (如 OpenAI, Anthropic, Gemini)
+    统计与打印 UsageMetadata 日志并记录到持久化服务
     """
     if not isinstance(usage_metadata, dict) or not usage_metadata:
         return
 
-    tokens = extract_usage_tokens(usage_metadata)
-    model_str = model if model else "未知模型"
+    from src.auth import credential_manager
+    user_info = credential_manager.get_current_account()
 
-    log.info(
-        f"[UsageMetadata-{format_name}格式] 模型={model_str} | "
-        f"输入Token(promptTokenCount)={tokens['prompt_token_count']}, "
-        f"输出Token(candidatesTokenCount)={tokens['candidates_token_count']}, "
-        f"总Token(totalTokenCount)={tokens['total_token_count']}, "
-        f"缓存Token(cachedContentTokenCount)={tokens['cached_content_token_count']}, "
-        f"思考Token(thoughtsTokenCount)={tokens['thoughts_token_count']}"
-    )
+    model_str = model if model else "未知模型"
+    user_str = f" | 用户={user_info}" if user_info else ""
+
+    prompt_tokens = int(usage_metadata.get("promptTokenCount") or 0)
+    completion_tokens = int(usage_metadata.get("candidatesTokenCount") or 0)
+    cached_tokens = int(usage_metadata.get("cachedContentTokenCount") or 0)
+    thoughts_tokens = int(usage_metadata.get("thoughtsTokenCount") or 0)
+
+    # 计算与前端/仪表盘一致的总 Token 消耗 (扣除缓存的净输入 Token + 输出 Token)
+    net_prompt_tokens = max(0, prompt_tokens - cached_tokens)
+    total_tokens = net_prompt_tokens + completion_tokens
+
+    parts = [
+        f"输入={prompt_tokens}",
+        f"输出={completion_tokens}"
+    ]
+    if cached_tokens:
+        parts.append(f"缓存={cached_tokens}")
+    if thoughts_tokens:
+        parts.append(f"思考={thoughts_tokens}")
+    parts.append(f"总计={total_tokens}")
+
+    log.info(f"[TokenUsage] 模型={model_str}{user_str} | {', '.join(parts)}")
+
+    try:
+        asyncio.create_task(
+            token_tracker.record_usage(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cached_tokens=cached_tokens,
+                thoughts_tokens=thoughts_tokens,
+                model=model_str,
+                user_info=user_info,
+            )
+        )
+    except Exception as e:
+        log.warning(f"[count_token_usage] 异步记录 Token 仪表盘数据失败: {e}")

@@ -202,12 +202,12 @@ def _cached_content_token_count(usage_metadata: Any) -> int:
     return int(usage_metadata.get("cachedContentTokenCount", 0) or 0)
 
 
-def _anthropic_usage_from_metadata(usage_metadata: Any, model: str = "") -> Dict[str, int]:
+def _anthropic_usage_from_metadata(usage_metadata: Any, model: str = "", user_info: Optional[str] = None) -> Dict[str, int]:
     if not isinstance(usage_metadata, dict):
         return {"input_tokens": 0, "output_tokens": 0}
 
-    from src.token_usage import log_usage_metadata
-    log_usage_metadata(usage_metadata, model, "Anthropic")
+    from src.token_usage import count_token_usage
+    count_token_usage(usage_metadata, model)
 
     prompt_token_count = usage_metadata.get("promptTokenCount")
     cached_content_token_count = usage_metadata.get("cachedContentTokenCount")
@@ -791,32 +791,13 @@ async def anthropic_to_gemini_request(payload: Dict[str, Any]) -> Dict[str, Any]
 
 
 def gemini_to_anthropic_response(
-    gemini_response: Dict[str, Any],
-    model: str,
-    status_code: int = 200
-) -> Dict[str, Any]:
+    response_data: dict, model: str = "", user_info: Optional[str] = None
+) -> dict:
     """
-    将 Gemini 格式非流式响应转换为 Anthropic 格式非流式响应
-
-    注意: 如果收到的不是 200 开头的响应体，不做任何处理，直接转发
-
-    Args:
-        gemini_response: Gemini 格式的响应体字典
-        model: 模型名称
-        status_code: HTTP 状态码 (默认 200)
-
-    Returns:
-        Anthropic 格式的响应体字典，或原始响应 (如果状态码不是 2xx)
+    将 Gemini 格式的响应转换为 Anthropic /messages 格式
     """
-    # 非 2xx 状态码直接返回原始响应
-    if not (200 <= status_code < 300):
-        return gemini_response
-
-    # 处理 GeminiCLI 的 response 包装格式
-    if "response" in gemini_response:
-        response_data = gemini_response["response"]
-    else:
-        response_data = gemini_response
+    if not isinstance(response_data, dict):
+        return {}
 
     # 提取候选结果
     candidate = response_data.get("candidates", [{}])[0] or {}
@@ -910,7 +891,7 @@ def gemini_to_anthropic_response(
         stop_reason = "end_turn"
 
     # 提取 token 使用情况
-    usage = _anthropic_usage_from_metadata(usage_metadata, model=model)
+    usage = _anthropic_usage_from_metadata(usage_metadata, model=model, user_info=user_info)
 
     # 构建 Anthropic 响应
     message_id = f"msg_{uuid.uuid4().hex}"
@@ -1032,8 +1013,8 @@ async def gemini_stream_to_anthropic_stream(
             if "usageMetadata" in response:
                 usage = response["usageMetadata"]
                 if isinstance(usage, dict):
-                    from src.token_usage import log_usage_metadata
-                    log_usage_metadata(usage, model, "Anthropic流式")
+                    from src.token_usage import count_token_usage
+                    count_token_usage(usage, model)
 
                     if "promptTokenCount" in usage:
                         prompt_tokens_total = int(usage.get("promptTokenCount", 0) or 0)
@@ -1188,7 +1169,7 @@ async def gemini_stream_to_anthropic_stream(
                     tool_args = _remove_nulls_for_tool_input(fc.get("args", {}) or {})
 
                     if _anthropic_debug_enabled():
-                        log.info(
+                        log.debug(
                             f"[ANTHROPIC][tool_use] 处理工具调用: name={tool_name}, "
                             f"id={tool_id}"
                         )
@@ -1227,7 +1208,7 @@ async def gemini_stream_to_anthropic_stream(
                     # 工具调用块已完全关闭，current_block_type 保持为 None
                     
                     if _anthropic_debug_enabled():
-                        log.info(f"[ANTHROPIC][tool_use] 工具调用块已关闭: index={current_block_index}")
+                        log.debug(f"[ANTHROPIC][tool_use] 工具调用块已关闭: index={current_block_index}")
                     
                     continue
 
@@ -1253,7 +1234,7 @@ async def gemini_stream_to_anthropic_stream(
             stop_reason = "end_turn"
 
         if _anthropic_debug_enabled():
-            log.info(
+            log.debug(
                 f"[ANTHROPIC][stream_end] 流式结束: stop_reason={stop_reason}, "
                 f"has_tool_use={has_tool_use}, finish_reason={finish_reason}, "
                 f"input_tokens={input_tokens}, output_tokens={output_tokens}"

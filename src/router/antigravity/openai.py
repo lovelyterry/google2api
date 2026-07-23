@@ -147,7 +147,7 @@ async def chat_completions(
         openai_response = convert_gemini_to_openai_response(
             gemini_response,
             real_model,
-            status_code
+            status_code,
         )
 
         return JSONResponse(content=openai_response, status_code=status_code)

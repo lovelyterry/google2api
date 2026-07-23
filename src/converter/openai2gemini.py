@@ -20,13 +20,14 @@ from src.converter.utils import merge_system_messages
 
 from log import log
 
-def _convert_usage_metadata(usage_metadata: Dict[str, Any], model: str = "") -> Optional[Dict[str, Any]]:
+def _openai_usage_from_metadata(usage_metadata: Any, model: str = "", user_info: Optional[str] = None) -> Optional[Dict[str, int]]:
     """
-    将Gemini的usageMetadata转换为OpenAI格式的usage字段
+    从Gemini的usageMetadata转换为OpenAI的usage字典
 
     Args:
-        usage_metadata: Gemini API的usageMetadata字段
-        model: 实际使用的模型名称
+        usage_metadata: Gemini响应中的usageMetadata字典
+        model: 模型名称
+        user_info: 用户信息/账号标识
 
     Returns:
         OpenAI格式的usage字典，如果没有usage数据则返回None
@@ -34,11 +35,14 @@ def _convert_usage_metadata(usage_metadata: Dict[str, Any], model: str = "") -> 
     if not usage_metadata:
         return None
 
-    from src.token_usage import log_usage_metadata
-    log_usage_metadata(usage_metadata, model, "OpenAI")
+    from src.token_usage import count_token_usage
+    count_token_usage(usage_metadata, model)
 
     prompt_token_count = usage_metadata.get("promptTokenCount")
     cached_content_token_count = usage_metadata.get("cachedContentTokenCount")
+    candidates_token_count = usage_metadata.get("candidatesTokenCount")
+    total_token_count = usage_metadata.get("totalTokenCount")
+    thoughts_token_count = usage_metadata.get("thoughtsTokenCount")
 
     prompt_tokens_total = int(prompt_token_count or 0)
     cached_tokens = int(cached_content_token_count or 0)
@@ -63,6 +67,10 @@ def _convert_usage_metadata(usage_metadata: Dict[str, Any], model: str = "") -> 
         usage["completion_tokens_details"] = {"reasoning_tokens": reasoning_tokens}
 
     return usage
+
+
+# 保持向下兼容别名
+_convert_usage_metadata = _openai_usage_from_metadata
 
 
 def _build_message_with_reasoning(role: str, content: str, reasoning_content: str) -> dict:
@@ -1487,7 +1495,7 @@ def convert_gemini_to_openai_response(
         gemini_response: Gemini 格式的响应体 (字典或响应对象)
         model: 模型名称
         status_code: HTTP 状态码 (默认 200)
-        account: 账号标识信息
+        user_info: 用户信息/账号标识
 
     Returns:
         OpenAI 格式的响应体字典,或原始响应 (如果状态码不是 2xx)

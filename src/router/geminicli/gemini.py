@@ -120,8 +120,11 @@ async def generate_content(
             response_data = json.loads(response.body if hasattr(response, 'body') else response.content)
             target_data = response_data.get("response", response_data) if isinstance(response_data, dict) else {}
             if isinstance(target_data, dict) and "usageMetadata" in target_data:
-                from src.token_usage import log_usage_metadata
-                log_usage_metadata(target_data["usageMetadata"], api_request.get("model", real_model), "Gemini")
+                from src.token_usage import count_token_usage
+                count_token_usage(
+                    target_data["usageMetadata"],
+                    api_request.get("model", real_model),
+                )
 
             # 如果有 response 包装，解包装它
             if isinstance(response_data, dict) and "response" in response_data:
@@ -378,8 +381,11 @@ async def stream_generate_content(
 
                         target_data = data.get("response", data) if isinstance(data, dict) else {}
                         if isinstance(target_data, dict) and "usageMetadata" in target_data:
-                            from src.token_usage import log_usage_metadata
-                            log_usage_metadata(target_data["usageMetadata"], real_model, "Gemini流式")
+                            from src.token_usage import count_token_usage
+                            count_token_usage(
+                                target_data["usageMetadata"],
+                                real_model,
+                            )
 
                         # 展开 response 包装
                         if "response" in data and "candidates" not in data:

@@ -228,7 +228,7 @@ async def stream_post_async(
         )
         return
 
-    log.info(f"[HTTP STREAM POST] 请求 URL: {url}\nPayload:\n{_format_payload(body)}")
+    log.debug(f"[HTTP STREAM POST] 请求 URL: {url}\nPayload:\n{_format_payload(body)}")
 
     async with http_client.get_streaming_client(**kwargs) as client:
         if CURL_CFFI_AVAILABLE and isinstance(client, CurlAsyncSession):
@@ -240,7 +240,7 @@ async def stream_post_async(
                     yield Response(resp_content, r.status_code, _filter_response_headers(r.headers))
                     return
 
-                log.info(f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
+                log.debug(f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
                 if native:
                     async for chunk in r.aiter_content():
                         yield chunk
@@ -253,12 +253,12 @@ async def stream_post_async(
             async with client.stream("POST", url, json=body, headers=headers) as r:
                 if r.status_code != 200:
                     from fastapi import Response
-                    resp_content = await r.aread()
+                    resp_content = await r.aread() if hasattr(r, "aread") else getattr(r, "content", b"")
                     log.error(f"[HTTP STREAM RESPONSE ERROR] URL: {url} | Status: {r.status_code}\nResponse Body:\n{_format_payload(resp_content)}")
                     yield Response(resp_content, r.status_code, _filter_response_headers(r.headers))
                     return
 
-                log.info(f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
+                log.debug(f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
                 if native:
                     async for chunk in r.aiter_bytes():
                         yield chunk

@@ -491,10 +491,14 @@ def parse_quota_reset_timestamp(error_response: dict) -> Optional[float]:
 
                     return reset_dt.astimezone(timezone.utc).timestamp()
 
-        # 如果是 RESOURCE_EXHAUSTED 错误且消息完全匹配，设置默认4小时冷却时间
+        # 如果是 RESOURCE_EXHAUSTED 或 429 错误，设置默认4小时冷却时间
+        err_msg = str(error_obj.get("message", "")).lower()
+        err_status = str(error_obj.get("status", "")).upper()
         if (
-            error_obj.get("status") == "RESOURCE_EXHAUSTED"
-            and error_obj.get("message") == "Resource has been exhausted (e.g. check quota)."
+            err_status == "RESOURCE_EXHAUSTED"
+            or error_obj.get("code") == 429
+            or "exhausted" in err_msg
+            or "quota" in err_msg
         ):
             import time
             cooldown_until = time.time() + RESOURCE_EXHAUSTED_COOLDOWN_HOURS * 3600

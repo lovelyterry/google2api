@@ -1381,11 +1381,12 @@ tr.account-row-disabled .btn-xs {
 .stat-value-md { font-size: 22px; font-weight: 800; font-family: var(--font-mono); letter-spacing: -0.5px; }
 .stat-value-sm { font-size: 15px; font-weight: 700; font-family: var(--font-mono); display: flex; gap: 10px; color: #d97706; }
 
-.chart-container-box { width: 100%; min-height: 230px; border-radius: 12px; background: rgba(0,0,0,0.015); padding: 18px; position: relative; border: 1px solid rgba(0,0,0,0.05); }
+.chart-container-box { width: 100%; min-height: 330px; border-radius: 12px; background: rgba(0,0,0,0.015); padding: 18px; position: relative; border: 1px solid rgba(0,0,0,0.05); }
 .legend-group { display: flex; gap: 18px; font-size: 12px; justify-content: flex-end; margin-bottom: 12px; }
 .legend-item { display: flex; align-items: center; gap: 6px; }
-.legend-line-blue { width: 14px; height: 3px; background: #2563eb; border-radius: 2px; display: inline-block; }
-.legend-line-green { width: 14px; height: 2px; background: #10b981; border-radius: 2px; display: inline-block; }
+.legend-line-blue { width: 14px; height: 2px; background: #2563eb; border-radius: 2px; display: inline-block; }
+.legend-line-green { width: 14px; height: 1.5px; background: #10b981; border-radius: 2px; display: inline-block; }
+.legend-line-amber { width: 14px; height: 1.5px; background: #f59e0b; border-radius: 2px; display: inline-block; }
 .filter-tabs-box { display: flex; gap: 6px; background: var(--bg-surface-hover, rgba(0,0,0,0.04)); padding: 4px; border-radius: 10px; border: 1px solid var(--border-color, rgba(0,0,0,0.06)); }
 .chart-box-relative { position: relative; width: 100%; height: 180px; }
 .chart-svg-full { width: 100%; height: 100%; overflow: visible; }

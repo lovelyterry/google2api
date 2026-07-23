@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import json
 import os
 import time
@@ -272,7 +273,7 @@ class Storage:
 
         root_json_files = [
             f for f in os.listdir(self._credentials_dir)
-            if f.endswith(".json") and os.path.isfile(os.path.join(self._credentials_dir, f)) and f not in ("geminicli_state.json", "antigravity_state.json", "config.json")
+            if f.endswith(".json") and os.path.isfile(os.path.join(self._credentials_dir, f)) and f not in ("geminicli_state.json", "antigravity_state.json", "config.json", "token_stats.json")
         ]
         if root_json_files:
             os.makedirs(mode_dir, exist_ok=True)
@@ -365,6 +366,9 @@ class Storage:
                                     for k, v in old_st.items():
                                         if k not in state_dict[new_fname] or state_dict[new_fname][k] is None:
                                             state_dict[new_fname][k] = v
+                                    # 如果旧凭证已被禁用，迁移后保持禁用状态
+                                    if old_st.get("disabled", False):
+                                        state_dict[new_fname]["disabled"] = True
                                 else:
                                     state_dict[new_fname] = state_dict.pop(old_fname)
                                 updated = True
@@ -585,6 +589,102 @@ class Storage:
 
         return result
 
+    def _extract_weekly_quota_info(self, st: Dict[str, Any]) -> Tuple[float, float]:
+        """
+        从凭证状态中提取 Weekly 限额的剩余比例与重置 Unix 时间戳。
+        Returns:
+            (remaining_fraction, reset_timestamp)
+            - remaining_fraction: 0.0 ~ 1.0 (无信息时默认 1.0)
+            - reset_timestamp: float (无信息或解析失败时默认 float('inf'))
+        """
+        quota_groups = st.get("quota_groups", [])
+        if not isinstance(quota_groups, list) or not quota_groups:
+            return 1.0, float("inf")
+
+        best_rem = None
+        best_reset_ts = float("inf")
+
+        for group in quota_groups:
+            if not isinstance(group, dict):
+                continue
+            buckets = group.get("buckets", [])
+            if not isinstance(buckets, list):
+                continue
+
+            for bucket in buckets:
+                if not isinstance(bucket, dict):
+                    continue
+
+                display_name = str(bucket.get("displayName", "")).lower()
+                description = str(bucket.get("description", "")).lower()
+                window = str(bucket.get("window", "")).lower()
+                bucket_id = str(bucket.get("bucketId", "")).lower()
+
+                # 匹配周限额标识 (weekly / 7d / 周)
+                is_weekly = (
+                    "week" in display_name
+                    or "week" in description
+                    or "week" in window
+                    or "week" in bucket_id
+                    or "7d" in window
+                    or "7_day" in window
+                    or "周" in display_name
+                    or "周" in description
+                )
+
+                if is_weekly:
+                    try:
+                        rem = float(bucket.get("remainingFraction", 1.0))
+                    except (ValueError, TypeError):
+                        rem = 1.0
+                    rem = max(0.0, min(1.0, rem))
+
+                    reset_time_raw = bucket.get("resetTimeRaw") or bucket.get("resetTime")
+                    reset_ts = float("inf")
+
+                    if reset_time_raw:
+                        try:
+                            raw_str = str(reset_time_raw).strip()
+                            if raw_str.endswith("Z"):
+                                raw_str = raw_str[:-1] + "+00:00"
+                            dt = datetime.fromisoformat(raw_str)
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            reset_ts = dt.timestamp()
+                        except Exception:
+                            reset_ts = float("inf")
+
+                    best_rem = rem
+                    best_reset_ts = reset_ts
+                    break
+
+            if best_rem is not None:
+                break
+
+        if best_rem is None:
+            return 1.0, float("inf")
+
+        return best_rem, best_reset_ts
+
+    def _credential_schedule_key(self, state_dict: Dict[str, Dict[str, Any]], fname: str):
+        st = state_dict.get(fname, {})
+        rem_fraction, reset_ts = self._extract_weekly_quota_info(st)
+
+        # 1. 是否有剩余周额度：rem_fraction > 0 为 0 (优先使用有额度的)，0% 额度为 1 (沉底)
+        has_quota = 0 if rem_fraction > 0 else 1
+
+        # 2. 周限额剩余比例阶梯分组 (以 5% 为一阶梯):
+        # 数值越小排在越前面 -> 优先使用周限额最多的账号
+        quota_tier = -round(rem_fraction * 20) / 20
+
+        # 3. 周重置时间戳 reset_ts：
+        # 同一阶梯内，重置时间戳越小（越早重置）排在越前面 -> 重置日期临近优先
+        
+        # 4. 原始 rotation_order 作为平局兜底
+        rot_order = st.get("rotation_order", 0)
+
+        return (has_quota, quota_tier, reset_ts, rot_order)
+
     async def get_next_available_credential(
         self, mode: str = "geminicli", model_name: Optional[str] = None
     ) -> Optional[Tuple[str, Dict[str, Any]]]:
@@ -592,7 +692,7 @@ class Storage:
         state_dict = self._states[mode]
         current_time = time.time()
 
-        sorted_files = sorted(state_dict.keys(), key=lambda f: state_dict[f].get("rotation_order", 0))
+        sorted_files = sorted(state_dict.keys(), key=lambda f: self._credential_schedule_key(state_dict, f))
 
         for fname in sorted_files:
             st = state_dict[fname]
@@ -615,7 +715,7 @@ class Storage:
         self._ensure_initialized()
         state_dict = self._states["geminicli"]
         available = [f for f, st in state_dict.items() if not st.get("disabled", False)]
-        available.sort(key=lambda f: state_dict[f].get("rotation_order", 0))
+        available.sort(key=lambda f: self._credential_schedule_key(state_dict, f))
         return available
 
     # ============ 摘要与查询 ============

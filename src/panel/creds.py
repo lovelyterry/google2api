@@ -330,6 +330,14 @@ async def get_creds_status_common(
 
         creds_list.append(cred_info)
 
+    # 统一使用 credential_manager 获取当前调度的激活账号（兼容手动指定与自动挑选）
+    current_selected = result.get("current_selected")
+    if not current_selected:
+        try:
+            current_selected = await credential_manager.get_active_account_filename(mode=mode)
+        except Exception:
+            pass
+
     return JSONResponse(content={
         "items": creds_list,
         "total": result["total"],
@@ -337,7 +345,7 @@ async def get_creds_status_common(
         "limit": limit,
         "has_more": (offset + limit) < result["total"],
         "stats": result.get("stats", {"total": 0, "normal": 0, "disabled": 0}),
-        "current_selected": result.get("current_selected"),
+        "current_selected": current_selected,
         "current_selected_time": result.get("current_selected_time"),
     })
 
@@ -547,18 +555,21 @@ async def verify_credential_project_common(filename: str, mode: str = "geminicli
     if project_id or subscription_tier:
         await storage_adapter.store_credential(filename, credential_data, mode=mode)
 
-        # 检验成功后自动解除禁用状态并清除错误码
+        existing_state = await storage_adapter.get_credential_state(filename, mode=mode)
+        is_already_disabled = existing_state.get("disabled", False)
+
+        # 仅在未被手动禁用的情况下恢复正常状态
         state_update = {
-            "disabled": False,
             "error_codes": []
         }
+        if not is_already_disabled:
+            state_update["disabled"] = False
 
         # 同步更新状态表中的 tier 字段
         state_update["tier"] = subscription_tier
 
         # 如果是 geminicli 模式，仅在未设置 preview 时默认置为 True，避免覆盖冒烟测试探出的 preview: False 状态
         if mode == "geminicli":
-            existing_state = await storage_adapter.get_credential_state(filename, mode=mode)
             if "preview" not in existing_state:
                 state_update["preview"] = True
 
@@ -655,74 +666,6 @@ async def get_creds_status(
         raise
     except Exception as e:
         log.error(f"获取凭证状态失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/detail/{filename}")
-@router.get("/content/{filename}")
-async def get_cred_detail(
-    filename: str,
-    token: str = Depends(verify_panel_token),
-    mode: str = "geminicli"
-):
-    """
-    按需获取单个凭证的详细数据（包含完整凭证内容）
-    用于用户查看/编辑凭证详情
-    """
-    try:
-        mode = validate_mode(mode)
-        # 验证文件名
-        if not filename.endswith(".json"):
-            raise HTTPException(status_code=400, detail="无效的文件名")
-
-
-
-        storage_adapter = await get_storage()
-        backend_info = await storage_adapter.get_backend_info()
-        backend_type = backend_info.get("backend_type", "unknown")
-
-        # 获取凭证数据
-        credential_data = await storage_adapter.get_credential(filename, mode=mode)
-        if not credential_data:
-            raise HTTPException(status_code=404, detail="凭证不存在")
-
-        # 获取状态信息
-        file_status = await storage_adapter.get_credential_state(filename, mode=mode)
-        if not file_status:
-            file_status = {
-                "error_codes": [],
-                "disabled": False,
-                "last_success": time.time(),
-                "user_email": None,
-            }
-
-        result = {
-            "status": file_status,
-            "content": credential_data,
-            "filename": os.path.basename(filename),
-            "backend_type": backend_type,
-            "user_email": file_status.get("user_email"),
-            "model_cooldowns": file_status.get("model_cooldowns", {}),
-        }
-
-        if mode == "geminicli":
-            result["preview"] = file_status.get("preview", True)
-        else:
-            result["enable_credit"] = file_status.get("enable_credit", False)
-            result["quota_groups"] = file_status.get("quota_groups", [])
-
-        if backend_type == "file" and os.path.exists(filename):
-            result.update({
-                "size": os.path.getsize(filename),
-                "modified_time": os.path.getmtime(filename),
-            })
-
-        return JSONResponse(content=result)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"获取凭证详情失败 {filename}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -826,6 +769,38 @@ async def creds_action(
         raise
     except Exception as e:
         log.error(f"凭证文件操作失败: {e}")
+@router.post("/switch/{filename}")
+async def switch_active_credential(
+    filename: str,
+    mode: str = "geminicli",
+    token: str = Depends(verify_panel_token)
+):
+    """手动将当前模式调度的激活账号切换到指定的凭证账号"""
+    try:
+        mode = validate_mode(mode)
+        if not filename.endswith(".json"):
+            raise HTTPException(status_code=400, detail="无效的文件名")
+
+        storage_adapter = await get_storage()
+        credential_data = await storage_adapter.get_credential(filename, mode=mode)
+        if not credential_data:
+            raise HTTPException(status_code=404, detail="凭证不存在")
+
+        st = await storage_adapter.get_credential_state(filename, mode=mode)
+        if st.get("disabled", False):
+            raise HTTPException(status_code=400, detail="该账号处于禁用状态，请先启用后再进行调度")
+
+        await credential_manager.set_active_account(filename, mode=mode)
+        log.info(f"[WebRoute] 手动调度切换: 已将模式 {mode} 的激活账号设置为 {filename}")
+
+        return JSONResponse(content={
+            "message": f"已手动调度切换到账号 {os.path.basename(filename)}",
+            "selected": filename
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"手动调度切换失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -269,7 +269,26 @@ def main():
 
         config = Config()
         config.bind = [f"{host}:{port}"]
-        config.accesslog = "-"
+        config.access_log_format = '%(h)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
+        # 自定义只在错误响应 (4xx, 5xx) 时记录 HTTP 请求日志
+        import logging
+
+        class ErrorOnlyAccessLogger(logging.Logger):
+            def handle(self, record):
+                # Hypercorn access log status code is in record.args['s'] or record.status
+                status = getattr(record, 'status', None)
+                if status is None and isinstance(record.args, dict):
+                    status = record.args.get('s')
+                try:
+                    if status and int(status) < 400:
+                        return
+                except (ValueError, TypeError):
+                    pass
+                super().handle(record)
+
+        access_logger = logging.getLogger("hypercorn.access.error_only")
+        access_logger.__class__ = ErrorOnlyAccessLogger
+        config.accesslog = access_logger
         config.errorlog = "-"
         config.loglevel = "INFO"
 

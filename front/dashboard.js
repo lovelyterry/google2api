@@ -176,6 +176,9 @@ const app = createApp({
             if (tabName === 'oauth') fetchCreds('oauth');
             if (tabName === 'tokens') {
                 loadTokenDashboard();
+                nextTick(() => {
+                    renderTokenTrendChart();
+                });
             }
             if (tabName === 'models') loadModelMappings();
             if (tabName === 'config') loadConfig();
@@ -345,6 +348,27 @@ const app = createApp({
             }
         };
 
+        // 手动调度切换
+        const switchActiveCredential = async (type, filename) => {
+            try {
+                showStatus(`🎯 正在手动调度到 ${filename}...`, 'info');
+                const modeParam = type === 'antigravity' ? '?mode=antigravity' : '';
+                const response = await fetch(`./creds/switch/${encodeURIComponent(filename)}${modeParam}`, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    showStatus(`🎯 ${data.message || '手动调度成功！'}`, 'success');
+                    await fetchCreds(type, true);
+                } else {
+                    showStatus(`❌ ${data.detail || data.message || '手动调度失败'}`, 'error');
+                }
+            } catch (err) {
+                showStatus(`❌ 手动调度异常: ${err.message}`, 'error');
+            }
+        };
+
         // 检验 Project ID
         const verifyProjectId = async (type, filename) => {
             try {
@@ -474,28 +498,6 @@ const app = createApp({
             showStatus(`批量测试完成：成功 ${successCount}/${results.length} 个`, successCount > 0 ? 'success' : 'error');
         };
 
-        // 查看文件内容与报错折叠
-        const toggleContentDetails = async (type, filename, pathId) => {
-            const m = getManager(type);
-            if (m.expandedDetails[pathId]) {
-                delete m.expandedDetails[pathId];
-                return;
-            }
-            m.expandedDetails[pathId] = '⏳ 正在加载凭证内容...';
-            try {
-                const modeParam = type === 'antigravity' ? '?mode=antigravity' : '';
-                const res = await fetch(`./creds/content/${encodeURIComponent(filename)}${modeParam}`, { headers: getAuthHeaders() });
-                const data = await res.json();
-                if (res.ok) {
-                    m.expandedDetails[pathId] = JSON.stringify(data.content || data, null, 2);
-                } else {
-                    m.expandedDetails[pathId] = `加载失败: ${data.detail || '未知错误'}`;
-                }
-            } catch (e) {
-                m.expandedDetails[pathId] = `网络错误: ${e.message}`;
-            }
-        };
-
         const toggleErrorDetails = async (type, filename, pathId) => {
             const m = getManager(type);
             if (m.expandedErrors[pathId]) {
@@ -518,36 +520,6 @@ const app = createApp({
                 }
             } catch (e) {
                 m.expandedErrors[pathId] = { loading: false, error: e.message };
-            }
-        };
-
-        const batchToggleContentDetails = async (type) => {
-            const m = getManager(type);
-            if (m.selectedFiles.length === 0) {
-                showStatus('❌ 请先选择要查看的凭证', 'error');
-                return;
-            }
-            const allExpanded = m.selectedFiles.every(filename => {
-                const item = m.items.find(i => i.filename === filename);
-                return item && m.expandedDetails[item.pathId];
-            });
-
-            if (allExpanded) {
-                m.selectedFiles.forEach(filename => {
-                    const item = m.items.find(i => i.filename === filename);
-                    if (item && m.expandedDetails[item.pathId]) {
-                        delete m.expandedDetails[item.pathId];
-                    }
-                });
-            } else {
-                showStatus(`⏳ 正在加载 ${m.selectedFiles.length} 个凭证内容...`, 'info');
-                await Promise.all(m.selectedFiles.map(async (filename) => {
-                    const item = m.items.find(i => i.filename === filename);
-                    if (item && !m.expandedDetails[item.pathId]) {
-                        await toggleContentDetails(type, filename, item.pathId);
-                    }
-                }));
-                showStatus(`已展开 ${m.selectedFiles.length} 个凭证内容`, 'success');
             }
         };
 
@@ -976,6 +948,205 @@ const app = createApp({
             return `${shortModel}: ${timeStr}`;
         };
 
+        const parseBucketResetDate = (bucket) => {
+            if (!bucket) return null;
+            if (bucket.resetTimeRaw) {
+                try {
+                    const d = new Date(bucket.resetTimeRaw);
+                    if (!isNaN(d.getTime())) return d;
+                } catch (e) {}
+            }
+            if (bucket.resetTime && bucket.resetTime !== 'N/A') {
+                try {
+                    const parts = bucket.resetTime.trim().split(' ');
+                    if (parts.length === 2) {
+                        const dateParts = parts[0].split('-');
+                        const timeParts = parts[1].split(':');
+                        if (dateParts.length === 2 && timeParts.length === 2) {
+                            const now = new Date();
+                            const month = parseInt(dateParts[0], 10) - 1;
+                            const day = parseInt(dateParts[1], 10);
+                            const hour = parseInt(timeParts[0], 10);
+                            const min = parseInt(timeParts[1], 10);
+                            let targetDate = new Date(now.getFullYear(), month, day, hour, min);
+                            if (targetDate.getTime() < now.getTime() - 180 * 86400 * 1000) {
+                                targetDate.setFullYear(now.getFullYear() + 1);
+                            }
+                            if (!isNaN(targetDate.getTime())) return targetDate;
+                        }
+                    }
+                } catch (e) {}
+            }
+            return null;
+        };
+
+        const getDailyQuotaUsedAvgNum = (type) => {
+            const m = getManager(type);
+            const activeItems = (m.items || []).filter(item => !item.disabled);
+            if (activeItems.length === 0) return 0;
+
+            const nowMs = Date.now();
+            let sumEffectiveDailyPercent = 0;
+
+            activeItems.forEach(item => {
+                const buckets = getQuotaBuckets(item.quota_groups);
+                let minWeeklyFrac = 1.0;
+                let resetDate = null;
+
+                if (buckets && buckets.length > 0) {
+                    let minB = null;
+                    buckets.forEach(b => {
+                        const frac = b.remainingFraction !== undefined ? b.remainingFraction : 1.0;
+                        if (frac < minWeeklyFrac) {
+                            minWeeklyFrac = frac;
+                            minB = b;
+                        }
+                    });
+                    if (minB) {
+                        resetDate = parseBucketResetDate(minB);
+                    } else {
+                        resetDate = parseBucketResetDate(buckets[0]);
+                    }
+                }
+
+                let effective24hQuota = 0;
+                if (resetDate) {
+                    const hoursUntilReset = (resetDate.getTime() - nowMs) / 3600000;
+                    if (hoursUntilReset <= 0) {
+                        effective24hQuota = (24 / 168.0) * 1.0;
+                    } else if (hoursUntilReset <= 24) {
+                        const remainingHoursAfterReset = 24 - hoursUntilReset;
+                        effective24hQuota = minWeeklyFrac + (remainingHoursAfterReset / 168.0) * 1.0;
+                    } else {
+                        effective24hQuota = minWeeklyFrac * (24.0 / hoursUntilReset);
+                    }
+                } else {
+                    effective24hQuota = minWeeklyFrac / 7.0;
+                }
+
+                effective24hQuota = Math.min(1.0, Math.max(0.0, effective24hQuota));
+                sumEffectiveDailyPercent += (effective24hQuota * 100);
+            });
+
+            const avgDailyRem = sumEffectiveDailyPercent / activeItems.length;
+            // 24小时满额基准为 24/168 = 14.285%
+            const fullDailyBase = (24.0 / 168.0) * 100;
+            const usedDailyPct = Math.max(0, Math.min(100, ((fullDailyBase - avgDailyRem) / fullDailyBase) * 100));
+            return Number(usedDailyPct.toFixed(1));
+        };
+
+        const getWeeklyQuotaUsedAvgNum = (type) => {
+            const m = getManager(type);
+            const activeItems = (m.items || []).filter(item => !item.disabled);
+            if (activeItems.length === 0) return 0;
+
+            let sumWeeklyUsedFrac = 0;
+            activeItems.forEach(item => {
+                const buckets = getQuotaBuckets(item.quota_groups);
+                let minWeeklyFrac = 1.0;
+                if (buckets && buckets.length > 0) {
+                    const fracs = buckets.map(b => b.remainingFraction !== undefined ? b.remainingFraction : 1.0);
+                    minWeeklyFrac = Math.min(...fracs);
+                }
+                sumWeeklyUsedFrac += (1.0 - minWeeklyFrac);
+            });
+
+            const avgWeeklyUsedPercent = (sumWeeklyUsedFrac / activeItems.length) * 100;
+            return Number(avgWeeklyUsedPercent.toFixed(1));
+        };
+
+        const getDailyQuotaAvg = (type) => {
+            const m = getManager(type);
+            const activeItems = (m.items || []).filter(item => !item.disabled);
+            if (activeItems.length === 0) return '100.0%';
+
+            const nowMs = Date.now();
+            let sumEffectiveDailyPercent = 0;
+
+            activeItems.forEach(item => {
+                const buckets = getQuotaBuckets(item.quota_groups);
+                let minWeeklyFrac = 1.0;
+                let resetDate = null;
+
+                if (buckets && buckets.length > 0) {
+                    let minB = null;
+                    buckets.forEach(b => {
+                        const frac = b.remainingFraction !== undefined ? b.remainingFraction : 1.0;
+                        if (frac < minWeeklyFrac) {
+                            minWeeklyFrac = frac;
+                            minB = b;
+                        }
+                    });
+                    if (minB) {
+                        resetDate = parseBucketResetDate(minB);
+                    } else {
+                        resetDate = parseBucketResetDate(buckets[0]);
+                    }
+                }
+
+                let effective24hQuota = 0;
+                if (resetDate) {
+                    const hoursUntilReset = (resetDate.getTime() - nowMs) / 3600000;
+                    if (hoursUntilReset <= 0) {
+                        effective24hQuota = (24 / 168.0) * 1.0;
+                    } else if (hoursUntilReset <= 24) {
+                        const remainingHoursAfterReset = 24 - hoursUntilReset;
+                        effective24hQuota = minWeeklyFrac + (remainingHoursAfterReset / 168.0) * 1.0;
+                    } else {
+                        effective24hQuota = minWeeklyFrac * (24.0 / hoursUntilReset);
+                    }
+                } else {
+                    effective24hQuota = minWeeklyFrac / 7.0;
+                }
+
+                effective24hQuota = Math.min(1.0, Math.max(0.0, effective24hQuota));
+                sumEffectiveDailyPercent += (effective24hQuota * 100);
+            });
+
+            const avgDailyPercent = sumEffectiveDailyPercent / activeItems.length;
+            return avgDailyPercent.toFixed(1) + '%';
+        };
+
+        const getWeeklyQuotaAvg = (type) => {
+            const m = getManager(type);
+            const activeItems = (m.items || []).filter(item => !item.disabled);
+            if (activeItems.length === 0) return '100.0%';
+
+            let sumWeeklyRemFrac = 0;
+            activeItems.forEach(item => {
+                const buckets = getQuotaBuckets(item.quota_groups);
+                let minWeeklyFrac = 1.0;
+                if (buckets && buckets.length > 0) {
+                    const fracs = buckets.map(b => b.remainingFraction !== undefined ? b.remainingFraction : 1.0);
+                    minWeeklyFrac = Math.min(...fracs);
+                }
+                sumWeeklyRemFrac += minWeeklyFrac;
+            });
+
+            const avgWeeklyRemPercent = (sumWeeklyRemFrac / activeItems.length) * 100;
+            return avgWeeklyRemPercent.toFixed(1) + '%';
+        };
+
+        const getWeeklyQuotaUsedAvg = (type) => {
+            const m = getManager(type);
+            const activeItems = (m.items || []).filter(item => !item.disabled);
+            if (activeItems.length === 0) return '0.0%';
+
+            let sumWeeklyUsedFrac = 0;
+            activeItems.forEach(item => {
+                const buckets = getQuotaBuckets(item.quota_groups);
+                let minWeeklyFrac = 1.0;
+                if (buckets && buckets.length > 0) {
+                    const fracs = buckets.map(b => b.remainingFraction !== undefined ? b.remainingFraction : 1.0);
+                    minWeeklyFrac = Math.min(...fracs);
+                }
+                sumWeeklyUsedFrac += (1.0 - minWeeklyFrac);
+            });
+
+            const avgWeeklyUsedPercent = (sumWeeklyUsedFrac / activeItems.length) * 100;
+            return avgWeeklyUsedPercent.toFixed(1) + '%';
+        };
+
         const totalPages = (type) => {
             const m = getManager(type);
             return Math.ceil(m.total / m.pageSize) || 1;
@@ -1333,13 +1504,6 @@ const app = createApp({
             return trend[tokenDashboard.trendPeriod] || [];
         });
 
-        const maxTrendTokens = computed(() => {
-            const list = activeTrendList.value;
-            if (!list.length) return 1;
-            const maxVal = Math.max(...list.map(item => item.total_tokens || 0));
-            return maxVal > 0 ? maxVal : 1;
-        });
-
         const maxAccountTokens = computed(() => {
             const list = tokenDashboard.accountRanking || [];
             if (!list.length) return 1;
@@ -1354,63 +1518,223 @@ const app = createApp({
             return maxVal > 0 ? maxVal : 1;
         });
 
-        const trendChartData = computed(() => {
+        // ----------------------------------------------------------------------
+        // Chart.js 折线图渲染与更新逻辑
+        // ----------------------------------------------------------------------
+        let tokenTrendChart = null;
+
+        const renderTokenTrendChart = () => {
+            if (typeof Chart === 'undefined') return;
+            const canvas = document.getElementById('tokenTrendChartCanvas');
+            if (!canvas) return;
+
             const list = activeTrendList.value;
-            if (!list.length) return { totalPolyline: '', promptPolyline: '', completionPolyline: '', areaPolygon: '', dots: [] };
-            
-            const maxVal = maxTrendTokens.value;
-            const width = 800;
-            const height = 160;
-            const padX = 40;
-            const padY = 20;
+            const labels = list.map(item => (item.date || item.week || item.month || '').slice(-5));
+            const promptData = list.map(item => item.prompt_tokens || 0);
+            const completionData = list.map(item => item.completion_tokens || 0);
+            const totalData = list.map(item => item.total_tokens || 0);
+            const cachedData = list.map(item => item.cached_tokens || 0);
+            const thoughtsData = list.map(item => item.thoughts_tokens || 0);
+            const requestsData = list.map(item => item.request_count || 0);
 
-            const usableW = width - padX * 2;
-            const usableH = height - padY * 2;
+            const isDark = theme.value === 'dark';
+            const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+            const textColor = isDark ? '#94a3b8' : '#64748b';
 
-            const count = list.length;
-            const stepX = count > 1 ? usableW / (count - 1) : usableW / 2;
+            if (tokenTrendChart) {
+                tokenTrendChart.data.labels = labels;
+                tokenTrendChart.data.datasets[0].data = promptData;
+                tokenTrendChart.data.datasets[1].data = completionData;
+                tokenTrendChart.data.datasets[2].data = totalData;
+                tokenTrendChart.data.datasets[3].data = cachedData;
+                tokenTrendChart.data.datasets[4].data = thoughtsData;
+                tokenTrendChart.data.datasets[5].data = requestsData;
+                tokenTrendChart.options.scales.x.ticks.color = textColor;
+                tokenTrendChart.options.scales.x.grid.color = gridColor;
+                tokenTrendChart.options.scales.y.ticks.color = textColor;
+                tokenTrendChart.options.scales.y.grid.color = gridColor;
+                tokenTrendChart.options.scales.y1.ticks.color = textColor;
+                tokenTrendChart.options.plugins.legend.labels.color = textColor;
+                tokenTrendChart.update();
+                return;
+            }
 
-            const totalPoints = [];
-            const promptPoints = [];
-            const completionPoints = [];
-            const dots = [];
+            const ctx = canvas.getContext('2d');
+            const totalGradient = ctx.createLinearGradient(0, 0, 0, 200);
+            totalGradient.addColorStop(0, 'rgba(139, 92, 246, 0.15)');
+            totalGradient.addColorStop(1, 'rgba(139, 92, 246, 0.0)');
 
-            list.forEach((item, idx) => {
-                const cx = count > 1 ? padX + idx * stepX : width / 2;
-                const totRatio = Math.min(1, Math.max(0, (item.total_tokens || 0) / maxVal));
-                const pRatio = Math.min(1, Math.max(0, (item.prompt_tokens || 0) / maxVal));
-                const cRatio = Math.min(1, Math.max(0, (item.completion_tokens || 0) / maxVal));
-
-                const cyTot = height - padY - totRatio * usableH;
-                const cyP = height - padY - pRatio * usableH;
-                const cyC = height - padY - cRatio * usableH;
-
-                totalPoints.push(`${cx.toFixed(1)},${cyTot.toFixed(1)}`);
-                promptPoints.push(`${cx.toFixed(1)},${cyP.toFixed(1)}`);
-                completionPoints.push(`${cx.toFixed(1)},${cyC.toFixed(1)}`);
-
-                dots.push({
-                    cx,
-                    cy: cyTot,
-                    cyP,
-                    cyC,
-                    item,
-                    idx,
-                    label: item.label || item.date
-                });
+            tokenTrendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: '📥 输入 (prompt)',
+                            data: promptData,
+                            borderColor: '#2563eb',
+                            borderWidth: 1.8,
+                            pointRadius: 3,
+                            pointHoverRadius: 5,
+                            pointBackgroundColor: '#ffffff',
+                            pointBorderColor: '#2563eb',
+                            pointBorderWidth: 1.5,
+                            fill: false,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '📤 输出 (candidates)',
+                            data: completionData,
+                            borderColor: '#10b981',
+                            borderWidth: 1.8,
+                            pointRadius: 3,
+                            pointHoverRadius: 5,
+                            pointBackgroundColor: '#ffffff',
+                            pointBorderColor: '#10b981',
+                            pointBorderWidth: 1.5,
+                            fill: false,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '💎 总 Token (total)',
+                            data: totalData,
+                            borderColor: '#8b5cf6',
+                            backgroundColor: totalGradient,
+                            borderWidth: 2.2,
+                            pointRadius: 3.5,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: '#ffffff',
+                            pointBorderColor: '#8b5cf6',
+                            pointBorderWidth: 2,
+                            fill: true,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '⚡ 缓存 (cached)',
+                            data: cachedData,
+                            borderColor: '#06b6d4',
+                            borderWidth: 1.5,
+                            borderDash: [4, 2],
+                            pointRadius: 2.5,
+                            pointHoverRadius: 4,
+                            pointBackgroundColor: '#ffffff',
+                            pointBorderColor: '#06b6d4',
+                            pointBorderWidth: 1,
+                            fill: false,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '🧠 思考 (thoughts)',
+                            data: thoughtsData,
+                            borderColor: '#f59e0b',
+                            borderWidth: 1.5,
+                            borderDash: [2, 2],
+                            pointRadius: 2.5,
+                            pointHoverRadius: 4,
+                            pointBackgroundColor: '#ffffff',
+                            pointBorderColor: '#f59e0b',
+                            pointBorderWidth: 1,
+                            fill: false,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '🚀 API 请求数 (calls)',
+                            data: requestsData,
+                            borderColor: '#ec4899',
+                            borderWidth: 1.8,
+                            pointRadius: 3,
+                            pointHoverRadius: 5,
+                            pointBackgroundColor: '#ffffff',
+                            pointBorderColor: '#ec4899',
+                            pointBorderWidth: 1.5,
+                            fill: false,
+                            tension: 0.3,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            align: 'end',
+                            labels: {
+                                boxWidth: 12,
+                                boxHeight: 2,
+                                usePointStyle: false,
+                                color: textColor,
+                                font: { size: 11, weight: '500' }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: '#0f172a',
+                            titleColor: '#93c5fd',
+                            bodyColor: '#ffffff',
+                            padding: 10,
+                            cornerRadius: 8,
+                            callbacks: {
+                                label: function(context) {
+                                    if (context.dataset.yAxisID === 'y1') {
+                                        return ` ${context.dataset.label}: ${context.raw.toLocaleString()} 次`;
+                                    }
+                                    return ` ${context.dataset.label}: ${formatTokenCount(context.raw)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: gridColor, drawBorder: false },
+                            ticks: { color: textColor, font: { size: 11 } }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            beginAtZero: true,
+                            grid: { color: gridColor, drawBorder: false },
+                            ticks: {
+                                color: textColor,
+                                font: { size: 11 },
+                                callback: function(val) {
+                                    return formatTokenCount(val);
+                                }
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            beginAtZero: true,
+                            grid: { drawOnChartArea: false },
+                            ticks: {
+                                color: textColor,
+                                font: { size: 11 },
+                                callback: function(val) {
+                                    return val + ' 次';
+                                }
+                            }
+                        }
+                    }
+                }
             });
+        };
 
-            const firstX = count > 1 ? padX : width / 2;
-            const lastX = count > 1 ? padX + (count - 1) * stepX : width / 2;
-            const areaPolygon = `${firstX},${height - padY} ${totalPoints.join(' ')} ${lastX},${height - padY}`;
-
-            return {
-                totalPolyline: totalPoints.join(' '),
-                promptPolyline: promptPoints.join(' '),
-                completionPolyline: completionPoints.join(' '),
-                areaPolygon,
-                dots
-            };
+        watch([activeTrendList, theme], () => {
+            nextTick(() => {
+                renderTokenTrendChart();
+            });
         });
 
         // ----------------------------------------------------------------------
@@ -1643,10 +1967,8 @@ const app = createApp({
             clearTokenDashboard,
             formatTokenCount,
             activeTrendList,
-            maxTrendTokens,
             maxAccountTokens,
             maxModelTokens,
-            trendChartData,
             login,
             logout,
             toggleTheme,
@@ -1658,14 +1980,13 @@ const app = createApp({
             isAllSelected,
             toggleSelectAll,
             singleAction,
+            switchActiveCredential,
             deleteSingleCredential,
             batchAction,
             verifyProjectId,
             batchVerifyProjectIds,
             testCredential,
             batchTestCredentials,
-            toggleContentDetails,
-            batchToggleContentDetails,
             toggleErrorDetails,
             batchToggleErrorDetails,
             refreshSingleQuota,
@@ -1689,6 +2010,9 @@ const app = createApp({
             getActiveCooldowns,
             formatCooldownBadge,
             totalPages,
+            getDailyQuotaAvg,
+            getWeeklyQuotaAvg,
+            getWeeklyQuotaUsedAvg,
             changePage,
             cpUrl,
             cpAllUrls,
