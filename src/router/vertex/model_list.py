@@ -42,7 +42,7 @@ router = APIRouter()
 
 @router.get("/vertex/v1beta/models")
 async def list_gemini_models(token: str = Depends(authenticate_flexible)):
-    log.info("[VERTEX MODEL LIST] 返回 Gemini 格式")
+    log.debug("[VERTEX MODEL LIST] 返回 Gemini 格式")
     return JSONResponse(content=create_gemini_model_list(
         VERTEX_MODELS,
         base_name_extractor=lambda m: m
@@ -51,7 +51,7 @@ async def list_gemini_models(token: str = Depends(authenticate_flexible)):
 
 @router.get("/vertex/v1/models")
 async def list_openai_models(token: str = Depends(authenticate_flexible)):
-    log.info("[VERTEX MODEL LIST] 返回 OpenAI 格式")
+    log.debug("[VERTEX MODEL LIST] 返回 OpenAI 格式")
     model_list = create_openai_model_list(VERTEX_MODELS, owned_by="google")
     return JSONResponse(content={
         "object": "list",

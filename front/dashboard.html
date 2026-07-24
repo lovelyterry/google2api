@@ -1073,62 +1073,69 @@
                                         <p class="hero-desc">实时监控与管理前端请求模型重定向至后端实际处理模型的智能路由规则</p>
                                     </div>
                                 </div>
-
                             </div>
 
-
-                            <!-- 规则配置 (Fallback 兜底) -->
-                            <div class="config-section-card config-card-flex mb-4">
-                                <div>
-                                    <div class="config-section-title">
-                                        <div class="config-section-title-left">
-                                            <span>🛡️</span>
-                                            <span>全局兜底模型设置</span>
+                            <!-- 1. 顶层映射与兜底控制 (并排 2-Column Grid) -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                                <!-- 规则配置 (Fallback 兜底) -->
+                                <div class="config-section-card" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between;">
+                                    <div>
+                                        <div class="config-section-title">
+                                            <div class="config-section-title-left">
+                                                <span>🛡️</span>
+                                                <span>全局兜底模型设置</span>
+                                            </div>
+                                        </div>
+                                        <div class="form-group mb-2">
+                                            <label for="fallbackTargetModel" class="form-label" style="font-size: 12px; font-weight: 600;">兜底目标模型:</label>
+                                            <select id="fallbackTargetModel" v-model="models.fallbackModel" class="config-input-styled mapping-select">
+                                                <option value="">-- 选择兜底目标模型 (留空为禁用) --</option>
+                                                <option v-for="opt in models.availableOptions" :key="'fb-' + opt" :value="opt">{{ opt }}</option>
+                                            </select>
+                                            <small class="config-note" style="display: block; margin-top: 6px; opacity: 0.75;">当请求的模型未匹配任何规则且非可用模型时，自动兜底重定向至此模型</small>
                                         </div>
                                     </div>
-                                    <div class="form-group mb-2">
-                                        <label for="fallbackTargetModel" class="form-label">兜底目标模型:</label>
-                                        <select id="fallbackTargetModel" v-model="models.fallbackModel" class="config-input-styled mapping-select">
-                                            <option value="">-- 选择兜底目标模型 (留空为禁用) --</option>
-                                            <option v-for="opt in models.availableOptions" :key="'fb-' + opt" :value="opt">{{ opt }}</option>
-                                        </select>
-                                        <small class="config-note hero-desc">当请求的模型未匹配任何规则且非可用模型时，自动兜底重定向至此模型</small>
+                                    <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+                                        <button type="button" class="btn btn-primary" style="height: 32px; padding: 0 16px; font-size: 12.5px;" @click="saveFallbackModel">
+                                            💾 保存兜底设置
+                                        </button>
                                     </div>
                                 </div>
-                                <button type="button" class="btn btn-primary btn-hero-action align-self-end mt-2" @click="saveFallbackModel">
-                                    💾 保存兜底设置
-                                </button>
+
+                                <!-- 自定义映射规则配置卡片 -->
+                                <div class="config-section-card" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between;">
+                                    <div>
+                                        <div class="config-section-title">
+                                            <div class="config-section-title-left">
+                                                <span>➕</span>
+                                                <span>添加 / 修改自定义映射规则</span>
+                                            </div>
+                                        </div>
+                                        <div class="form-row-align-end mapping-form-row" style="margin-bottom: 8px;">
+                                            <div class="form-col-flex">
+                                                <label class="form-label" style="font-size: 12px; font-weight: 600;">前端请求模型:</label>
+                                                <input type="text" v-model="models.newOriginal" class="config-input-styled mapping-input" placeholder="例如: gpt-4, claude-3-5" />
+                                            </div>
+                                            <div class="arrow-separator mapping-arrow" style="align-self: flex-end; padding-bottom: 6px; font-weight: 700; color: var(--primary);">➔</div>
+                                            <div class="form-col-flex">
+                                                <label class="form-label" style="font-size: 12px; font-weight: 600;">映射目标模型:</label>
+                                                <select v-model="models.newTarget" class="config-input-styled mapping-select">
+                                                    <option value="" disabled>-- 选择目标模型 --</option>
+                                                    <option v-for="opt in models.availableOptions" :key="'target-' + opt" :value="opt">{{ opt }}</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+                                        <button type="button" class="btn btn-primary btn-mapping-save" style="height: 32px; padding: 0 16px; font-size: 12.5px;" @click="addModelMapping">
+                                            ➕ 保存映射规则
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
 
-                            <!-- 自定义映射规则配置卡片 -->
-                            <div class="config-section-card">
-                                <div class="config-section-title">
-                                    <div class="config-section-title-left">
-                                        <span>➕</span>
-                                        <span>添加 / 修改自定义映射规则</span>
-                                    </div>
-                                </div>
-                                <div class="form-row-align-end mapping-form-row">
-                                    <div class="form-col-flex">
-                                        <label class="form-label">前端请求模型:</label>
-                                        <input type="text" v-model="models.newOriginal" class="config-input-styled mapping-input" placeholder="例如: gpt-4, claude-3-5-sonnet" />
-                                    </div>
-                                    <div class="arrow-separator mapping-arrow">➔</div>
-                                    <div class="form-col-flex">
-                                        <label class="form-label">映射目标模型:</label>
-                                        <select v-model="models.newTarget" class="config-input-styled mapping-select">
-                                            <option value="" disabled>-- 选择动态拉取的目标模型 --</option>
-                                            <option v-for="opt in models.availableOptions" :key="'target-' + opt" :value="opt">{{ opt }}</option>
-                                        </select>
-                                    </div>
-                                    <button type="button" class="btn btn-primary btn-mapping-save" @click="addModelMapping">
-                                        ➕ 保存映射规则
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- 手动/自定义规则列表 -->
-                            <div class="config-section-card">
+                            <!-- 2. 已生效的手动 / 自定义映射规则列表 (宽屏全幅卡片) -->
+                            <div class="config-section-card mb-3">
                                 <div class="config-section-title">
                                     <div class="config-section-title-left">
                                         <span>⚙️</span>
@@ -1141,9 +1148,9 @@
                                     <table>
                                         <thead>
                                             <tr>
-                                                <th>前端请求原始模型</th>
-                                                <th style="width: 60px; text-align: center;">重定向</th>
-                                                <th>后端实际处理目标模型</th>
+                                                <th style="width: 40%;">前端请求原始模型</th>
+                                                <th style="width: 80px; text-align: center;">重定向</th>
+                                                <th style="width: 40%;">后端实际处理目标模型</th>
                                                 <th style="text-align: right;">操作</th>
                                             </tr>
                                         </thead>
@@ -1155,9 +1162,9 @@
                                                 <td style="text-align: right;"><button class="btn-xs btn-danger-outline" @click="deleteModelMapping(orig)">删除</button></td>
                                             </tr>
                                             <tr v-if="Object.keys(models.mappings).length === 0">
-                                                <td colspan="4" style="text-align: center; padding: 32px; opacity: 0.65;">
-                                                    <div style="font-size: 28px; margin-bottom: 6px;">📭</div>
-                                                    <div>暂无自定义重定向映射规则</div>
+                                                <td colspan="4" style="text-align: center; padding: 36px; opacity: 0.65;">
+                                                    <div style="font-size: 32px; margin-bottom: 8px;">📭</div>
+                                                    <div style="font-size: 13px;">暂无自定义重定向映射规则</div>
                                                 </td>
                                             </tr>
                                         </tbody>
@@ -1165,7 +1172,7 @@
                                 </div>
                             </div>
 
-                            <!-- 实时捕捉的动态模型映射列表 -->
+                            <!-- 3. 实时捕捉的动态模型映射列表 (宽屏全幅卡片) -->
                             <div class="config-section-card">
                                 <div class="config-section-title">
                                     <div class="config-section-title-left">
@@ -1179,10 +1186,10 @@
                                     <table>
                                         <thead>
                                             <tr>
-                                                <th>请求模型</th>
-                                                <th>路由类型</th>
-                                                <th style="width: 60px; text-align: center;">重定向</th>
-                                                <th>实际处理目标模型</th>
+                                                <th style="width: 35%;">请求模型</th>
+                                                <th style="width: 20%;">路由类型</th>
+                                                <th style="width: 80px; text-align: center;">重定向</th>
+                                                <th style="width: 35%;">实际处理目标模型</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1193,9 +1200,9 @@
                                                 <td><span class="model-tag-target">🎯 {{ item.target_model }}</span></td>
                                             </tr>
                                             <tr v-if="!models.dynamicMappings || models.dynamicMappings.length === 0">
-                                                <td colspan="4" style="text-align: center; padding: 32px; opacity: 0.65;">
-                                                    <div style="font-size: 28px; margin-bottom: 6px;">📡</div>
-                                                    <div>暂无实时捕捉到的动态映射记录</div>
+                                                <td colspan="4" style="text-align: center; padding: 36px; opacity: 0.65;">
+                                                    <div style="font-size: 32px; margin-bottom: 8px;">📡</div>
+                                                    <div style="font-size: 13px;">暂无实时捕捉到的动态映射记录</div>
                                                 </td>
                                             </tr>
                                         </tbody>
@@ -1222,84 +1229,87 @@
                                 </div>
                             </div>
 
-                            <!-- 1. 服务器与网络基础配置 -->
-                            <div class="config-section-card">
-                                <div class="config-section-title">
-                                    <div class="config-section-title-left">
-                                        <span>🖥️</span>
-                                        <span>服务器与网络基础配置</span>
+                            <!-- 1 & 2. 基础配置与端点配置 (左右布局 Grid) -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                                <!-- 1. 服务器与网络基础配置 -->
+                                <div class="config-section-card" style="margin-bottom: 0;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>🖥️</span>
+                                            <span>服务器与网络基础配置</span>
+                                        </div>
+                                        <span style="font-size: 12px; font-weight: normal; opacity: 0.65;">服务绑定与访问鉴权</span>
                                     </div>
-                                    <span style="font-size: 12px; font-weight: normal; opacity: 0.65;">服务绑定与访问鉴权</span>
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px 18px;">
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">服务器主机地址:</label>
+                                            <input type="text" v-model="config.form.host" class="config-input-styled" placeholder="0.0.0.0" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">服务器端口号:</label>
+                                            <input type="number" v-model="config.form.port" class="config-input-styled" placeholder="8051" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">API 访问密码:</label>
+                                            <input type="text" v-model="config.form.api_password" class="config-input-styled" placeholder="Bearer Key (留空免密)" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">控制面板密码:</label>
+                                            <input type="text" v-model="config.form.panel_password" class="config-input-styled" placeholder="控制面板登录密码" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">凭证存储目录:</label>
+                                            <input type="text" v-model="config.form.credentials_dir" class="config-input-styled" placeholder="credentials" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">网络代理设置:</label>
+                                            <input type="text" v-model="config.form.proxy" class="config-input-styled" placeholder="http://127.0.0.1:7890" />
+                                        </div>
+                                    </div>
                                 </div>
-                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px 18px;">
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">服务器主机地址:</label>
-                                        <input type="text" v-model="config.form.host" class="config-input-styled" placeholder="0.0.0.0" />
+
+                                <!-- 2. 服务代理端点配置 -->
+                                <div class="config-section-card" style="margin-bottom: 0;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>🌐</span>
+                                            <span>服务代理端点配置</span>
+                                        </div>
+                                        <div style="display: flex; gap: 8px;">
+                                            <button type="button" class="btn-xs btn-auto" @click="useMirrorUrls">🚀 使用镜像端点</button>
+                                            <button type="button" class="btn-xs btn-auto" @click="restoreOfficialUrls">🔄 还原官方</button>
+                                        </div>
                                     </div>
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">服务器端口号:</label>
-                                        <input type="number" v-model="config.form.port" class="config-input-styled" placeholder="8051" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">API 访问密码:</label>
-                                        <input type="text" v-model="config.form.api_password" class="config-input-styled" placeholder="Bearer Key (留空免密)" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">控制面板密码:</label>
-                                        <input type="text" v-model="config.form.panel_password" class="config-input-styled" placeholder="控制面板登录密码" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">凭证存储目录:</label>
-                                        <input type="text" v-model="config.form.credentials_dir" class="config-input-styled" placeholder="credentials" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">网络代理设置:</label>
-                                        <input type="text" v-model="config.form.proxy" class="config-input-styled" placeholder="http://127.0.0.1:7890" />
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px 18px;">
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Code Assist Endpoint:</label>
+                                            <input type="text" v-model="config.form.code_assist_endpoint" class="config-input-styled" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">OAuth Endpoint:</label>
+                                            <input type="text" v-model="config.form.oauth_proxy_url" class="config-input-styled" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Google APIs Endpoint:</label>
+                                            <input type="text" v-model="config.form.googleapis_proxy_url" class="config-input-styled" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Resource Manager API Endpoint:</label>
+                                            <input type="text" v-model="config.form.resource_manager_api_url" class="config-input-styled" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Service Usage API Endpoint:</label>
+                                            <input type="text" v-model="config.form.service_usage_api_url" class="config-input-styled" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Antigravity API Endpoint:</label>
+                                            <input type="text" v-model="config.form.antigravity_api_url" class="config-input-styled" />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- 2. 服务代理端点配置 -->
-                            <div class="config-section-card">
-                                <div class="config-section-title">
-                                    <div class="config-section-title-left">
-                                        <span>🌐</span>
-                                        <span>服务代理端点配置</span>
-                                    </div>
-                                    <div style="display: flex; gap: 8px;">
-                                        <button type="button" class="btn-xs btn-auto" @click="useMirrorUrls">🚀 一键使用镜像网址</button>
-                                        <button type="button" class="btn-xs btn-auto" @click="restoreOfficialUrls">🔄 还原官方端点</button>
-                                    </div>
-                                </div>
-                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px 18px;">
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Code Assist Endpoint:</label>
-                                        <input type="text" v-model="config.form.code_assist_endpoint" class="config-input-styled" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">OAuth Endpoint:</label>
-                                        <input type="text" v-model="config.form.oauth_proxy_url" class="config-input-styled" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Google APIs Endpoint:</label>
-                                        <input type="text" v-model="config.form.googleapis_proxy_url" class="config-input-styled" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Resource Manager API Endpoint:</label>
-                                        <input type="text" v-model="config.form.resource_manager_api_url" class="config-input-styled" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Service Usage API Endpoint:</label>
-                                        <input type="text" v-model="config.form.service_usage_api_url" class="config-input-styled" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Antigravity API Endpoint:</label>
-                                        <input type="text" v-model="config.form.antigravity_api_url" class="config-input-styled" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- 3. 并排 2-Column Grid (自动封禁策略 + 重试避障) -->
+                            <!-- 3. 高级策略与控制 Grid -->
                             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 16px;">
                                 <div class="config-section-card" style="margin-bottom: 0;">
                                     <div class="config-section-title">
@@ -1354,7 +1364,6 @@
                                             <span>🔥</span>
                                             <span>账号配额保鲜预热</span>
                                         </div>
-                                        <span class="badge-hot-update">热更新</span>
                                     </div>
                                     <div class="form-group mb-3">
                                         <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
@@ -1369,70 +1378,84 @@
                                         <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">满额连续闲置满该时长（如 4.5 小时）后，自动打点防重置时间延后</small>
                                     </div>
                                 </div>
-                            </div>
 
-                            <!-- 4. 兼容性与流式高级处理策略 -->
-                            <div class="config-section-card">
-                                <div class="config-section-title">
-                                    <div class="config-section-title-left">
-                                        <span>⚙️</span>
-                                        <span>兼容性与流式高级处理策略</span>
+                                <div class="config-section-card" style="margin-bottom: 0;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>🛠️</span>
+                                            <span>兼容性转换模式</span>
+                                        </div>
+                                    </div>
+                                    <div class="form-group mb-3">
+                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="compatibilityModeEnabled" v-model="config.form.compatibility_mode_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
+                                            <label for="compatibilityModeEnabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用系统消息兼容转译</label>
+                                        </div>
+                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">将 system 角色消息转为 user 角色，停用 system_instructions 以提高老版本 API 兼容性</small>
                                     </div>
                                 </div>
-                                <div class="config-switch-grid">
-                                    <div class="config-switch-item">
-                                        <input type="checkbox" id="compatibilityModeEnabled" v-model="config.form.compatibility_mode_enabled" class="config-checkbox" />
-                                        <div class="config-switch-content">
-                                            <label for="compatibilityModeEnabled" class="config-switch-title">
-                                                兼容性转换模式
-                                                <span class="badge-hot-update">热更新</span>
-                                            </label>
-                                            <div class="config-switch-desc">将 system 角色消息转为 user 角色，停用 system_instructions 以提高老版本 API 兼容性</div>
+
+                                <div class="config-section-card" style="margin-bottom: 0;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>🧠</span>
+                                            <span>返回思维链</span>
                                         </div>
                                     </div>
+                                    <div class="form-group mb-3">
+                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="returnThoughtsToFrontend" v-model="config.form.return_thoughts_to_frontend" class="config-checkbox" style="width: 16px; height: 16px;" />
+                                            <label for="returnThoughtsToFrontend" style="font-weight: 600; cursor: pointer; font-size: 13px;">输出思考推理过程文本</label>
+                                        </div>
+                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">保留并输出 Gemini 2.0 / Claude Thinking 模型的思考推理过程文本</small>
+                                    </div>
+                                </div>
 
-                                    <div class="config-switch-item">
-                                        <input type="checkbox" id="returnThoughtsToFrontend" v-model="config.form.return_thoughts_to_frontend" class="config-checkbox" />
-                                        <div class="config-switch-content">
-                                            <label for="returnThoughtsToFrontend" class="config-switch-title">
-                                                返回思维链
-                                                <span class="badge-hot-update">热更新</span>
-                                            </label>
-                                            <div class="config-switch-desc">保留并输出 Gemini 2.0 / Claude Thinking 模型的思考推理过程文本</div>
+                                <div class="config-section-card" style="margin-bottom: 0;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>⚡</span>
+                                            <span>流式转非流式优化</span>
                                         </div>
                                     </div>
+                                    <div class="form-group mb-3">
+                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="antigravityStream2nostream" v-model="config.form.antigravity_stream_2_nostream" class="config-checkbox" style="width: 16px; height: 16px;" />
+                                            <label for="antigravityStream2nostream" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用非流式底层流式化</label>
+                                        </div>
+                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">非流式请求底层统一走流式 API 传输并实时收集拼接为完整响应</small>
+                                    </div>
+                                </div>
 
-                                    <div class="config-switch-item">
-                                        <input type="checkbox" id="antigravityStream2nostream" v-model="config.form.antigravity_stream_2_nostream" class="config-checkbox" />
-                                        <div class="config-switch-content">
-                                            <label for="antigravityStream2nostream" class="config-switch-title">
-                                                流式转非流式优化
-                                                <span class="badge-hot-update">热更新</span>
-                                            </label>
-                                            <div class="config-switch-desc">非流式请求底层统一走流式 API 传输并实时收集拼接为完整响应</div>
+                                <div class="config-section-card" style="margin-bottom: 0;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>🔀</span>
+                                            <span>重试自动切换凭证</span>
                                         </div>
                                     </div>
+                                    <div class="form-group mb-3">
+                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="antigravitySwitchCredentialEnabled" v-model="config.form.antigravity_switch_credential_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
+                                            <label for="antigravitySwitchCredentialEnabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用错误重试无缝轮换凭证</label>
+                                        </div>
+                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">当某个凭证触发错误重试时，自动无缝轮换至备选凭证完成请求</small>
+                                    </div>
+                                </div>
 
-                                    <div class="config-switch-item">
-                                        <input type="checkbox" id="antigravitySwitchCredentialEnabled" v-model="config.form.antigravity_switch_credential_enabled" class="config-checkbox" />
-                                        <div class="config-switch-content">
-                                            <label for="antigravitySwitchCredentialEnabled" class="config-switch-title">
-                                                重试自动切换凭证
-                                                <span class="badge-hot-update">热更新</span>
-                                            </label>
-                                            <div class="config-switch-desc">当某个凭证触发错误重试时，自动无缝轮换至备选凭证完成请求</div>
+                                <div class="config-section-card" style="margin-bottom: 0;">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>📡</span>
+                                            <span>Antigravity 伴随流量打点</span>
                                         </div>
                                     </div>
-
-                                    <div class="config-switch-item">
-                                        <input type="checkbox" id="antigravityTelemetryEnabled" v-model="config.form.antigravity_telemetry_enabled" class="config-checkbox" />
-                                        <div class="config-switch-content">
-                                            <label for="antigravityTelemetryEnabled" class="config-switch-title">
-                                                Antigravity 伴随流量打点
-                                                <span class="badge-hot-update">热更新</span>
-                                            </label>
-                                            <div class="config-switch-desc">对话生成时并发发送指标上报、实验拉取与 Unleash 心跳（模拟真实 CLI 伴随流量特征）</div>
+                                    <div class="form-group mb-3">
+                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="antigravityTelemetryEnabled" v-model="config.form.antigravity_telemetry_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
+                                            <label for="antigravityTelemetryEnabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用 CLI 伴随流量特征伪装</label>
                                         </div>
+                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">对话生成时并发发送指标上报、实验拉取与 Unleash 心跳（模拟真实 CLI 伴随流量特征）</small>
                                     </div>
                                 </div>
                             </div>

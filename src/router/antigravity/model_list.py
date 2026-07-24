@@ -66,7 +66,7 @@ async def get_antigravity_models_with_features():
         # 流式抗截断模型 (仅在流式传输时有效，前缀格式)
         models.append(f"流式抗截断/{base_model}")
     
-    log.info(f"[ANTIGRAVITY MODEL LIST] 生成了 {len(models)} 个模型（包含功能前缀）")
+    log.debug(f"[ANTIGRAVITY MODEL LIST] 生成了 {len(models)} 个模型（包含功能前缀）")
     return models
 
 
@@ -81,7 +81,7 @@ async def list_gemini_models(token: str = Depends(authenticate_flexible)):
     并添加假流式和流式抗截断前缀
     """
     models = await get_antigravity_models_with_features()
-    log.info("[ANTIGRAVITY MODEL LIST] 返回 Gemini 格式")
+    log.debug("[ANTIGRAVITY MODEL LIST] 返回 Gemini 格式")
     return JSONResponse(content=create_gemini_model_list(
         models,
         base_name_extractor=get_base_model_from_feature_model
@@ -97,7 +97,7 @@ async def list_openai_models(token: str = Depends(authenticate_flexible)):
     并添加假流式和流式抗截断前缀
     """
     models = await get_antigravity_models_with_features()
-    log.info("[ANTIGRAVITY MODEL LIST] 返回 OpenAI 格式")
+    log.debug("[ANTIGRAVITY MODEL LIST] 返回 OpenAI 格式")
     model_list = create_openai_model_list(models, owned_by="google")
     return JSONResponse(content={
         "object": "list",

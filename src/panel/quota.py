@@ -75,6 +75,7 @@ class QuotaRefreshService:
 
     async def refresh_all(self):
         """均衡平滑地在 1 分钟内完成所有 Antigravity 凭证额度刷新"""
+        refreshed_count = 0
         try:
             storage_adapter = await get_storage()
             filenames = await storage_adapter.list_credentials(mode="antigravity")
@@ -96,11 +97,21 @@ class QuotaRefreshService:
 
             log.debug(f"⏰ [QuotaRefresh] 开始平滑定时刷新 {count} 个 Antigravity 凭证额度 (平均每 {step_delay:.1f} 秒刷新 1 个账号)...")
             for fn in active_filenames:
-                await self._refresh_credential_quota(fn, storage_adapter)
+                success = await self._refresh_credential_quota(fn, storage_adapter)
+                if success:
+                    refreshed_count += 1
                 await asyncio.sleep(step_delay)
             log.debug("✅ [QuotaRefresh] 完成本轮 Antigravity 凭证额度平滑刷新")
         except Exception as e:
             log.error(f"[QuotaRefresh] 自动刷新额度过程出错: {e}")
+        finally:
+            # 无论成功与否，只要有任何账号更新就通知前端刷新界面
+            if refreshed_count > 0:
+                try:
+                    from src.panel.sse import sse_manager
+                    await sse_manager.broadcast("creds_updated", {"mode": "antigravity", "count": refreshed_count})
+                except Exception:
+                    pass
 
     async def _run(self):
         """后台轮询主循环"""
