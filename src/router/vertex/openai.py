@@ -37,7 +37,8 @@ async def chat_completions(
 
     base_model = get_base_model_from_feature_model(openai_request.model)
     from src.model_mapping import model_mapping_manager
-    real_model = model_mapping_manager.resolve_model(base_model, router_type="vertex")
+    real_model = model_mapping_manager.resolve_model(
+        base_model, router_type="vertex")
 
     is_streaming = openai_request.stream
 
@@ -56,7 +57,8 @@ async def chat_completions(
     }
 
     # 记录实际重定向后的最终目标模型映射
-    model_mapping_manager.record_mapping(openai_request.model, api_request["model"], router_type="vertex")
+    model_mapping_manager.record_mapping(
+        openai_request.model, api_request["model"], router_type="vertex")
 
     # ========== 非流式请求 ==========
     if not is_streaming:
@@ -66,9 +68,11 @@ async def chat_completions(
         status_code = getattr(response, "status_code", 200)
 
         if hasattr(response, "body"):
-            response_body = response.body.decode() if isinstance(response.body, bytes) else response.body
+            response_body = response.body.decode() if isinstance(
+                response.body, bytes) else response.body
         elif hasattr(response, "content"):
-            response_body = response.content.decode() if isinstance(response.content, bytes) else response.content
+            response_body = response.content.decode() if isinstance(
+                response.content, bytes) else response.content
         else:
             response_body = str(response)
 
@@ -79,7 +83,8 @@ async def chat_completions(
             return JSONResponse(content={"error": "Response parsing failed"}, status_code=500)
 
         from src.converter.openai2gemini import convert_gemini_to_openai_response
-        openai_response = convert_gemini_to_openai_response(gemini_response, real_model, status_code)
+        openai_response = convert_gemini_to_openai_response(
+            gemini_response, real_model, status_code)
         return JSONResponse(content=openai_response, status_code=status_code)
 
     # ========== 流式请求 ==========
@@ -102,17 +107,20 @@ async def chat_completions(
         async for chunk in prepend_async_item(first_chunk, stream_gen):
             if isinstance(chunk, Response):
                 try:
-                    error_content = chunk.body if isinstance(chunk.body, bytes) else (chunk.body or b"").encode()
+                    error_content = chunk.body if isinstance(
+                        chunk.body, bytes) else (chunk.body or b"").encode()
                     gemini_error = json.loads(error_content.decode())
                     from src.converter.openai2gemini import convert_gemini_to_openai_response
-                    openai_error = convert_gemini_to_openai_response(gemini_error, real_model, chunk.status_code)
+                    openai_error = convert_gemini_to_openai_response(
+                        gemini_error, real_model, chunk.status_code)
                     yield f"data: {json.dumps(openai_error)}\n\n".encode()
                 except Exception:
                     yield f"data: {json.dumps({'error': 'Stream error'})}\n\n".encode()
                 yield b"data: [DONE]\n\n"
                 return
 
-            chunk_str = chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk
+            chunk_str = chunk.decode(
+                "utf-8") if isinstance(chunk, bytes) else chunk
 
             if not chunk_str.strip():
                 continue
@@ -124,7 +132,8 @@ async def chat_completions(
             if chunk_str.startswith("data: "):
                 try:
                     from src.converter.openai2gemini import convert_gemini_to_openai_stream
-                    openai_chunk_str = convert_gemini_to_openai_stream(chunk_str, real_model, response_id)
+                    openai_chunk_str = convert_gemini_to_openai_stream(
+                        chunk_str, real_model, response_id)
                     if openai_chunk_str:
                         yield openai_chunk_str.encode("utf-8")
                 except Exception as e:

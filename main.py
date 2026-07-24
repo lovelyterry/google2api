@@ -3,6 +3,25 @@ Main Web Integration - Integrates all routers and modules
 集合router并开启主服务
 """
 
+from src.utils import get_resource_path
+from src.panel.quota import quota_refresh_service
+from src.panel import router as panel_router
+from src.router.vertex.model_list import router as vertex_model_list_router
+from src.router.vertex.openai import router as vertex_openai_router
+from src.router.vertex.gemini import router as vertex_gemini_router
+from src.router.geminicli.model_list import router as geminicli_model_list_router
+from src.router.geminicli.anthropic import router as geminicli_anthropic_router
+from src.router.geminicli.gemini import router as geminicli_gemini_router
+from src.router.geminicli.openai import router as geminicli_openai_router
+from src.router.antigravity.model_list import router as antigravity_model_list_router
+from src.router.antigravity.anthropic import router as antigravity_anthropic_router
+from src.router.antigravity.gemini import router as antigravity_gemini_router
+from src.router.antigravity.openai import router as antigravity_openai_router
+from src.auth import credential_manager
+from src.config import get_server_host, get_server_port
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Response
 import os
 import sys
 
@@ -59,29 +78,6 @@ if sys.platform == "win32":
     except Exception as e:
         log.warning(f"注册 Win32 Ctrl Handler 失败: {e}")
 
-from fastapi import FastAPI, Response
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-
-from src.config import get_server_host, get_server_port
-
-# Import managers and utilities
-from src.auth import credential_manager
-
-# Import all routers
-from src.router.antigravity.openai import router as antigravity_openai_router
-from src.router.antigravity.gemini import router as antigravity_gemini_router
-from src.router.antigravity.anthropic import router as antigravity_anthropic_router
-from src.router.antigravity.model_list import router as antigravity_model_list_router
-from src.router.geminicli.openai import router as geminicli_openai_router
-from src.router.geminicli.gemini import router as geminicli_gemini_router
-from src.router.geminicli.anthropic import router as geminicli_anthropic_router
-from src.router.geminicli.model_list import router as geminicli_model_list_router
-from src.router.vertex.gemini import router as vertex_gemini_router
-from src.router.vertex.openai import router as vertex_openai_router
-from src.router.vertex.model_list import router as vertex_model_list_router
-from src.panel import router as panel_router
-from src.panel.quota import quota_refresh_service
 
 # 全局凭证管理器
 global_credential_manager = None
@@ -174,28 +170,36 @@ app.add_middleware(
 
 # 挂载路由器
 # OpenAI兼容路由 - 处理OpenAI格式请求
-app.include_router(geminicli_openai_router, prefix="", tags=["Geminicli OpenAI API"])
+app.include_router(geminicli_openai_router, prefix="",
+                   tags=["Geminicli OpenAI API"])
 
 # Gemini原生路由 - 处理Gemini格式请求
-app.include_router(geminicli_gemini_router, prefix="", tags=["Geminicli Gemini API"])
+app.include_router(geminicli_gemini_router, prefix="",
+                   tags=["Geminicli Gemini API"])
 
 # Geminicli模型列表路由 - 处理Gemini格式的模型列表请求
-app.include_router(geminicli_model_list_router, prefix="", tags=["Geminicli Model List"])
+app.include_router(geminicli_model_list_router, prefix="",
+                   tags=["Geminicli Model List"])
 
 # Antigravity路由 - 处理OpenAI格式请求并转换为Antigravity API
-app.include_router(antigravity_openai_router, prefix="", tags=["Antigravity OpenAI API"])
+app.include_router(antigravity_openai_router, prefix="",
+                   tags=["Antigravity OpenAI API"])
 
 # Antigravity路由 - 处理Gemini格式请求并转换为Antigravity API
-app.include_router(antigravity_gemini_router, prefix="", tags=["Antigravity Gemini API"])
+app.include_router(antigravity_gemini_router, prefix="",
+                   tags=["Antigravity Gemini API"])
 
 # Antigravity模型列表路由 - 处理Gemini格式的模型列表请求
-app.include_router(antigravity_model_list_router, prefix="", tags=["Antigravity Model List"])
+app.include_router(antigravity_model_list_router, prefix="",
+                   tags=["Antigravity Model List"])
 
 # Antigravity Anthropic Messages 路由 - Anthropic Messages 格式兼容
-app.include_router(antigravity_anthropic_router, prefix="", tags=["Antigravity Anthropic Messages"])
+app.include_router(antigravity_anthropic_router, prefix="",
+                   tags=["Antigravity Anthropic Messages"])
 
 # Geminicli Anthropic Messages 路由 - Anthropic Messages 格式兼容 (Geminicli)
-app.include_router(geminicli_anthropic_router, prefix="", tags=["Geminicli Anthropic Messages"])
+app.include_router(geminicli_anthropic_router, prefix="",
+                   tags=["Geminicli Anthropic Messages"])
 
 # Panel路由 - 包含认证、凭证管理和控制面板功能
 app.include_router(panel_router, prefix="", tags=["Panel Interface"])
@@ -207,9 +211,9 @@ app.include_router(vertex_gemini_router, prefix="", tags=["Vertex Gemini API"])
 app.include_router(vertex_openai_router, prefix="", tags=["Vertex OpenAI API"])
 
 # Vertex AI 路由 - 模型列表
-app.include_router(vertex_model_list_router, prefix="", tags=["Vertex Model List"])
+app.include_router(vertex_model_list_router, prefix="",
+                   tags=["Vertex Model List"])
 
-from src.utils import get_resource_path
 
 # 静态文件路由 - 服务docs目录下的文件
 docs_dir = get_resource_path("docs")
@@ -331,4 +335,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

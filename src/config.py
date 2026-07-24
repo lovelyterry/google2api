@@ -496,6 +496,3 @@ async def get_quota_warmup_idle_hours() -> float:
         except ValueError:
             pass
     return float(await get_config_value("quota_warmup_idle_hours", 4.5))
-
-
-

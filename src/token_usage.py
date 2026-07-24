@@ -56,7 +56,8 @@ class TokenTracker:
                 creds_dir = os.getenv("CREDENTIALS_DIR", "./creds")
                 self._stats_dir = creds_dir
                 os.makedirs(self._stats_dir, exist_ok=True)
-                self._stats_file = os.path.join(self._stats_dir, "token_stats.json")
+                self._stats_file = os.path.join(
+                    self._stats_dir, "token_stats.json")
 
                 if os.path.exists(self._stats_file):
                     try:
@@ -65,11 +66,15 @@ class TokenTracker:
                             if content.strip():
                                 loaded = json.loads(content)
                                 if isinstance(loaded, dict):
-                                    self._data["daily"] = loaded.get("daily", {})
-                                    self._data["accounts"] = loaded.get("accounts", {})
-                                    self._data["models"] = loaded.get("models", {})
+                                    self._data["daily"] = loaded.get(
+                                        "daily", {})
+                                    self._data["accounts"] = loaded.get(
+                                        "accounts", {})
+                                    self._data["models"] = loaded.get(
+                                        "models", {})
                     except Exception as e:
-                        log.error(f"[TokenTracker] 读取统计文件 {self._stats_file} 失败: {e}")
+                        log.error(
+                            f"[TokenTracker] 读取统计文件 {self._stats_file} 失败: {e}")
 
                 self._initialized = True
             except Exception as e:
@@ -131,8 +136,10 @@ class TokenTracker:
             d_item = self._data["daily"][today_str]
             d_item["prompt_tokens"] += prompt_cnt
             d_item["completion_tokens"] += comp_cnt
-            d_item["cached_tokens"] = d_item.get("cached_tokens", 0) + cached_cnt
-            d_item["thoughts_tokens"] = d_item.get("thoughts_tokens", 0) + thoughts_cnt
+            d_item["cached_tokens"] = d_item.get(
+                "cached_tokens", 0) + cached_cnt
+            d_item["thoughts_tokens"] = d_item.get(
+                "thoughts_tokens", 0) + thoughts_cnt
             d_item["total_tokens"] += total_cnt
             d_item["request_count"] += 1
 
@@ -149,8 +156,10 @@ class TokenTracker:
             a_item = self._data["accounts"][account_name]
             a_item["prompt_tokens"] += prompt_cnt
             a_item["completion_tokens"] += comp_cnt
-            a_item["cached_tokens"] = a_item.get("cached_tokens", 0) + cached_cnt
-            a_item["thoughts_tokens"] = a_item.get("thoughts_tokens", 0) + thoughts_cnt
+            a_item["cached_tokens"] = a_item.get(
+                "cached_tokens", 0) + cached_cnt
+            a_item["thoughts_tokens"] = a_item.get(
+                "thoughts_tokens", 0) + thoughts_cnt
             a_item["total_tokens"] += total_cnt
             a_item["request_count"] += 1
 
@@ -167,8 +176,10 @@ class TokenTracker:
             m_item = self._data["models"][model_name]
             m_item["prompt_tokens"] += prompt_cnt
             m_item["completion_tokens"] += comp_cnt
-            m_item["cached_tokens"] = m_item.get("cached_tokens", 0) + cached_cnt
-            m_item["thoughts_tokens"] = m_item.get("thoughts_tokens", 0) + thoughts_cnt
+            m_item["cached_tokens"] = m_item.get(
+                "cached_tokens", 0) + cached_cnt
+            m_item["thoughts_tokens"] = m_item.get(
+                "thoughts_tokens", 0) + thoughts_cnt
             m_item["total_tokens"] += total_cnt
             m_item["request_count"] += 1
 
@@ -190,12 +201,18 @@ class TokenTracker:
             accounts_dict = self._data.get("accounts", {})
             models_dict = self._data.get("models", {})
 
-            total_tokens = sum(item.get("total_tokens", 0) for item in daily_dict.values())
-            prompt_tokens = sum(item.get("prompt_tokens", 0) for item in daily_dict.values())
-            completion_tokens = sum(item.get("completion_tokens", 0) for item in daily_dict.values())
-            cached_tokens = sum(item.get("cached_tokens", 0) for item in daily_dict.values())
-            thoughts_tokens = sum(item.get("thoughts_tokens", 0) for item in daily_dict.values())
-            total_requests = sum(item.get("request_count", 0) for item in daily_dict.values())
+            total_tokens = sum(item.get("total_tokens", 0)
+                               for item in daily_dict.values())
+            prompt_tokens = sum(item.get("prompt_tokens", 0)
+                                for item in daily_dict.values())
+            completion_tokens = sum(item.get("completion_tokens", 0)
+                                    for item in daily_dict.values())
+            cached_tokens = sum(item.get("cached_tokens", 0)
+                                for item in daily_dict.values())
+            thoughts_tokens = sum(item.get("thoughts_tokens", 0)
+                                  for item in daily_dict.values())
+            total_requests = sum(item.get("request_count", 0)
+                                 for item in daily_dict.values())
 
             now = datetime.now(BEIJING_TZ)
             today_str = now.strftime("%Y-%m-%d")
@@ -276,17 +293,23 @@ class TokenTracker:
                     w_monday = dt - timedelta(days=dt.weekday())
                     w_str = w_monday.strftime("%Y-%m-%d")
                     if w_str not in weekly_dict:
-                        weekly_dict[w_str] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "request_count": 0}
-                    weekly_dict[w_str]["prompt_tokens"] += item.get("prompt_tokens", 0)
-                    weekly_dict[w_str]["completion_tokens"] += item.get("completion_tokens", 0)
-                    weekly_dict[w_str]["total_tokens"] += item.get("total_tokens", 0)
-                    weekly_dict[w_str]["request_count"] += item.get("request_count", 0)
+                        weekly_dict[w_str] = {
+                            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "request_count": 0}
+                    weekly_dict[w_str]["prompt_tokens"] += item.get(
+                        "prompt_tokens", 0)
+                    weekly_dict[w_str]["completion_tokens"] += item.get(
+                        "completion_tokens", 0)
+                    weekly_dict[w_str]["total_tokens"] += item.get(
+                        "total_tokens", 0)
+                    weekly_dict[w_str]["request_count"] += item.get(
+                        "request_count", 0)
                 except Exception:
                     pass
 
             weekly_list = []
             for i in range(11, -1, -1):
-                w_monday = (now - timedelta(days=now.weekday())) - timedelta(weeks=i)
+                w_monday = (now - timedelta(days=now.weekday())) - \
+                    timedelta(weeks=i)
                 w_str = w_monday.strftime("%Y-%m-%d")
                 w_item = weekly_dict.get(w_str, {})
                 weekly_list.append({
@@ -301,11 +324,16 @@ class TokenTracker:
             for d_str, item in daily_dict.items():
                 m_str = d_str[:7]
                 if m_str not in monthly_dict:
-                    monthly_dict[m_str] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "request_count": 0}
-                monthly_dict[m_str]["prompt_tokens"] += item.get("prompt_tokens", 0)
-                monthly_dict[m_str]["completion_tokens"] += item.get("completion_tokens", 0)
-                monthly_dict[m_str]["total_tokens"] += item.get("total_tokens", 0)
-                monthly_dict[m_str]["request_count"] += item.get("request_count", 0)
+                    monthly_dict[m_str] = {
+                        "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "request_count": 0}
+                monthly_dict[m_str]["prompt_tokens"] += item.get(
+                    "prompt_tokens", 0)
+                monthly_dict[m_str]["completion_tokens"] += item.get(
+                    "completion_tokens", 0)
+                monthly_dict[m_str]["total_tokens"] += item.get(
+                    "total_tokens", 0)
+                monthly_dict[m_str]["request_count"] += item.get(
+                    "request_count", 0)
 
             monthly_list = []
             for m_str, m_item in sorted(monthly_dict.items())[-12:]:
@@ -431,7 +459,8 @@ def _parse_image_dimensions(base64_str: str) -> Tuple[Optional[int], Optional[in
                 marker, length = struct.unpack(">HH", data_bytes[idx:idx + 4])
                 if marker in (0xFFC0, 0xFFC1, 0xFFC2):
                     if idx + 9 <= len(data_bytes):
-                        h, w = struct.unpack(">HH", data_bytes[idx + 5:idx + 9])
+                        h, w = struct.unpack(
+                            ">HH", data_bytes[idx + 5:idx + 9])
                         return w, h
                     break
                 idx += 2 + length
@@ -485,11 +514,13 @@ def estimate_input_tokens(payload: Dict[str, Any]) -> int:
                     total_tokens += _count_text_tokens(block)
                 elif isinstance(block, dict):
                     if block.get("text"):
-                        total_tokens += _count_text_tokens(str(block.get("text")))
+                        total_tokens += _count_text_tokens(
+                            str(block.get("text")))
                     elif block.get("parts"):
                         for part in block.get("parts", []):
                             if isinstance(part, dict) and part.get("text"):
-                                total_tokens += _count_text_tokens(str(part["text"]))
+                                total_tokens += _count_text_tokens(
+                                    str(part["text"]))
             total_tokens += 3
 
     messages = payload.get("messages") or payload.get("contents")
@@ -513,7 +544,8 @@ def estimate_input_tokens(payload: Dict[str, Any]) -> int:
                         if item_type == "text" or ("text" in item and not item_type):
                             text_val = item.get("text", "")
                             if text_val:
-                                total_tokens += _count_text_tokens(str(text_val))
+                                total_tokens += _count_text_tokens(
+                                    str(text_val))
                         elif item_type == "tool_use":
                             name = item.get("name", "")
                             input_data = item.get("input", {})
@@ -526,7 +558,8 @@ def estimate_input_tokens(payload: Dict[str, Any]) -> int:
                             elif isinstance(res_content, list):
                                 for res_item in res_content:
                                     if isinstance(res_item, dict) and res_item.get("text"):
-                                        total_tokens += _count_text_tokens(str(res_item["text"]))
+                                        total_tokens += _count_text_tokens(
+                                            str(res_item["text"]))
                         elif item_type in ("image", "image_url") or "inlineData" in item or "source" in item:
                             total_tokens += _calculate_image_tokens(item)
 

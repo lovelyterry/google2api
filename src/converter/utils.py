@@ -109,7 +109,7 @@ async def merge_system_messages(request_body: Dict[str, Any]) -> Dict[str, Any]:
                 {"role": "user", "content": "Hello"}
             ]
         }
-    
+
     Example (Anthropic格式，兼容性模式关闭):
         输入:
         {
@@ -134,13 +134,13 @@ async def merge_system_messages(request_body: Dict[str, Any]) -> Dict[str, Any]:
     from src.config import get_compatibility_mode_enabled
 
     compatibility_mode = await get_compatibility_mode_enabled()
-    
+
     # 处理 Anthropic 格式的顶层 system 参数
     # Anthropic API 规范: system 是顶层参数，不在 messages 中
     system_content = request_body.get("system")
     if system_content:
         system_parts = []
-        
+
         if isinstance(system_content, str):
             if system_content.strip():
                 system_parts.append({"text": system_content})
@@ -152,14 +152,14 @@ async def merge_system_messages(request_body: Dict[str, Any]) -> Dict[str, Any]:
                         system_parts.append({"text": item["text"]})
                 elif isinstance(item, str) and item.strip():
                     system_parts.append({"text": item})
-        
+
         if system_parts:
             if compatibility_mode:
                 # 兼容性模式：将 system 转换为 user 消息插入到 messages 开头
                 user_system_message = {
                     "role": "user",
-                    "content": system_content if isinstance(system_content, str) else 
-                              "\n".join(part["text"] for part in system_parts)
+                    "content": system_content if isinstance(system_content, str) else
+                    "\n".join(part["text"] for part in system_parts)
                 }
                 messages = request_body.get("messages", [])
                 request_body = request_body.copy()
@@ -193,13 +193,13 @@ async def merge_system_messages(request_body: Dict[str, Any]) -> Dict[str, Any]:
     else:
         # 兼容性模式关闭：提取连续的system消息合并为systemInstruction
         system_parts = []
-        
+
         # 如果已经从顶层 system 参数创建了 systemInstruction，获取现有的 parts
         if "systemInstruction" in request_body:
             existing_instruction = request_body.get("systemInstruction", {})
             if isinstance(existing_instruction, dict):
                 system_parts = existing_instruction.get("parts", []).copy()
-        
+
         remaining_messages = []
         collecting_system = True
 

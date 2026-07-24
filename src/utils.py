@@ -21,6 +21,7 @@ from src.auth import (
     verify_panel_token,
 )
 
+
 def get_resource_path(relative_path: str) -> str:
     """
     获取资源文件的绝对路径（兼容源码运行、Nuitka 和 PyInstaller 打包应用）
@@ -31,7 +32,8 @@ def get_resource_path(relative_path: str) -> str:
             return path
 
     main_module = sys.modules.get('__main__')
-    main_file = getattr(main_module, '__file__', __file__) if main_module else __file__
+    main_file = getattr(main_module, '__file__',
+                        __file__) if main_module else __file__
     main_dir = os.path.dirname(os.path.abspath(main_file))
 
     candidates = [
@@ -75,7 +77,7 @@ def get_base_model_from_feature_model(model_name: str) -> str:
     # Remove feature prefixes
     for prefix in ["假流式/", "流式抗截断/"]:
         if model_name.startswith(prefix):
-            return model_name[len(prefix) :]
+            return model_name[len(prefix):]
     return model_name
 
 
@@ -106,7 +108,8 @@ def get_available_models(router_type: str = "openai") -> List[str]:
 
         # Gemini 2.5 系列: 使用思考预算后缀
         if "gemini-2.5" in base_model:
-            thinking_suffixes = ["-max", "-high", "-medium", "-low", "-minimal"]
+            thinking_suffixes = ["-max", "-high",
+                                 "-medium", "-low", "-minimal"]
         # Gemini 3 系列: 使用思考等级后缀
         elif "gemini-3" in base_model:
             if "flash" in base_model:
@@ -137,4 +140,3 @@ def get_available_models(router_type: str = "openai") -> List[str]:
             models.append(f"流式抗截断/{base_model}{combined_suffix}")
 
     return models
-

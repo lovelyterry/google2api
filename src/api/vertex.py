@@ -64,7 +64,8 @@ _RRESP_RE = re.compile(r'rresp","(.*?)"')
 _FINISH_REASON_UNSPECIFIED = "FINISH_REASON_UNSPECIFIED"
 
 # upstream errors 中表示 429 限流的关键词
-_QUOTA_KEYWORDS = ("Resource has been exhausted", "quota", "RESOURCE_EXHAUSTED", "429")
+_QUOTA_KEYWORDS = ("Resource has been exhausted",
+                   "quota", "RESOURCE_EXHAUSTED", "429")
 
 # 支持透传进 variables 的字段
 _SUPPORTED_VAR_FIELDS = [
@@ -184,13 +185,15 @@ async def _fetch_recaptcha_token_once() -> Optional[str]:
             emulation=emulation,
         )
         if anchor_resp.status != 200:
-            log.warning(f"[VERTEX RECAPTCHA] anchor GET failed: status={anchor_resp.status}")
+            log.warning(
+                f"[VERTEX RECAPTCHA] anchor GET failed: status={anchor_resp.status}")
             return None
 
         anchor_body = await anchor_resp.text()
         m = _TOKEN_RE.search(anchor_body)
         if not m:
-            log.warning(f"[VERTEX RECAPTCHA] anchor token regex miss, body[:200]={anchor_body[:200]}")
+            log.warning(
+                f"[VERTEX RECAPTCHA] anchor token regex miss, body[:200]={anchor_body[:200]}")
             return None
         base_token = m.group(1)
 
@@ -222,13 +225,15 @@ async def _fetch_recaptcha_token_once() -> Optional[str]:
             emulation=emulation,
         )
         if reload_resp.status != 200:
-            log.warning(f"[VERTEX RECAPTCHA] reload POST failed: status={reload_resp.status}")
+            log.warning(
+                f"[VERTEX RECAPTCHA] reload POST failed: status={reload_resp.status}")
             return None
 
         reload_body = await reload_resp.text()
         rm = _RRESP_RE.search(reload_body)
         if not rm:
-            log.warning(f"[VERTEX RECAPTCHA] rresp regex miss in reload response")
+            log.warning(
+                f"[VERTEX RECAPTCHA] rresp regex miss in reload response")
             return None
 
         return rm.group(1)
@@ -244,7 +249,8 @@ async def fetch_recaptcha_token() -> Optional[str]:
         log.debug(f"[VERTEX RECAPTCHA] attempt {attempt + 1}/3")
         token = await _fetch_recaptcha_token_once()
         if token:
-            log.debug(f"[VERTEX RECAPTCHA] token obtained on attempt {attempt + 1}")
+            log.debug(
+                f"[VERTEX RECAPTCHA] token obtained on attempt {attempt + 1}")
             return token
         log.warning(f"[VERTEX RECAPTCHA] attempt {attempt + 1} failed")
     log.error("[VERTEX RECAPTCHA] all 3 attempts failed")
@@ -254,7 +260,8 @@ async def fetch_recaptcha_token() -> Optional[str]:
 # ==================== Payload 构建 ====================
 
 _SKIP_THOUGHT_SENTINEL = "skip_thought_signature_validator"
-_SKIP_THOUGHT_SENTINEL_B64 = base64.b64encode(_SKIP_THOUGHT_SENTINEL.encode()).decode()
+_SKIP_THOUGHT_SENTINEL_B64 = base64.b64encode(
+    _SKIP_THOUGHT_SENTINEL.encode()).decode()
 
 
 def _drop_invalid_tool_turns(contents: list) -> list:
@@ -274,7 +281,8 @@ def _drop_invalid_tool_turns(contents: list) -> list:
         if not fc_parts:
             continue
         all_empty = all(
-            not (p.get("functionCall") or p.get("function_call") or {}).get("name", "").strip()
+            not (p.get("functionCall") or p.get(
+                "function_call") or {}).get("name", "").strip()
             for p in fc_parts
         )
         if all_empty:
@@ -285,15 +293,18 @@ def _drop_invalid_tool_turns(contents: list) -> list:
                 if isinstance(next_msg, dict) and next_msg.get("role") == "user":
                     next_parts = next_msg.get("parts", [])
                     if next_parts and all(
-                        isinstance(p, dict) and ("functionResponse" in p or "function_response" in p)
+                        isinstance(p, dict) and (
+                            "functionResponse" in p or "function_response" in p)
                         for p in next_parts
                     ):
                         invalid_indices.add(i + 1)
 
     if not invalid_indices:
         return contents
-    result = [msg for i, msg in enumerate(contents) if i not in invalid_indices]
-    log.debug(f"[VERTEX] dropped {len(invalid_indices)} invalid tool turn messages (empty functionCall name)")
+    result = [msg for i, msg in enumerate(
+        contents) if i not in invalid_indices]
+    log.debug(
+        f"[VERTEX] dropped {len(invalid_indices)} invalid tool turn messages (empty functionCall name)")
     return result
 
 
@@ -373,10 +384,14 @@ def _fix_function_response_names(contents: list) -> list:
 def _build_variables(model: str, gemini_payload: Dict[str, Any]) -> Dict[str, Any]:
     """从 gemini_payload 提取 variables（不含 region/recaptchaToken）。"""
     if "contents" in gemini_payload and isinstance(gemini_payload["contents"], list):
-        gemini_payload["contents"] = _drop_invalid_tool_turns(gemini_payload["contents"])
-        gemini_payload["contents"] = _fix_thought_signatures(gemini_payload["contents"])
-        gemini_payload["contents"] = _fix_function_response_names(gemini_payload["contents"])
-    log.debug(f"[VERTEX] contents to upstream: {json.dumps(gemini_payload.get('contents', []), ensure_ascii=False)}")
+        gemini_payload["contents"] = _drop_invalid_tool_turns(
+            gemini_payload["contents"])
+        gemini_payload["contents"] = _fix_thought_signatures(
+            gemini_payload["contents"])
+        gemini_payload["contents"] = _fix_function_response_names(
+            gemini_payload["contents"])
+    log.debug(
+        f"[VERTEX] contents to upstream: {json.dumps(gemini_payload.get('contents', []), ensure_ascii=False)}")
     vars_: Dict[str, Any] = {"model": model}
     for field in _SUPPORTED_VAR_FIELDS:
         if field in gemini_payload:
@@ -477,7 +492,8 @@ def _process_object(obj: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Opti
         errors = result.get("errors", [])
         if errors and isinstance(errors, list):
             first = errors[0]
-            err_msg = first.get("message", "") if isinstance(first, dict) else str(first)
+            err_msg = first.get("message", "") if isinstance(
+                first, dict) else str(first)
             if _is_auth_error(err_msg):
                 return None, err_msg, False
             if _is_quota_error(err_msg):
@@ -556,7 +572,8 @@ def _extract_chunk(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     chunk: Dict[str, Any] = {}
 
     if "candidates" in data and data["candidates"] is not None:
-        candidates_raw = data["candidates"] if isinstance(data["candidates"], list) else []
+        candidates_raw = data["candidates"] if isinstance(
+            data["candidates"], list) else []
         if candidates_raw:
             cleaned = []
             for cand in candidates_raw:
@@ -566,8 +583,10 @@ def _extract_chunk(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 if isinstance(content, dict):
                     raw_parts = content.get("parts", [])
                     role = content.get("role") or "model"
-                    clean_parts = [cp for p in raw_parts if isinstance(p, dict) for cp in [_clean_part(p)] if cp]
-                    cleaned.append({**cand, "content": {"role": role, "parts": clean_parts}})
+                    clean_parts = [cp for p in raw_parts if isinstance(p, dict) for cp in [
+                        _clean_part(p)] if cp]
+                    cleaned.append(
+                        {**cand, "content": {"role": role, "parts": clean_parts}})
                 else:
                     cleaned.append(cand)
             chunk["candidates"] = cleaned if cleaned else candidates_raw
@@ -620,7 +639,8 @@ async def stream_request(
     is_first_auth = True
 
     for attempt in range(max_retries + 1):
-        log.debug(f"[VERTEX STREAM] attempt {attempt + 1}/{max_retries + 1}, model={model}")
+        log.debug(
+            f"[VERTEX STREAM] attempt {attempt + 1}/{max_retries + 1}, model={model}")
 
         if not recaptcha_token:
             recaptcha_token = await fetch_recaptcha_token()
@@ -629,7 +649,8 @@ async def stream_request(
         if not recaptcha_token:
             if attempt >= max_retries:
                 yield Response(
-                    content=json.dumps({"error": {"code": 401, "message": "Could not fetch reCAPTCHA token", "status": "UNAUTHENTICATED"}}),
+                    content=json.dumps({"error": {
+                                       "code": 401, "message": "Could not fetch reCAPTCHA token", "status": "UNAUTHENTICATED"}}),
                     status_code=401,
                     media_type="application/json",
                 )
@@ -637,7 +658,8 @@ async def stream_request(
             await asyncio.sleep(1)
             continue
 
-        payload = _build_request_payload(model, gemini_payload, recaptcha_token)
+        payload = _build_request_payload(
+            model, gemini_payload, recaptcha_token)
         headers = _batch_graphql_headers()
 
         content_yielded = False
@@ -659,7 +681,8 @@ async def stream_request(
                 recaptcha_token = None
                 continue
             yield Response(
-                content=json.dumps({"error": {"code": 500, "message": str(e), "status": "INTERNAL"}}),
+                content=json.dumps(
+                    {"error": {"code": 500, "message": str(e), "status": "INTERNAL"}}),
                 status_code=500,
                 media_type="application/json",
             )
@@ -670,7 +693,7 @@ async def stream_request(
                 err_body = await resp.text()
             except Exception:
                 err_body = ""
-            log.error(f"[VERTEX STREAM] HTTP {resp.status}: {err_body[:300]}")
+            log.error(f"[VERTEX STREAM] HTTP {resp.status}: {err_body}")
 
             if _is_auth_error(err_body):
                 if is_first_auth:
@@ -698,7 +721,8 @@ async def stream_request(
                 await asyncio.sleep(0.5)
                 continue
             if quota_retry:
-                log.warning(f"[VERTEX STREAM] HTTP 429, retry {attempt + 1}/{max_retries}")
+                log.warning(
+                    f"[VERTEX STREAM] HTTP 429, retry {attempt + 1}/{max_retries}")
                 continue
             if need_retry and attempt < max_retries:
                 await asyncio.sleep(1 + attempt)
@@ -719,11 +743,13 @@ async def stream_request(
                         if raw_chunk:
                             buffer += raw_chunk
                             text = buffer.decode("utf-8", errors="replace")
-                            log.debug(f"[VERTEX STREAM] raw buffer: {text[:500]}")
+                            log.debug(
+                                f"[VERTEX STREAM] raw buffer: {text[:500]}")
                             last_end = 0
                             for obj, end_pos in _parse_json_objects(text):
                                 last_end = end_pos
-                                chunk, auth_err, quota_err = _process_object(obj)
+                                chunk, auth_err, quota_err = _process_object(
+                                    obj)
                                 if auth_err:
                                     if is_first_auth:
                                         is_first_auth = False
@@ -749,7 +775,8 @@ async def stream_request(
                             if auth_retry or need_retry or quota_retry:
                                 break
                             # 只保留未被成功解析的尾部
-                            buffer = text[last_end:].encode("utf-8") if last_end < len(text) else b""
+                            buffer = text[last_end:].encode(
+                                "utf-8") if last_end < len(text) else b""
         except Exception as e:
             log.error(f"[VERTEX STREAM] stream read error: {e}")
             if not content_yielded and attempt < max_retries:
@@ -763,7 +790,8 @@ async def stream_request(
             continue
 
         if quota_retry and attempt < max_retries:
-            log.warning(f"[VERTEX STREAM] upstream 429, retry {attempt + 1}/{max_retries}")
+            log.warning(
+                f"[VERTEX STREAM] upstream 429, retry {attempt + 1}/{max_retries}")
             continue
 
         if need_retry and attempt < max_retries:
@@ -781,7 +809,8 @@ async def stream_request(
 
     # 所有重试耗尽
     yield Response(
-        content=json.dumps({"error": {"code": 500, "message": "All retries exhausted", "status": "INTERNAL"}}),
+        content=json.dumps(
+            {"error": {"code": 500, "message": "All retries exhausted", "status": "INTERNAL"}}),
         status_code=500,
         media_type="application/json",
     )
@@ -808,20 +837,23 @@ async def non_stream_request(
     max_retries = 3
 
     for attempt in range(max_retries + 1):
-        log.debug(f"[VERTEX NON-STREAM] attempt {attempt + 1}/{max_retries + 1}, model={model}")
+        log.debug(
+            f"[VERTEX NON-STREAM] attempt {attempt + 1}/{max_retries + 1}, model={model}")
 
         recaptcha_token = await fetch_recaptcha_token()
         if not recaptcha_token:
             if attempt >= max_retries:
                 return Response(
-                    content=json.dumps({"error": {"code": 401, "message": "Could not fetch reCAPTCHA token", "status": "UNAUTHENTICATED"}}),
+                    content=json.dumps({"error": {
+                                       "code": 401, "message": "Could not fetch reCAPTCHA token", "status": "UNAUTHENTICATED"}}),
                     status_code=401,
                     media_type="application/json",
                 )
             await asyncio.sleep(1)
             continue
 
-        payload = _build_request_payload(model, gemini_payload, recaptcha_token)
+        payload = _build_request_payload(
+            model, gemini_payload, recaptcha_token)
         headers = _batch_graphql_headers()
 
         try:
@@ -837,7 +869,8 @@ async def non_stream_request(
                 await asyncio.sleep(1)
                 continue
             return Response(
-                content=json.dumps({"error": {"code": 500, "message": str(e), "status": "INTERNAL"}}),
+                content=json.dumps(
+                    {"error": {"code": 500, "message": str(e), "status": "INTERNAL"}}),
                 status_code=500,
                 media_type="application/json",
             )
@@ -849,12 +882,13 @@ async def non_stream_request(
             raw_text = ""
 
         if status != 200:
-            log.error(f"[VERTEX NON-STREAM] HTTP {status}: {raw_text[:300]}")
+            log.error(f"[VERTEX NON-STREAM] HTTP {status}: {raw_text}")
             if _is_auth_error(raw_text) and attempt < max_retries:
                 await asyncio.sleep(1)
                 continue
             if status == 429 and attempt < max_retries:
-                log.warning(f"[VERTEX NON-STREAM] HTTP 429, retry {attempt + 1}/{max_retries}")
+                log.warning(
+                    f"[VERTEX NON-STREAM] HTTP 429, retry {attempt + 1}/{max_retries}")
                 recaptcha_token = await fetch_recaptcha_token()
                 continue
             if status in (500, 503) and attempt < max_retries:
@@ -869,12 +903,13 @@ async def non_stream_request(
         # 解析响应
         result = _build_non_stream_response(raw_text)
         if result is None:
-            log.error(f"[VERTEX NON-STREAM] parse failed: {raw_text[:300]}")
+            log.error(f"[VERTEX NON-STREAM] parse failed: {raw_text}")
             if attempt < max_retries:
                 await asyncio.sleep(1)
                 continue
             return Response(
-                content=json.dumps({"error": {"code": 500, "message": "Failed to parse upstream response", "status": "INTERNAL"}}),
+                content=json.dumps({"error": {
+                                   "code": 500, "message": "Failed to parse upstream response", "status": "INTERNAL"}}),
                 status_code=500,
                 media_type="application/json",
             )
@@ -884,17 +919,20 @@ async def non_stream_request(
                 await asyncio.sleep(1)
                 continue
             return Response(
-                content=json.dumps({"error": {"code": 401, "message": result["auth_error"], "status": "UNAUTHENTICATED"}}),
+                content=json.dumps({"error": {
+                                   "code": 401, "message": result["auth_error"], "status": "UNAUTHENTICATED"}}),
                 status_code=401,
                 media_type="application/json",
             )
 
         if isinstance(result, dict) and "quota_error" in result:
             if attempt < max_retries:
-                log.warning(f"[VERTEX NON-STREAM] upstream 429, retry {attempt + 1}/{max_retries}")
+                log.warning(
+                    f"[VERTEX NON-STREAM] upstream 429, retry {attempt + 1}/{max_retries}")
                 continue  # 下一轮循环会重新 fetch_recaptcha_token
             return Response(
-                content=json.dumps({"error": {"code": 429, "message": result["quota_error"], "status": "RESOURCE_EXHAUSTED"}}),
+                content=json.dumps({"error": {
+                                   "code": 429, "message": result["quota_error"], "status": "RESOURCE_EXHAUSTED"}}),
                 status_code=429,
                 media_type="application/json",
             )
@@ -906,7 +944,8 @@ async def non_stream_request(
         )
 
     return Response(
-        content=json.dumps({"error": {"code": 500, "message": "All retries exhausted", "status": "INTERNAL"}}),
+        content=json.dumps(
+            {"error": {"code": 500, "message": "All retries exhausted", "status": "INTERNAL"}}),
         status_code=500,
         media_type="application/json",
     )
@@ -938,7 +977,8 @@ def _build_non_stream_response(raw_text: str) -> Optional[Dict[str, Any]]:
             errors = result.get("errors", [])
             if errors and isinstance(errors, list):
                 first = errors[0]
-                err_msg = first.get("message", "") if isinstance(first, dict) else str(first)
+                err_msg = first.get("message", "") if isinstance(
+                    first, dict) else str(first)
                 if _is_auth_error(err_msg):
                     return {"auth_error": err_msg}
                 if _is_quota_error(err_msg):

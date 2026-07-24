@@ -26,10 +26,10 @@ from src.auth import CredentialManager
 async def check_should_auto_ban(status_code: int) -> bool:
     """
     检查是否应该触发自动封禁
-    
+
     Args:
         status_code: HTTP状态码
-        
+
     Returns:
         bool: 是否应该触发自动封禁
     """
@@ -47,7 +47,7 @@ async def handle_auto_ban(
 ) -> None:
     """
     处理自动封禁：直接禁用凭证
-    
+
     Args:
         credential_manager: 凭证管理器实例
         status_code: HTTP状态码
@@ -91,7 +91,7 @@ async def handle_error_with_retry(
         max_retries: 最大重试次数
         retry_interval: 重试间隔
         mode: 模式（geminicli 或 antigravity）
-        
+
     Returns:
         bool: True表示需要继续重试，False表示不需要重试
     """
@@ -130,7 +130,7 @@ async def handle_error_with_retry(
 async def get_retry_config() -> Dict[str, Any]:
     """
     获取重试配置
-    
+
     Returns:
         包含重试配置的字典
     """
@@ -223,7 +223,8 @@ async def parse_and_log_cooldown(
             )
             return cooldown_until
     except Exception as parse_err:
-        log.debug(f"[{mode.upper()}] Failed to parse cooldown time: {parse_err}")
+        log.debug(
+            f"[{mode.upper()}] Failed to parse cooldown time: {parse_err}")
     return None
 
 
@@ -279,23 +280,28 @@ async def collect_streaming_response(stream_generator) -> Response:
 
             # 如果收到的是Response对象（错误），直接返回
             if isinstance(line, Response):
-                log.debug(f"[STREAM COLLECTOR] 收到错误Response，状态码: {line.status_code}")
+                log.debug(
+                    f"[STREAM COLLECTOR] 收到错误Response，状态码: {line.status_code}")
                 return line
 
             # 处理 bytes 类型
             if isinstance(line, bytes):
                 line_str = line.decode('utf-8', errors='ignore')
-                log.debug(f"[STREAM COLLECTOR] Processing bytes line {line_count}: {line_str[:200] if line_str else 'empty'}")
+                log.debug(
+                    f"[STREAM COLLECTOR] Processing bytes line {line_count}: {line_str[:200] if line_str else 'empty'}")
             elif isinstance(line, str):
                 line_str = line
-                log.debug(f"[STREAM COLLECTOR] Processing line {line_count}: {line_str[:200] if line_str else 'empty'}")
+                log.debug(
+                    f"[STREAM COLLECTOR] Processing line {line_count}: {line_str[:200] if line_str else 'empty'}")
             else:
-                log.debug(f"[STREAM COLLECTOR] Skipping non-string/bytes line: {type(line)}")
+                log.debug(
+                    f"[STREAM COLLECTOR] Skipping non-string/bytes line: {type(line)}")
                 continue
 
             # 解析流式数据行
             if not line_str.startswith("data: "):
-                log.debug(f"[STREAM COLLECTOR] Skipping line without 'data: ' prefix: {line_str[:100]}")
+                log.debug(
+                    f"[STREAM COLLECTOR] Skipping line without 'data: ' prefix: {line_str[:100]}")
                 continue
 
             raw = line_str[6:].strip()
@@ -307,18 +313,22 @@ async def collect_streaming_response(stream_generator) -> Response:
                 log.debug(f"[STREAM COLLECTOR] Parsing JSON: {raw[:200]}")
                 chunk = json.loads(raw)
                 has_data = True
-                log.debug(f"[STREAM COLLECTOR] Chunk keys: {chunk.keys() if isinstance(chunk, dict) else type(chunk)}")
+                log.debug(
+                    f"[STREAM COLLECTOR] Chunk keys: {chunk.keys() if isinstance(chunk, dict) else type(chunk)}")
 
                 # 提取响应对象
                 response_obj = chunk.get("response", {})
                 if not response_obj:
-                    log.debug("[STREAM COLLECTOR] No 'response' key in chunk, trying direct access")
+                    log.debug(
+                        "[STREAM COLLECTOR] No 'response' key in chunk, trying direct access")
                     response_obj = chunk  # 尝试直接使用chunk
 
                 candidates = response_obj.get("candidates", [])
-                log.debug(f"[STREAM COLLECTOR] Found {len(candidates)} candidates")
+                log.debug(
+                    f"[STREAM COLLECTOR] Found {len(candidates)} candidates")
                 if not candidates:
-                    log.debug(f"[STREAM COLLECTOR] No candidates in chunk, chunk structure: {list(chunk.keys()) if isinstance(chunk, dict) else type(chunk)}")
+                    log.debug(
+                        f"[STREAM COLLECTOR] No candidates in chunk, chunk structure: {list(chunk.keys()) if isinstance(chunk, dict) else type(chunk)}")
                     continue
 
                 candidate = candidates[0]
@@ -326,7 +336,8 @@ async def collect_streaming_response(stream_generator) -> Response:
                 # 收集文本内容
                 content = candidate.get("content", {})
                 parts = content.get("parts", [])
-                log.debug(f"[STREAM COLLECTOR] Processing {len(parts)} parts from candidate")
+                log.debug(
+                    f"[STREAM COLLECTOR] Processing {len(parts)} parts from candidate")
 
                 for part in parts:
                     if not isinstance(part, dict):
@@ -337,7 +348,8 @@ async def collect_streaming_response(stream_generator) -> Response:
                     if "functionCall" in part or "functionResponse" in part or "function_call" in part:
                         collected_other_parts.append(part)
                         collected_tool_parts_count += 1
-                        log.debug(f"[STREAM COLLECTOR] Collected tool part: {list(part.keys())}")
+                        log.debug(
+                            f"[STREAM COLLECTOR] Collected tool part: {list(part.keys())}")
                         continue
 
                     # 处理文本内容
@@ -346,14 +358,17 @@ async def collect_streaming_response(stream_generator) -> Response:
                         # 区分普通文本和思维链
                         if part.get("thought", False):
                             collected_thought_text.append(text)
-                            log.debug(f"[STREAM COLLECTOR] Collected thought text: {text[:100]}")
+                            log.debug(
+                                f"[STREAM COLLECTOR] Collected thought text: {text[:100]}")
                         else:
                             collected_text.append(text)
-                            log.debug(f"[STREAM COLLECTOR] Collected regular text: {text[:100]}")
+                            log.debug(
+                                f"[STREAM COLLECTOR] Collected regular text: {text[:100]}")
                     # 处理非文本内容（图片、文件等）
                     elif "inlineData" in part or "fileData" in part or "executableCode" in part or "codeExecutionResult" in part:
                         collected_other_parts.append(part)
-                        log.debug(f"[STREAM COLLECTOR] Collected non-text part: {list(part.keys())}")
+                        log.debug(
+                            f"[STREAM COLLECTOR] Collected non-text part: {list(part.keys())}")
 
                 # 收集其他信息（使用最后一个块的值）
                 if candidate.get("finishReason"):
@@ -371,25 +386,29 @@ async def collect_streaming_response(stream_generator) -> Response:
                     merged_response["response"]["usageMetadata"].update(usage)
 
             except json.JSONDecodeError as e:
-                log.debug(f"[STREAM COLLECTOR] Failed to parse JSON chunk: {e}")
+                log.debug(
+                    f"[STREAM COLLECTOR] Failed to parse JSON chunk: {e}")
                 continue
             except Exception as e:
                 log.debug(f"[STREAM COLLECTOR] Error processing chunk: {e}")
                 continue
 
     except Exception as e:
-        log.error(f"[STREAM COLLECTOR] Error collecting stream after {line_count} lines: {e}")
+        log.error(
+            f"[STREAM COLLECTOR] Error collecting stream after {line_count} lines: {e}")
         return Response(
             content=json.dumps({"error": f"收集流式响应失败: {str(e)}"}),
             status_code=500,
             media_type="application/json"
         )
 
-    log.debug(f"[STREAM COLLECTOR] Finished iteration, has_data={has_data}, line_count={line_count}")
+    log.debug(
+        f"[STREAM COLLECTOR] Finished iteration, has_data={has_data}, line_count={line_count}")
 
     # 如果没有收集到任何数据，返回错误
     if not has_data:
-        log.error(f"[STREAM COLLECTOR] No data collected from stream after {line_count} lines")
+        log.error(
+            f"[STREAM COLLECTOR] No data collected from stream after {line_count} lines")
         return Response(
             content=json.dumps({"error": "No data collected from stream"}),
             status_code=500,
@@ -434,7 +453,8 @@ async def collect_streaming_response(stream_generator) -> Response:
 
     # 返回纯JSON格式
     return Response(
-        content=json.dumps(merged_response, ensure_ascii=False).encode('utf-8'),
+        content=json.dumps(
+            merged_response, ensure_ascii=False).encode('utf-8'),
         status_code=200,
         headers={},
         media_type="application/json"
@@ -479,11 +499,13 @@ def parse_quota_reset_timestamp(error_response: dict) -> Optional[float]:
 
         for detail in details:
             if detail.get("@type") == "type.googleapis.com/google.rpc.ErrorInfo":
-                reset_timestamp_str = detail.get("metadata", {}).get("quotaResetTimeStamp")
+                reset_timestamp_str = detail.get(
+                    "metadata", {}).get("quotaResetTimeStamp")
 
                 if reset_timestamp_str:
                     if reset_timestamp_str.endswith("Z"):
-                        reset_timestamp_str = reset_timestamp_str.replace("Z", "+00:00")
+                        reset_timestamp_str = reset_timestamp_str.replace(
+                            "Z", "+00:00")
 
                     reset_dt = datetime.fromisoformat(reset_timestamp_str)
                     if reset_dt.tzinfo is None:

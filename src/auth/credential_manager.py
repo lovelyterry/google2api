@@ -15,7 +15,9 @@ from .google_oauth import Credentials
 from src.storage import get_storage
 
 # 线程/协程级别的当前调度账号上下文
-_current_account_var: ContextVar[Optional[str]] = ContextVar("current_scheduled_account", default=None)
+_current_account_var: ContextVar[Optional[str]] = ContextVar(
+    "current_scheduled_account", default=None)
+
 
 class CredentialManager:
     """
@@ -30,8 +32,6 @@ class CredentialManager:
     def get_current_account(self) -> Optional[str]:
         """获取当前协程/任务上下文调度的账号标识"""
         return _current_account_var.get()
-
-
 
     def __init__(self):
         # 核心状态
@@ -71,7 +71,8 @@ class CredentialManager:
             if st and st.get("user_email"):
                 return st["user_email"]
         if cred_data:
-            c_email = cred_data.get("client_email") or cred_data.get("user_email") or cred_data.get("email")
+            c_email = cred_data.get("client_email") or cred_data.get(
+                "user_email") or cred_data.get("email")
             if c_email and isinstance(c_email, str):
                 return c_email
         return None
@@ -106,7 +107,8 @@ class CredentialManager:
 
                 cooldown_until = 0
                 if model_name:
-                    cooldown_until = st.get("model_cooldowns", {}).get(model_name, 0)
+                    cooldown_until = st.get(
+                        "model_cooldowns", {}).get(model_name, 0)
 
                 # 若未禁用且未在该模型的冷却中，尝试读取凭证数据
                 if not is_disabled and cooldown_until <= current_time:
@@ -121,7 +123,8 @@ class CredentialManager:
                                 self.set_current_account(user_acc)
                                 return active_filename, cred_data
                             else:
-                                log.warning(f"当前激活账号 Token 刷新失败，将重新调度: {active_filename}")
+                                log.warning(
+                                    f"当前激活账号 Token 刷新失败，将重新调度: {active_filename}")
                                 self._last_selected_account.pop(mode, None)
                         else:
                             # Token 有效，直接复用当前激活账号 (零重新调度、零 SSE 广播)
@@ -137,7 +140,8 @@ class CredentialManager:
 
             if not result:
                 if attempt == 0:
-                    log.warning(f"没有可用凭证 (mode={mode}, model_name={model_name})")
+                    log.warning(
+                        f"没有可用凭证 (mode={mode}, model_name={model_name})")
                 self._last_selected_account.pop(mode, None)
                 return None
 
@@ -155,7 +159,8 @@ class CredentialManager:
                     self.set_current_account(user_acc)
                     return filename, credential_data
                 else:
-                    log.warning(f"Token刷新失败，尝试获取下一个凭证: {filename} (mode={mode}, attempt={attempt+1}/{max_retries})")
+                    log.warning(
+                        f"Token刷新失败，尝试获取下一个凭证: {filename} (mode={mode}, attempt={attempt+1}/{max_retries})")
                     continue
             else:
                 self._notify_dispatch(mode, filename)
@@ -163,7 +168,8 @@ class CredentialManager:
                 return filename, credential_data
 
         self._last_selected_account.pop(mode, None)
-        log.error(f"重试{max_retries}次后仍无可用凭证 (mode={mode}, model_name={model_name})")
+        log.error(
+            f"重试{max_retries}次后仍无可用凭证 (mode={mode}, model_name={model_name})")
         return None
 
     def _notify_dispatch(self, mode: str, filename: str):
@@ -171,7 +177,8 @@ class CredentialManager:
         try:
             self._last_selected_account[mode] = os.path.basename(filename)
             from src.panel.sse import sse_manager
-            asyncio.create_task(sse_manager.broadcast("dispatch_updated", {"mode": mode, "selected": filename}))
+            asyncio.create_task(sse_manager.broadcast(
+                "dispatch_updated", {"mode": mode, "selected": filename}))
         except Exception:
             pass
 
@@ -206,36 +213,45 @@ class CredentialManager:
 
     async def update_credential_state(self, credential_name: str, state_updates: Dict[str, Any], mode: str = "geminicli"):
         """更新凭证状态"""
-        log.debug(f"[CredMgr] update_credential_state 开始: credential_name={credential_name}, state_updates={state_updates}, mode={mode}")
+        log.debug(
+            f"[CredMgr] update_credential_state 开始: credential_name={credential_name}, state_updates={state_updates}, mode={mode}")
         log.debug(f"[CredMgr] 调用 _ensure_initialized...")
         await self._ensure_initialized()
         log.debug(f"[CredMgr] _ensure_initialized 完成")
         try:
-            log.debug(f"[CredMgr] 调用 storage_adapter.update_credential_state...")
+            log.debug(
+                f"[CredMgr] 调用 storage_adapter.update_credential_state...")
             success = await self._storage_adapter.update_credential_state(
                 credential_name, state_updates, mode=mode
             )
-            log.debug(f"[CredMgr] storage_adapter.update_credential_state 返回: {success}")
+            log.debug(
+                f"[CredMgr] storage_adapter.update_credential_state 返回: {success}")
             if success:
-                log.debug(f"Updated credential state: {credential_name} (mode={mode})")
+                log.debug(
+                    f"Updated credential state: {credential_name} (mode={mode})")
             else:
-                log.warning(f"Failed to update credential state: {credential_name} (mode={mode})")
+                log.warning(
+                    f"Failed to update credential state: {credential_name} (mode={mode})")
             return success
         except Exception as e:
-            log.error(f"Error updating credential state {credential_name}: {e}")
+            log.error(
+                f"Error updating credential state {credential_name}: {e}")
             return False
 
     async def set_cred_disabled(self, credential_name: str, disabled: bool, mode: str = "geminicli"):
         """设置凭证的启用/禁用状态"""
         try:
-            log.info(f"[CredMgr] set_cred_disabled 开始: credential_name={credential_name}, disabled={disabled}, mode={mode}")
+            log.info(
+                f"[CredMgr] set_cred_disabled 开始: credential_name={credential_name}, disabled={disabled}, mode={mode}")
             success = await self.update_credential_state(
                 credential_name, {"disabled": disabled}, mode=mode
             )
-            log.info(f"[CredMgr] update_credential_state 返回: success={success}")
+            log.info(
+                f"[CredMgr] update_credential_state 返回: success={success}")
             if success:
                 action = "disabled" if disabled else "enabled"
-                log.info(f"Credential {action}: {credential_name} (mode={mode})")
+                log.info(
+                    f"Credential {action}: {credential_name} (mode={mode})")
                 # 只有当禁用的账号属于当前正在使用的账号时，才重新触发调度切走账号
                 if disabled:
                     target_name = os.path.basename(credential_name)
@@ -244,17 +260,22 @@ class CredentialManager:
 
                     is_in_use = (
                         (current_context_acc and (current_context_acc == target_name or os.path.basename(current_context_acc) == target_name)) or
-                        (last_active_acc and os.path.basename(last_active_acc) == target_name)
+                        (last_active_acc and os.path.basename(
+                            last_active_acc) == target_name)
                     )
 
                     if is_in_use:
-                        log.info(f"[CredMgr] 被禁用的账号 {target_name} 为当前在用账号，触发重新调度...")
-                        asyncio.create_task(self.get_valid_credential(mode=mode))
+                        log.info(
+                            f"[CredMgr] 被禁用的账号 {target_name} 为当前在用账号，触发重新调度...")
+                        asyncio.create_task(
+                            self.get_valid_credential(mode=mode))
             else:
-                log.warning(f"[CredMgr] 设置禁用状态失败: credential_name={credential_name}, disabled={disabled}")
+                log.warning(
+                    f"[CredMgr] 设置禁用状态失败: credential_name={credential_name}, disabled={disabled}")
             return success
         except Exception as e:
-            log.error(f"Error setting credential disabled state {credential_name}: {e}")
+            log.error(
+                f"Error setting credential disabled state {credential_name}: {e}")
             return False
 
     async def set_active_account(self, credential_name: str, mode: str = "geminicli"):
@@ -305,7 +326,7 @@ class CredentialManager:
         try:
             # 确保已初始化
             await self._ensure_initialized()
-            
+
             # 从状态中获取缓存的邮箱
             state = await self._storage_adapter.get_credential_state(credential_name, mode=mode)
             cached_email = state.get("user_email") if state else None
@@ -375,8 +396,8 @@ class CredentialManager:
         await self._ensure_initialized()
         try:
             if success:
-            # 条件写入：仅当凭证有错误状态或模型冷却时才写 DB，零内存缓存
-            # fire-and-forget，不阻塞请求链路
+                # 条件写入：仅当凭证有错误状态或模型冷却时才写 DB，零内存缓存
+                # fire-and-forget，不阻塞请求链路
                 asyncio.create_task(
                     self._storage_adapter._backend.record_success(
                         credential_name, model_name=model_name, mode=mode
@@ -413,7 +434,8 @@ class CredentialManager:
                         )
 
         except Exception as e:
-            log.error(f"Error recording API call result for {credential_name}: {e}")
+            log.error(
+                f"Error recording API call result for {credential_name}: {e}")
 
     async def _should_refresh_token(self, credential_data: Dict[str, Any]) -> bool:
         """检查token是否需要刷新"""
@@ -434,7 +456,8 @@ class CredentialManager:
                     if "+" in expiry_str:
                         file_expiry = datetime.fromisoformat(expiry_str)
                     elif expiry_str.endswith("Z"):
-                        file_expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                        file_expiry = datetime.fromisoformat(
+                            expiry_str.replace("Z", "+00:00"))
                     else:
                         file_expiry = datetime.fromisoformat(expiry_str)
                 else:
@@ -453,7 +476,7 @@ class CredentialManager:
                     f"Token时间检查: "
                     f"当前UTC时间={now.isoformat()}, "
                     f"过期时间={file_expiry.isoformat()}, "
-                    f"剩余时间={int(time_left/60)}分{int(time_left%60)}秒"
+                    f"剩余时间={int(time_left/60)}分{int(time_left % 60)}秒"
                 )
 
                 if time_left > 300:  # 5分钟缓冲
@@ -519,7 +542,8 @@ class CredentialManager:
                 status_code = e.status_code
 
             # 检查是否是凭证永久失效的错误（只有明确的400/403等才判定为永久失效）
-            is_permanent_failure = self._is_permanent_refresh_failure(error_msg, status_code)
+            is_permanent_failure = self._is_permanent_refresh_failure(
+                error_msg, status_code)
 
             if is_permanent_failure:
                 log.warning(f"检测到凭证永久失效 (HTTP {status_code}): {filename}")
@@ -541,7 +565,8 @@ class CredentialManager:
                     log.error(f"禁用永久失效凭证时出错 {filename}: {e2}")
             else:
                 # 网络错误或其他临时性错误，不封禁凭证
-                log.warning(f"Token刷新失败但非永久性错误 (HTTP {status_code})，不封禁凭证: {filename}")
+                log.warning(
+                    f"Token刷新失败但非永久性错误 (HTTP {status_code})，不封禁凭证: {filename}")
 
             return None
 
@@ -590,6 +615,7 @@ class CredentialManager:
         # 默认认为是临时错误（如网络问题），不应封禁凭证
         log.debug("未匹配到明确的永久失效模式，判定为临时错误")
         return False
+
 
 class _CredentialManagerSingleton:
     """单例包装器，支持懒加载和自动初始化"""

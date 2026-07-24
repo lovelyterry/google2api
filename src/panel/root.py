@@ -17,7 +17,8 @@ router = APIRouter(tags=["root"])
 async def serve_control_panel(request: Request):
     """提供统一控制面板"""
     try:
-        html_file_path = get_resource_path(os.path.join("front", "dashboard.html"))
+        html_file_path = get_resource_path(
+            os.path.join("front", "dashboard.html"))
         if not os.path.exists(html_file_path):
             raise HTTPException(status_code=500, detail="控制面板 HTML 文件未找到")
 
@@ -101,7 +102,8 @@ async def sse_stream(request: Request, token: str = None):
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=15.0)
                     event_type = event.get("type", "message")
-                    data_str = json.dumps(event.get("data", {}), ensure_ascii=False)
+                    data_str = json.dumps(
+                        event.get("data", {}), ensure_ascii=False)
                     yield f"event: {event_type}\ndata: {data_str}\n\n"
                 except asyncio.TimeoutError:
                     # 15 秒心跳包，维持长连接活跃
@@ -118,4 +120,3 @@ async def sse_stream(request: Request, token: str = None):
             "X-Accel-Buffering": "no"
         }
     )
-

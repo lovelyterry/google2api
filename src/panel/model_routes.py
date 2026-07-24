@@ -33,12 +33,15 @@ async def set_custom_mapping(
 ):
     """设置或覆盖自定义模型映射规则"""
     try:
-        requested_model = payload.get("requested_model") or payload.get("original_model")
-        target_model = payload.get("target_model") or payload.get("mapped_model")
+        requested_model = payload.get(
+            "requested_model") or payload.get("original_model")
+        target_model = payload.get(
+            "target_model") or payload.get("mapped_model")
         router_type = payload.get("router_type", "antigravity")
 
         if not requested_model or not target_model:
-            raise HTTPException(status_code=400, detail="requested_model 与 target_model 不能为空")
+            raise HTTPException(
+                status_code=400, detail="requested_model 与 target_model 不能为空")
 
         model_mapping_manager.set_custom_mapping(
             requested_model=requested_model,
@@ -63,7 +66,8 @@ async def delete_custom_mapping(
 ):
     """删除指定的自定义模型映射规则（若未传参则清空所有规则）"""
     try:
-        requested_model = payload.get("requested_model") or payload.get("original_model")
+        requested_model = payload.get(
+            "requested_model") or payload.get("original_model")
         router_type = payload.get("router_type", "antigravity")
 
         if not requested_model:

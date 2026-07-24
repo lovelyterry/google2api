@@ -28,7 +28,8 @@ CONTINUATION_PROMPT = f"""请从刚才被截断的地方继续输出剩余的所
 REGEX_REPLACEMENTS: List[Tuple[str, str, str]] = [
     (
         "age_pattern",  # 替换规则名称
-        r"(?:[1-9]|1[0-8])岁(?:的)?|(?:十一|十二|十三|十四|十五|十六|十七|十八|十|一|二|三|四|五|六|七|八|九)岁(?:的)?",  # 正则模式
+        # 正则模式
+        r"(?:[1-9]|1[0-8])岁(?:的)?|(?:十一|十二|十三|十四|十五|十六|十七|十八|十|一|二|三|四|五|六|七|八|九)岁(?:的)?",
         "",  # 替换文本
     ),
     # 可在此处添加更多替换规则
@@ -61,7 +62,8 @@ def apply_regex_replacements(text: str) -> str:
             new_text, count = regex.subn(replacement, processed_text)
 
             if count > 0:
-                log.debug(f"Regex replacement '{rule_name}': {count} matches replaced")
+                log.debug(
+                    f"Regex replacement '{rule_name}': {count} matches replaced")
                 processed_text = new_text
                 replacement_count += count
 
@@ -104,7 +106,8 @@ def apply_regex_replacements_to_payload(payload: Dict[str, Any]) -> Dict[str, An
                     for part in parts:
                         if isinstance(part, dict) and "text" in part:
                             new_part = part.copy()
-                            new_part["text"] = apply_regex_replacements(part["text"])
+                            new_part["text"] = apply_regex_replacements(
+                                part["text"])
                             new_parts.append(new_part)
                         else:
                             new_parts.append(part)
@@ -222,7 +225,8 @@ class AntiTruncationStreamProcessor:
             # 构建当前请求payload
             current_payload = self._build_current_payload()
 
-            log.debug(f"Anti-truncation attempt {self.current_attempt}/{self.max_attempts}")
+            log.debug(
+                f"Anti-truncation attempt {self.current_attempt}/{self.max_attempts}")
 
             # 发送请求
             try:
@@ -245,7 +249,8 @@ class AntiTruncationStreamProcessor:
                     # 处理上游生成器 yield 出 Response 对象的情况（错误响应）
                     from fastapi import Response as FastAPIResponse
                     if isinstance(line, FastAPIResponse):
-                        log.error(f"Anti-truncation: Received Response object from stream (status={line.status_code}), treating as error")
+                        log.error(
+                            f"Anti-truncation: Received Response object from stream (status={line.status_code}), treating as error")
                         error_chunk = {
                             "error": {
                                 "message": line.body.decode('utf-8', errors='ignore') if hasattr(line, 'body') and line.body else "Upstream error",
@@ -260,7 +265,8 @@ class AntiTruncationStreamProcessor:
                     # 处理 bytes 类型的流式数据
                     if isinstance(line, bytes):
                         # 解码 bytes 为字符串
-                        line_str = line.decode('utf-8', errors='ignore').strip()
+                        line_str = line.decode(
+                            'utf-8', errors='ignore').strip()
                     else:
                         line_str = str(line).strip()
 
@@ -276,14 +282,16 @@ class AntiTruncationStreamProcessor:
                         # 检查是否是 [DONE] 标记
                         if payload_str.strip() == "[DONE]":
                             if found_done_marker:
-                                log.info("Anti-truncation: Found [done] marker, output complete")
+                                log.info(
+                                    "Anti-truncation: Found [done] marker, output complete")
                                 yield line
                                 # 清理内存
                                 chunk_buffer.close()
                                 self._clear_content()
                                 return
                             else:
-                                log.warning("Anti-truncation: Stream ended without [done] marker")
+                                log.warning(
+                                    "Anti-truncation: Stream ended without [done] marker")
                                 # 不发送[DONE]，准备继续
                                 break
 
@@ -292,20 +300,25 @@ class AntiTruncationStreamProcessor:
                             data = json.loads(payload_str)
                             content = self._extract_content_from_chunk(data)
 
-                            log.debug(f"Anti-truncation: Extracted content: {repr(content[:100] if content else '')}")
+                            log.debug(
+                                f"Anti-truncation: Extracted content: {repr(content[:100] if content else '')}")
 
                             if content:
                                 chunk_buffer.write(content)
 
                                 # 检查是否包含done标记
-                                has_marker = self._check_done_marker_in_chunk_content(content)
-                                log.debug(f"Anti-truncation: Check done marker result: {has_marker}, DONE_MARKER='{DONE_MARKER}'")
+                                has_marker = self._check_done_marker_in_chunk_content(
+                                    content)
+                                log.debug(
+                                    f"Anti-truncation: Check done marker result: {has_marker}, DONE_MARKER='{DONE_MARKER}'")
                                 if has_marker:
                                     found_done_marker = True
-                                    log.debug(f"Anti-truncation: Found [done] marker in chunk, content: {content[:200]}")
+                                    log.debug(
+                                        f"Anti-truncation: Found [done] marker in chunk, content: {content[:200]}")
 
                             # 清理行中的[done]标记后再发送
-                            cleaned_line = self._remove_done_marker_from_line(line, line_str, data)
+                            cleaned_line = self._remove_done_marker_from_line(
+                                line, line_str, data)
                             yield cleaned_line
 
                         except (json.JSONDecodeError, ValueError):
@@ -322,7 +335,8 @@ class AntiTruncationStreamProcessor:
                     self._append_content(chunk_text)
                 chunk_buffer.close()
 
-                log.debug(f"Anti-truncation: After processing stream, found_done_marker={found_done_marker}")
+                log.debug(
+                    f"Anti-truncation: After processing stream, found_done_marker={found_done_marker}")
 
                 # 如果找到了done标记，结束
                 if found_done_marker:
@@ -335,7 +349,8 @@ class AntiTruncationStreamProcessor:
                 if not found_done_marker:
                     accumulated_text = self._get_collected_text()
                     if self._check_done_marker_in_text(accumulated_text):
-                        log.info("Anti-truncation: Found [done] marker in accumulated content")
+                        log.info(
+                            "Anti-truncation: Found [done] marker in accumulated content")
                         # 立即清理内容释放内存
                         self._clear_content()
                         yield b"data: [DONE]\n\n"
@@ -356,14 +371,16 @@ class AntiTruncationStreamProcessor:
                     continue
                 else:
                     # 最后一次尝试，直接结束
-                    log.warning("Anti-truncation: Max attempts reached, ending stream")
+                    log.warning(
+                        "Anti-truncation: Max attempts reached, ending stream")
                     # 立即清理内容释放内存
                     self._clear_content()
                     yield b"data: [DONE]\n\n"
                     return
 
             except Exception as e:
-                log.error(f"Anti-truncation error in attempt {self.current_attempt}: {str(e)}")
+                log.error(
+                    f"Anti-truncation error in attempt {self.current_attempt}: {str(e)}")
                 if self.current_attempt >= self.max_attempts:
                     # 发送错误chunk
                     error_chunk = {
@@ -401,11 +418,13 @@ class AntiTruncationStreamProcessor:
         # 如果有收集到的内容，添加到对话中
         accumulated_text = self._get_collected_text()
         if accumulated_text:
-            new_contents.append({"role": "model", "parts": [{"text": accumulated_text}]})
+            new_contents.append(
+                {"role": "model", "parts": [{"text": accumulated_text}]})
 
         # 预填充模式：直接用拼接内容作为末尾 model 预填充，不再增加 user 续写指令
         if self.enable_prefill_mode:
-            log.debug("Anti-truncation: Using prefill continuation mode (no user continuation prompt)")
+            log.debug(
+                "Anti-truncation: Using prefill continuation mode (no user continuation prompt)")
             request_data["contents"] = new_contents
             continuation_payload["request"] = request_data
             return continuation_payload
@@ -421,7 +440,8 @@ class AntiTruncationStreamProcessor:
         detailed_continuation_prompt = f"""{CONTINUATION_PROMPT}{content_summary}"""
 
         # 添加继续指令
-        continuation_message = {"role": "user", "parts": [{"text": detailed_continuation_prompt}]}
+        continuation_message = {"role": "user", "parts": [
+            {"text": detailed_continuation_prompt}]}
         new_contents.append(continuation_message)
 
         request_data["contents"] = new_contents
@@ -445,7 +465,7 @@ class AntiTruncationStreamProcessor:
                     for part in parts:
                         if "text" in part:
                             content += part["text"]
-        
+
         # 处理 OpenAI 流式格式（choices/delta）
         elif "choices" in data:
             for choice in data["choices"]:
@@ -463,7 +483,8 @@ class AntiTruncationStreamProcessor:
             try:
                 # 特殊处理：如果返回的是StreamingResponse，需要读取其body_iterator
                 if isinstance(response, StreamingResponse):
-                    log.error("Anti-truncation: Received StreamingResponse in non-streaming handler - this should not happen")
+                    log.error(
+                        "Anti-truncation: Received StreamingResponse in non-streaming handler - this should not happen")
                     # 尝试读取流式响应的内容
                     chunks = []
                     async for chunk in response.body_iterator:
@@ -481,12 +502,14 @@ class AntiTruncationStreamProcessor:
                         else response.content
                     )
                 else:
-                    log.error(f"Anti-truncation: Unknown response type: {type(response)}")
+                    log.error(
+                        f"Anti-truncation: Unknown response type: {type(response)}")
                     content = str(response)
 
                 # 验证内容不为空
                 if not content or not content.strip():
-                    log.error("Anti-truncation: Received empty response content")
+                    log.error(
+                        "Anti-truncation: Received empty response content")
                     return json.dumps(
                         {
                             "error": {
@@ -501,12 +524,14 @@ class AntiTruncationStreamProcessor:
                 try:
                     response_data = json.loads(content)
                 except json.JSONDecodeError as json_err:
-                    log.error(f"Anti-truncation: Failed to parse JSON response: {json_err}, content: {content[:200]}")
+                    log.error(
+                        f"Anti-truncation: Failed to parse JSON response: {json_err}, content: {content[:200]}")
                     # 如果不是 JSON，直接返回原始内容
                     return content.encode() if isinstance(content, str) else content
 
                 # 检查是否包含done标记
-                text_content = self._extract_content_from_response(response_data)
+                text_content = self._extract_content_from_response(
+                    response_data)
                 has_done_marker = self._check_done_marker_in_text(text_content)
 
                 if has_done_marker or self.current_attempt >= self.max_attempts:
@@ -517,7 +542,8 @@ class AntiTruncationStreamProcessor:
                 if text_content:
                     self._append_content(text_content)
 
-                log.info("Anti-truncation: Non-streaming response needs continuation")
+                log.info(
+                    "Anti-truncation: Non-streaming response needs continuation")
 
                 # 增加尝试次数
                 self.current_attempt += 1
@@ -584,28 +610,34 @@ class AntiTruncationStreamProcessor:
             if "[done]" not in line_str.lower():
                 return line  # 没有[done]标记，直接返回原始行
 
-            log.info(f"Anti-truncation: Attempting to remove [done] marker from line")
-            log.debug(f"Anti-truncation: Original line (first 200 chars): {line_str[:200]}")
+            log.info(
+                f"Anti-truncation: Attempting to remove [done] marker from line")
+            log.debug(
+                f"Anti-truncation: Original line (first 200 chars): {line_str[:200]}")
 
             # 编译正则表达式，匹配[done]标记（忽略大小写，包括可能的空白字符）
             done_pattern = re.compile(r"\s*\[done\]\s*", re.IGNORECASE)
 
             # 检查是否有 response 包裹层
             has_response_wrapper = "response" in data
-            log.debug(f"Anti-truncation: has_response_wrapper={has_response_wrapper}, data keys={list(data.keys())}")
+            log.debug(
+                f"Anti-truncation: has_response_wrapper={has_response_wrapper}, data keys={list(data.keys())}")
             if has_response_wrapper:
                 # 需要保留外层的 response 字段
                 inner_data = data["response"]
             else:
                 inner_data = data
-            
-            log.debug(f"Anti-truncation: inner_data keys={list(inner_data.keys())}")
 
-            log.debug(f"Anti-truncation: inner_data keys={list(inner_data.keys())}")
+            log.debug(
+                f"Anti-truncation: inner_data keys={list(inner_data.keys())}")
+
+            log.debug(
+                f"Anti-truncation: inner_data keys={list(inner_data.keys())}")
 
             # 处理Gemini格式
             if "candidates" in inner_data:
-                log.info(f"Anti-truncation: Processing Gemini format to remove [done] marker")
+                log.info(
+                    f"Anti-truncation: Processing Gemini format to remove [done] marker")
                 modified_inner = inner_data.copy()
                 modified_inner["candidates"] = []
 
@@ -624,9 +656,11 @@ class AntiTruncationStreamProcessor:
                                     original_text = part["text"]
                                     # 只在最后一个candidate中清理[done]标记
                                     if is_last_candidate:
-                                        modified_part["text"] = done_pattern.sub("", part["text"])
+                                        modified_part["text"] = done_pattern.sub(
+                                            "", part["text"])
                                         if "[done]" in original_text.lower():
-                                            log.debug(f"Anti-truncation: Removed [done] from text: '{original_text[:100]}' -> '{modified_part['text'][:100]}'")
+                                            log.debug(
+                                                f"Anti-truncation: Removed [done] from text: '{original_text[:100]}' -> '{modified_part['text'][:100]}'")
                                     modified_parts.append(modified_part)
                                 else:
                                     modified_parts.append(part)
@@ -642,9 +676,11 @@ class AntiTruncationStreamProcessor:
                     modified_data = modified_inner
 
                 # 重新编码为行格式 - SSE格式需要两个换行符
-                json_str = json.dumps(modified_data, separators=(",", ":"), ensure_ascii=False)
+                json_str = json.dumps(modified_data, separators=(
+                    ",", ":"), ensure_ascii=False)
                 result = f"data: {json_str}\n\n".encode("utf-8")
-                log.debug(f"Anti-truncation: Modified line (first 200 chars): {result.decode('utf-8', errors='ignore')[:200]}")
+                log.debug(
+                    f"Anti-truncation: Modified line (first 200 chars): {result.decode('utf-8', errors='ignore')[:200]}")
                 return result
 
             # 处理OpenAI格式
@@ -656,11 +692,13 @@ class AntiTruncationStreamProcessor:
                     modified_choice = choice.copy()
                     if "delta" in choice and "content" in choice["delta"]:
                         modified_delta = choice["delta"].copy()
-                        modified_delta["content"] = done_pattern.sub("", choice["delta"]["content"])
+                        modified_delta["content"] = done_pattern.sub(
+                            "", choice["delta"]["content"])
                         modified_choice["delta"] = modified_delta
                     elif "message" in choice and "content" in choice["message"]:
                         modified_message = choice["message"].copy()
-                        modified_message["content"] = done_pattern.sub("", choice["message"]["content"])
+                        modified_message["content"] = done_pattern.sub(
+                            "", choice["message"]["content"])
                         modified_choice["message"] = modified_message
                     modified_inner["choices"].append(modified_choice)
 
@@ -672,7 +710,8 @@ class AntiTruncationStreamProcessor:
                     modified_data = modified_inner
 
                 # 重新编码为行格式 - SSE格式需要两个换行符
-                json_str = json.dumps(modified_data, separators=(",", ":"), ensure_ascii=False)
+                json_str = json.dumps(modified_data, separators=(
+                    ",", ":"), ensure_ascii=False)
                 return f"data: {json_str}\n\n".encode("utf-8")
 
             # 如果没有找到支持的格式，返回原始行

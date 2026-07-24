@@ -23,7 +23,6 @@ async def get_config(token: str = Depends(verify_panel_token)):
     """获取当前配置"""
     try:
 
-
         # 读取当前配置（包括环境变量和TOML文件中的配置）
         current_config = {}
 
@@ -108,7 +107,8 @@ async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_pa
                 not isinstance(new_config["retry_429_max_retries"], int)
                 or new_config["retry_429_max_retries"] < 0
             ):
-                raise HTTPException(status_code=400, detail="最大429重试次数必须是大于等于0的整数")
+                raise HTTPException(
+                    status_code=400, detail="最大429重试次数必须是大于等于0的整数")
 
         if "retry_429_enabled" in new_config:
             if not isinstance(new_config["retry_429_enabled"], bool):
@@ -119,7 +119,8 @@ async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_pa
             try:
                 interval = float(new_config["retry_429_interval"])
                 if interval < 0.01 or interval > 10:
-                    raise HTTPException(status_code=400, detail="429重试间隔必须在0.01-10秒之间")
+                    raise HTTPException(
+                        status_code=400, detail="429重试间隔必须在0.01-10秒之间")
             except (ValueError, TypeError):
                 raise HTTPException(status_code=400, detail="429重试间隔必须是有效的数字")
 
@@ -143,15 +144,18 @@ async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_pa
 
         if "antigravity_stream2nostream" in new_config:
             if not isinstance(new_config["antigravity_stream2nostream"], bool):
-                raise HTTPException(status_code=400, detail="Antigravity流式转非流式开关必须是布尔值")
+                raise HTTPException(
+                    status_code=400, detail="Antigravity流式转非流式开关必须是布尔值")
 
         if "antigravity_switch_credential_enabled" in new_config:
             if not isinstance(new_config["antigravity_switch_credential_enabled"], bool):
-                raise HTTPException(status_code=400, detail="Antigravity切换凭证开关必须是布尔值")
+                raise HTTPException(
+                    status_code=400, detail="Antigravity切换凭证开关必须是布尔值")
 
         if "antigravity_telemetry_enabled" in new_config:
             if not isinstance(new_config["antigravity_telemetry_enabled"], bool):
-                raise HTTPException(status_code=400, detail="Antigravity伴随流量开关必须是布尔值")
+                raise HTTPException(
+                    status_code=400, detail="Antigravity伴随流量开关必须是布尔值")
 
         # 验证服务器配置
         if "host" in new_config:
@@ -164,7 +168,8 @@ async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_pa
                 or new_config["port"] < 1
                 or new_config["port"] > 65535
             ):
-                raise HTTPException(status_code=400, detail="端口号必须是1-65535之间的整数")
+                raise HTTPException(
+                    status_code=400, detail="端口号必须是1-65535之间的整数")
 
         if "api_password" in new_config:
             if not isinstance(new_config["api_password"], str):

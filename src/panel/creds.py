@@ -62,7 +62,8 @@ async def extract_json_files_from_zip(zip_file: UploadFile) -> List[dict]:
             if not json_files:
                 raise HTTPException(status_code=400, detail="ZIP文件中没有找到JSON文件")
 
-            log.info(f"从ZIP文件 {zip_file.filename} 中找到 {len(json_files)} 个JSON文件")
+            log.info(
+                f"从ZIP文件 {zip_file.filename} 中找到 {len(json_files)} 个JSON文件")
 
             for json_filename in json_files:
                 try:
@@ -78,7 +79,8 @@ async def extract_json_files_from_zip(zip_file: UploadFile) -> List[dict]:
 
                         # 使用原始文件名（去掉路径）
                         filename = os.path.basename(json_filename)
-                        files_data.append({"filename": filename, "content": content_str})
+                        files_data.append(
+                            {"filename": filename, "content": content_str})
 
                 except Exception as e:
                     log.warning(f"处理ZIP中的文件 {json_filename} 时出错: {e}")
@@ -129,7 +131,8 @@ async def upload_credentials_common(
         if file.filename.endswith(".zip"):
             zip_files_data = await extract_json_files_from_zip(file)
             files_data.extend(zip_files_data)
-            log.info(f"从ZIP文件 {file.filename} 中提取了 {len(zip_files_data)} 个JSON文件")
+            log.info(
+                f"从ZIP文件 {file.filename} 中提取了 {len(zip_files_data)} 个JSON文件")
 
         elif file.filename.endswith(".json"):
             # 处理单个JSON文件 - 流式读取
@@ -148,20 +151,19 @@ async def upload_credentials_common(
                     status_code=400, detail=f"文件 {file.filename} 编码格式不支持"
                 )
 
-            files_data.append({"filename": file.filename, "content": content_str})
+            files_data.append(
+                {"filename": file.filename, "content": content_str})
         else:
             raise HTTPException(
                 status_code=400, detail=f"文件 {file.filename} 格式不支持，只支持JSON和ZIP文件"
             )
-
-
 
     batch_size = 1000
     all_results = []
     total_success = 0
 
     for i in range(0, len(files_data), batch_size):
-        batch_files = files_data[i : i + batch_size]
+        batch_files = files_data[i: i + batch_size]
 
         async def process_single_file(file_data):
             try:
@@ -182,7 +184,8 @@ async def upload_credentials_common(
                 temp_data = dict(credential_data)
                 if mode == "antigravity":
                     temp_data.setdefault("client_id", ANTIGRAVITY_CLIENT_ID)
-                    temp_data.setdefault("client_secret", ANTIGRAVITY_CLIENT_SECRET)
+                    temp_data.setdefault(
+                        "client_secret", ANTIGRAVITY_CLIENT_SECRET)
                 else:
                     temp_data.setdefault("client_id", CLIENT_ID)
                     temp_data.setdefault("client_secret", CLIENT_SECRET)
@@ -201,7 +204,8 @@ async def upload_credentials_common(
                             existing_file = fn
                             break
 
-                target_filename = existing_file or (f"{user_email}.json" if user_email else filename)
+                target_filename = existing_file or (
+                    f"{user_email}.json" if user_email else filename)
 
                 # 根据凭证类型调用不同的添加方法
                 if mode == "antigravity":
@@ -227,7 +231,8 @@ async def upload_credentials_common(
                 }
 
         log.info(f"开始并发处理 {len(batch_files)} 个 {mode} 文件...")
-        concurrent_tasks = [process_single_file(file_data) for file_data in batch_files]
+        concurrent_tasks = [process_single_file(
+            file_data) for file_data in batch_files]
         batch_results = await asyncio.gather(*concurrent_tasks, return_exceptions=True)
 
         processed_results = []
@@ -279,17 +284,20 @@ async def get_creds_status_common(
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset 必须大于等于 0")
     if limit not in [20, 50, 100, 200, 500, 1000]:
-        raise HTTPException(status_code=400, detail="limit 只能是 20、50、100、200、500 或 1000")
+        raise HTTPException(
+            status_code=400, detail="limit 只能是 20、50、100、200、500 或 1000")
     if status_filter not in ["all", "enabled", "disabled"]:
-        raise HTTPException(status_code=400, detail="status_filter 只能是 all、enabled 或 disabled")
+        raise HTTPException(
+            status_code=400, detail="status_filter 只能是 all、enabled 或 disabled")
     if cooldown_filter and cooldown_filter not in ["all", "in_cooldown", "no_cooldown"]:
-        raise HTTPException(status_code=400, detail="cooldown_filter 只能是 all、in_cooldown 或 no_cooldown")
+        raise HTTPException(
+            status_code=400, detail="cooldown_filter 只能是 all、in_cooldown 或 no_cooldown")
     if preview_filter and preview_filter not in ["all", "preview", "no_preview"]:
-        raise HTTPException(status_code=400, detail="preview_filter 只能是 all、preview 或 no_preview")
+        raise HTTPException(
+            status_code=400, detail="preview_filter 只能是 all、preview 或 no_preview")
     if tier_filter and tier_filter not in ["all", "free", "pro", "ultra"]:
-        raise HTTPException(status_code=400, detail="tier_filter 只能是 all、free、pro 或 ultra")
-
-
+        raise HTTPException(
+            status_code=400, detail="tier_filter 只能是 all、free、pro 或 ultra")
 
     storage_adapter = await get_storage()
     backend_info = await storage_adapter.get_backend_info()
@@ -371,7 +379,8 @@ async def download_all_creds_common(mode: str = "geminicli") -> Response:
             try:
                 credential_data = await storage_adapter.get_credential(filename, mode=mode)
                 if credential_data:
-                    content = json.dumps(credential_data, ensure_ascii=False, indent=2)
+                    content = json.dumps(
+                        credential_data, ensure_ascii=False, indent=2)
                     zip_file.writestr(os.path.basename(filename), content)
                     success_count += 1
 
@@ -466,12 +475,12 @@ async def refresh_all_user_emails_common(mode: str = "geminicli") -> JSONRespons
                     "error": "无法获取邮箱",
                 })
         except Exception as e:
-                results.append({
-                    "filename": os.path.basename(filename),
-                    "user_email": None,
-                    "success": False,
-                    "error": "无法获取邮箱",
-                })
+            results.append({
+                "filename": os.path.basename(filename),
+                "user_email": None,
+                "success": False,
+                "error": "无法获取邮箱",
+            })
         except Exception as e:
             results.append({
                 "filename": os.path.basename(filename),
@@ -498,7 +507,6 @@ async def verify_credential_project_common(filename: str, mode: str = "geminicli
     # 验证文件名
     if not filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="无效的文件名")
-
 
     storage_adapter = await get_storage()
 
@@ -575,7 +583,8 @@ async def verify_credential_project_common(filename: str, mode: str = "geminicli
 
         await storage_adapter.update_credential_state(filename, state_update, mode=mode)
 
-        log.info(f"检验 {mode} 凭证成功: {filename} - Project ID: {project_id}, Tier: {subscription_tier} - 已解除禁用并清除错误码")
+        log.info(
+            f"检验 {mode} 凭证成功: {filename} - Project ID: {project_id}, Tier: {subscription_tier} - 已解除禁用并清除错误码")
 
         response_data = {
             "success": True,
@@ -691,7 +700,8 @@ async def creds_action(
         filename = request.filename
         action = request.action
 
-        log.info(f"Performing action '{action}' on file: {filename} (mode={mode})")
+        log.info(
+            f"Performing action '{action}' on file: {filename} (mode={mode})")
 
         # 验证文件名
         if not filename.endswith(".json"):
@@ -739,17 +749,20 @@ async def creds_action(
                 if success:
                     log.info(f"通过管理器成功删除凭证: {filename} (mode={mode})")
                     return JSONResponse(
-                        content={"message": f"已删除凭证文件 {os.path.basename(filename)}"}
+                        content={
+                            "message": f"已删除凭证文件 {os.path.basename(filename)}"}
                     )
                 else:
                     raise HTTPException(status_code=500, detail="删除凭证失败")
             except Exception as e:
                 log.error(f"删除凭证 {filename} 时出错: {e}")
-                raise HTTPException(status_code=500, detail=f"删除文件失败: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"删除文件失败: {str(e)}")
 
         elif action == "enable_credit":
             if mode != "antigravity":
-                raise HTTPException(status_code=400, detail="enable_credit 仅支持 antigravity 模式")
+                raise HTTPException(
+                    status_code=400, detail="enable_credit 仅支持 antigravity 模式")
             updated = await storage_adapter.update_credential_state(
                 filename, {"enable_credit": True}, mode=mode
             )
@@ -760,7 +773,8 @@ async def creds_action(
 
         elif action == "disable_credit":
             if mode != "antigravity":
-                raise HTTPException(status_code=400, detail="disable_credit 仅支持 antigravity 模式")
+                raise HTTPException(
+                    status_code=400, detail="disable_credit 仅支持 antigravity 模式")
             updated = await storage_adapter.update_credential_state(
                 filename, {"enable_credit": False}, mode=mode
             )
@@ -776,6 +790,8 @@ async def creds_action(
         raise
     except Exception as e:
         log.error(f"凭证文件操作失败: {e}")
+
+
 @router.post("/switch/{filename}")
 async def switch_active_credential(
     filename: str,
@@ -872,7 +888,8 @@ async def creds_batch_action(
                         continue
                 elif action == "enable_credit":
                     if mode != "antigravity":
-                        errors.append(f"{filename}: enable_credit 仅支持 antigravity 模式")
+                        errors.append(
+                            f"{filename}: enable_credit 仅支持 antigravity 模式")
                         continue
                     updated = await storage_adapter.update_credential_state(
                         filename, {"enable_credit": True}, mode=mode
@@ -885,7 +902,8 @@ async def creds_batch_action(
                         continue
                 elif action == "disable_credit":
                     if mode != "antigravity":
-                        errors.append(f"{filename}: disable_credit 仅支持 antigravity 模式")
+                        errors.append(
+                            f"{filename}: disable_credit 仅支持 antigravity 模式")
                         continue
                     updated = await storage_adapter.update_credential_state(
                         filename, {"enable_credit": False}, mode=mode
@@ -1094,7 +1112,6 @@ async def get_credential_quota(
         if not filename.endswith(".json"):
             raise HTTPException(status_code=400, detail="无效的文件名")
 
-
         storage_adapter = await get_storage()
 
         # 获取凭证数据
@@ -1118,7 +1135,8 @@ async def get_credential_quota(
             credential_data = updated_data
 
         # 获取访问令牌
-        access_token = credential_data.get("access_token") or credential_data.get("token")
+        access_token = credential_data.get(
+            "access_token") or credential_data.get("token")
         if not access_token:
             raise HTTPException(status_code=400, detail="凭证中没有访问令牌")
 
@@ -1229,7 +1247,8 @@ async def configure_preview_channel(
             await storage_adapter.store_credential(filename, credential_data, mode=mode)
 
         # 获取 access_token 和 project_id
-        access_token = credential_data.get("access_token") or credential_data.get("token")
+        access_token = credential_data.get(
+            "access_token") or credential_data.get("token")
         project_id = credential_data.get("project_id", "")
 
         if not access_token:
@@ -1299,7 +1318,8 @@ async def configure_preview_channel(
         setting_status = setting_response.status_code
 
         if setting_status == 200 or setting_status == 201:
-            log.info(f"步骤 1/2: Release Channel Setting 创建成功 (setting_id={setting_id})")
+            log.info(
+                f"步骤 1/2: Release Channel Setting 创建成功 (setting_id={setting_id})")
         elif setting_status == 409:
             # Setting 已存在，需要 LIST 获取真实的 setting_id，否则 Step 2 的 URL 会用错误的 ID
             log.info(f"步骤 1/2: Release Channel Setting 已存在，正在获取已有 setting_id...")
@@ -1321,11 +1341,14 @@ async def configure_preview_channel(
                 except Exception as e:
                     log.warning(f"步骤 1/2: 解析 LIST 响应失败: {e}，保持随机 setting_id")
             else:
-                log.warning(f"步骤 1/2: LIST 请求失败 (status={list_response.status_code})，保持随机 setting_id")
+                log.warning(
+                    f"步骤 1/2: LIST 请求失败 (status={list_response.status_code})，保持随机 setting_id")
         else:
             # 步骤 1 失败
-            error_text = setting_response.text if hasattr(setting_response, 'text') else ""
-            log.error(f"步骤 1/2 失败: {filename} - Status: {setting_status}, Error: {error_text}")
+            error_text = setting_response.text if hasattr(
+                setting_response, 'text') else ""
+            log.error(
+                f"步骤 1/2 失败: {filename} - Status: {setting_status}, Error: {error_text}")
 
             return JSONResponse(
                 status_code=setting_status,
@@ -1359,7 +1382,8 @@ async def configure_preview_channel(
                 "preview": True
             }, mode=mode)
 
-            log.info(f"步骤 2/2: Setting Binding 创建成功 - Preview 通道配置完成: {filename}")
+            log.info(
+                f"步骤 2/2: Setting Binding 创建成功 - Preview 通道配置完成: {filename}")
 
             return JSONResponse(content={
                 "success": True,
@@ -1375,7 +1399,8 @@ async def configure_preview_channel(
                 "preview": True
             }, mode=mode)
 
-            log.info(f"步骤 2/2: Setting Binding 已存在 - Preview 通道已配置: {filename}")
+            log.info(
+                f"步骤 2/2: Setting Binding 已存在 - Preview 通道已配置: {filename}")
 
             return JSONResponse(content={
                 "success": True,
@@ -1385,8 +1410,10 @@ async def configure_preview_channel(
             })
         else:
             # 步骤 2 失败
-            error_text = binding_response.text if hasattr(binding_response, 'text') else ""
-            log.error(f"步骤 2/2 失败: {filename} - Status: {binding_status}, Error: {error_text}")
+            error_text = binding_response.text if hasattr(
+                binding_response, 'text') else ""
+            log.error(
+                f"步骤 2/2 失败: {filename} - Status: {binding_status}, Error: {error_text}")
 
             return JSONResponse(
                 status_code=binding_status,
@@ -1451,7 +1478,8 @@ async def test_credential(
             await storage_adapter.store_credential(filename, credential_data, mode=mode)
 
         # 获取访问令牌
-        access_token = credential_data.get("access_token") or credential_data.get("token")
+        access_token = credential_data.get(
+            "access_token") or credential_data.get("token")
         if not access_token:
             raise HTTPException(status_code=400, detail="凭证中没有访问令牌")
 
@@ -1499,7 +1527,8 @@ async def test_credential(
         status_code = response.status_code
 
         if status_code == 200 or status_code == 429:
-            log.info(f"凭证测试成功: {filename} (mode={mode}, model={test_model}, status={status_code})")
+            log.info(
+                f"凭证测试成功: {filename} (mode={mode}, model={test_model}, status={status_code})")
             # 测试成功时清除错误状态
             if status_code == 200:
                 await storage_adapter.update_credential_state(filename, {
@@ -1510,7 +1539,8 @@ async def test_credential(
                 # 如果是 geminicli 模式且第一次测试成功，继续测试 gemini-3-flash-preview
                 if mode == "geminicli":
                     preview_model = "gemini-3-flash-preview"
-                    log.info(f"开始测试 preview 模型: {filename} (model={preview_model})")
+                    log.info(
+                        f"开始测试 preview 模型: {filename} (model={preview_model})")
 
                     try:
                         preview_response = await post_async(
@@ -1531,19 +1561,22 @@ async def test_credential(
 
                         if preview_status == 200 or preview_status == 429:
                             # preview 模型测试成功，设置 preview=True
-                            log.info(f"Preview 模型测试成功: {filename} (status={preview_status})")
+                            log.info(
+                                f"Preview 模型测试成功: {filename} (status={preview_status})")
                             await storage_adapter.update_credential_state(filename, {
                                 "preview": True
                             }, mode=mode)
                         elif preview_status == 404:
                             # preview 模型返回 404，说明不支持，设置 preview=False
-                            log.warning(f"Preview 模型不支持: {filename} (status=404)")
+                            log.warning(
+                                f"Preview 模型不支持: {filename} (status=404)")
                             await storage_adapter.update_credential_state(filename, {
                                 "preview": False
                             }, mode=mode)
                         else:
                             # 其他错误，保持默认 preview 状态
-                            log.warning(f"Preview 模型测试失败: {filename} (status={preview_status})")
+                            log.warning(
+                                f"Preview 模型测试失败: {filename} (status={preview_status})")
                     except Exception as e:
                         log.error(f"Preview 模型测试异常: {filename} - {e}")
 
@@ -1559,17 +1592,20 @@ async def test_credential(
                 }
             )
         else:
-            log.warning(f"凭证测试失败: {filename} (mode={mode}, status={status_code})")
+            log.warning(
+                f"凭证测试失败: {filename} (mode={mode}, status={status_code})")
             # 测试失败时保存错误码和错误消息（覆盖模式，只保存最新的一个错误）
             try:
                 error_text = response.text if hasattr(response, 'text') else ""
 
                 # 打印详细错误内容到日志
-                log.error(f"凭证测试错误详情 - 文件: {filename}, 模式: {mode}, 状态码: {status_code}, 错误内容: {error_text}")
+                log.error(
+                    f"凭证测试错误详情 - 文件: {filename}, 模式: {mode}, 状态码: {status_code}, 错误内容: {error_text}")
 
                 # 使用覆盖模式保存错误（与 credential_manager 保持一致）
                 error_codes = [status_code]
-                error_messages = {str(status_code): error_text if error_text else f"HTTP {status_code}"}
+                error_messages = {
+                    str(status_code): error_text if error_text else f"HTTP {status_code}"}
 
                 # 更新状态
                 await storage_adapter.update_credential_state(filename, {

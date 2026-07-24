@@ -3,6 +3,12 @@ Gemini CLI Model List Router - Handles model list requests
 Gemini CLI 模型列表路由 - 处理模型列表请求
 """
 
+from src.log import log
+from src.schemas import model_to_dict
+from src.router.base_router import create_gemini_model_list, create_openai_model_list
+from src.utils import authenticate_flexible
+from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends
 import sys
 from pathlib import Path
 
@@ -12,11 +18,8 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # 第三方库
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
 
 # 本地模块 - 工具和认证
-from src.utils import authenticate_flexible
 
 VERTEX_MODELS = [
     "gemini-2.5-pro",
@@ -28,9 +31,6 @@ VERTEX_MODELS = [
 ]
 
 # 本地模块 - 基础路由工具
-from src.router.base_router import create_gemini_model_list, create_openai_model_list
-from src.schemas import model_to_dict
-from src.log import log
 
 
 # ==================== 路由器初始化 ====================

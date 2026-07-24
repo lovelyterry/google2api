@@ -127,7 +127,7 @@ class GeminiPart(BaseModel):
     inlineData: Optional[Dict[str, Any]] = None
     fileData: Optional[Dict[str, Any]] = None
     thought: Optional[bool] = None  # 改为 None，避免序列化时包含 False
-    
+
     class Config:
         extra = "allow"  # 允许额外字段（如 functionCall, functionResponse）
 
@@ -215,7 +215,8 @@ class ClaudeContentBlock(BaseModel):
     name: Optional[str] = None  # for tool_use
     input: Optional[Dict[str, Any]] = None  # for tool_use
     tool_use_id: Optional[str] = None  # for tool_result
-    content: Optional[Union[str, List[Dict[str, Any]]]] = None  # for tool_result
+    content: Optional[Union[str, List[Dict[str, Any]]]
+                      ] = None  # for tool_result
 
 
 class ClaudeMessage(BaseModel):

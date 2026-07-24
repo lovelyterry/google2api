@@ -18,7 +18,8 @@ class ModelMappingManager:
             cls._instance._dynamic_map: Dict[str, Dict[str, Any]] = {}
             cls._instance._custom_map: Dict[str, str] = {}
             cls._instance._mapping_stats: Dict[str, int] = {}
-            cls._instance._fallback_map: Dict[str, str] = {}  # router_type -> fallback_model
+            # router_type -> fallback_model
+            cls._instance._fallback_map: Dict[str, str] = {}
             cls._instance._load_from_disk()
         return cls._instance
 
@@ -36,7 +37,8 @@ class ModelMappingManager:
                         data = json.load(f)
                         self._custom_map = data.get("custom_map", {})
                         self._fallback_map = data.get("fallback_map", {})
-                    log.info(f"[MODEL MAP] 从旧文件 {LEGACY_MAPPING_FILE_PATH} 迁移映射数据到 creds/config.json")
+                    log.info(
+                        f"[MODEL MAP] 从旧文件 {LEGACY_MAPPING_FILE_PATH} 迁移映射数据到 creds/config.json")
                     self._save_to_disk()
                     try:
                         os.remove(LEGACY_MAPPING_FILE_PATH)
@@ -53,7 +55,8 @@ class ModelMappingManager:
                     data = json.load(f)
                     self._custom_map = data.get("custom_map", {})
                     self._fallback_map = data.get("fallback_map", {})
-                log.info(f"[MODEL MAP] 从 {config_path} 成功加载 {len(self._custom_map)} 条自定义映射规则")
+                log.info(
+                    f"[MODEL MAP] 从 {config_path} 成功加载 {len(self._custom_map)} 条自定义映射规则")
         except Exception as e:
             log.error(f"[MODEL MAP] 加载本地映射配置失败: {e}")
 
@@ -90,7 +93,6 @@ class ModelMappingManager:
                 pass
         except Exception as e:
             log.error(f"[MODEL MAP] 保存映射数据到 {config_path} 失败: {e}")
-
 
     def record_mapping(self, requested_model: str, target_model: str, router_type: str = "default"):
         """

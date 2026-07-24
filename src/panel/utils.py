@@ -92,7 +92,8 @@ class ConnectionManager:
         self.active_connections = alive_connections
         cleaned = original_count - len(self.active_connections)
         if cleaned > 0:
-            log.debug(f"清理了 {cleaned} 个死连接，剩余连接数: {len(self.active_connections)}")
+            log.debug(
+                f"清理了 {cleaned} 个死连接，剩余连接数: {len(self.active_connections)}")
 
 
 # =============================================================================

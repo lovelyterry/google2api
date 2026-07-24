@@ -33,7 +33,8 @@ async def generate_content(
 
     base_model = get_base_model_from_feature_model(model)
     from src.model_mapping import model_mapping_manager
-    real_model = model_mapping_manager.resolve_model(base_model, router_type="vertex")
+    real_model = model_mapping_manager.resolve_model(
+        base_model, router_type="vertex")
 
     normalized_dict["model"] = real_model
 
@@ -46,7 +47,8 @@ async def generate_content(
     }
 
     # 记录实际重定向后的最终目标模型映射
-    model_mapping_manager.record_mapping(model, api_request["model"], router_type="vertex")
+    model_mapping_manager.record_mapping(
+        model, api_request["model"], router_type="vertex")
 
     from src.api.vertex import non_stream_request
     response = await non_stream_request(body=api_request)
@@ -68,10 +70,12 @@ async def stream_generate_content(
 
     base_model = get_base_model_from_feature_model(model)
     from src.model_mapping import model_mapping_manager
-    real_model = model_mapping_manager.resolve_model(base_model, router_type="vertex")
+    real_model = model_mapping_manager.resolve_model(
+        base_model, router_type="vertex")
 
     # 记录实际重定向后的最终目标模型映射
-    model_mapping_manager.record_mapping(model, real_model, router_type="vertex")
+    model_mapping_manager.record_mapping(
+        model, real_model, router_type="vertex")
 
     normalized_dict["model"] = real_model
 

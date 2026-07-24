@@ -2,6 +2,7 @@
 Panel模块 - 整合所有控制面板路由
 """
 
+from .utils import ConnectionManager, is_mobile_user_agent, validate_mode, get_env_locked_keys
 from fastapi import APIRouter
 
 from . import auth, creds, config_routes, root, model_routes, token
@@ -26,7 +27,6 @@ def create_router() -> APIRouter:
 router = create_router()
 
 # 导出常用工具
-from .utils import ConnectionManager, is_mobile_user_agent, validate_mode, get_env_locked_keys
 
 __all__ = [
     "router",

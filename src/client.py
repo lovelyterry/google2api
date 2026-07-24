@@ -4,6 +4,7 @@
 为所有需要与上游 Google / 外部服务发起 HTTP 请求的模块提供统一的客户端配置和方法。
 """
 
+import json as json_lib
 import asyncio
 import time
 from contextlib import asynccontextmanager
@@ -21,6 +22,7 @@ except ImportError:
     CurlOpt = None
     log.error("curl_cffi 未安装，请安装 curl_cffi 依赖！")
 
+
 def _get_default_curl_options() -> Dict[Any, Any]:
     """关闭 libcurl 30 秒低速断连检测 (LOW_SPEED_LIMIT=0, LOW_SPEED_TIME=0)"""
     if CurlOpt:
@@ -29,6 +31,7 @@ def _get_default_curl_options() -> Dict[Any, Any]:
         except Exception:
             pass
     return {19: 0, 20: 0}
+
 
 async def _close_session(session: Any):
     if session is None:
@@ -44,6 +47,7 @@ async def _close_session(session: Any):
                 await res
     except Exception as e:
         log.warning(f"Error closing session: {e}")
+
 
 class IsolatedClientPool:
     """按账号/凭证标识隔离的 HTTP 客户端池，确保不同凭证的请求拥有独立的 TLS/TCP 上下文"""
@@ -87,8 +91,10 @@ class IsolatedClientPool:
             for key in keys_to_remove:
                 del self._pool[key]
 
+
 # 实例池管理
 client_pool = IsolatedClientPool()
+
 
 class HttpClientManager:
     """通用 HTTP 客户端管理器（集成 TLS 指纹伪装与动态代理支持）"""
@@ -151,8 +157,6 @@ class HttpClientManager:
 http_client = HttpClientManager()
 
 
-import json as json_lib
-
 def _format_payload(data: Any, max_len: int = 4000) -> str:
     """格式化 Payload 为可读字符串日志（超出 4000 字符时智能截断）"""
     if data is None:
@@ -181,7 +185,8 @@ async def get_async(
         response = await client.get(url, headers=headers)
         resp_text = getattr(response, "text", "")
         status_code = getattr(response, "status_code", 0)
-        log.debug(f"[HTTP GET] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
+        log.debug(
+            f"[HTTP GET] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
         return response
 
 
@@ -196,7 +201,8 @@ async def post_async(
 ) -> Any:
     """通用异步 POST 请求（记录调用与响应日志）"""
     payload = json if json is not None else data
-    log.debug(f"[HTTP POST] 请求 URL: {url}\nPayload:\n{_format_payload(payload)}")
+    log.debug(
+        f"[HTTP POST] 请求 URL: {url}\nPayload:\n{_format_payload(payload)}")
 
     async with http_client.get_client(timeout=timeout, **kwargs) as client:
         response = await client.post(url, data=data, json=json, headers=headers)
@@ -208,17 +214,20 @@ async def post_async(
                 resp_text = "<Binary Content>"
 
         status_code = getattr(response, "status_code", 0)
-        log.debug(f"[HTTP POST] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
+        log.debug(
+            f"[HTTP POST] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
         return response
 
 
 def _filter_response_headers(headers: Any) -> Dict[str, str]:
     """过滤响应头，移除导致客户端解压或传输异常的 Headers"""
-    skip_headers = {"content-encoding", "content-length", "transfer-encoding", "connection", "server"}
+    skip_headers = {"content-encoding", "content-length",
+                    "transfer-encoding", "connection", "server"}
     filtered = {}
     if not headers:
         return filtered
-    items = headers.items() if hasattr(headers, "items") else (dict(headers).items() if isinstance(headers, dict) else [])
+    items = headers.items() if hasattr(headers, "items") else (
+        dict(headers).items() if isinstance(headers, dict) else [])
     for k, v in items:
         if str(k).lower() not in skip_headers:
             filtered[str(k)] = str(v)
@@ -241,12 +250,14 @@ async def stream_post_async(
         from fastapi import Response
         log.warning("[MOCK] stream_post_async: 返回模拟 429 错误")
         yield Response(
-            content=json_lib.dumps({"error": {"code": 429, "message": "mock rate limit", "status": "RESOURCE_EXHAUSTED"}}),
+            content=json_lib.dumps(
+                {"error": {"code": 429, "message": "mock rate limit", "status": "RESOURCE_EXHAUSTED"}}),
             status_code=429,
         )
         return
 
-    log.debug(f"[HTTP STREAM POST] 请求 URL: {url}\nPayload:\n{_format_payload(body)}")
+    log.debug(
+        f"[HTTP STREAM POST] 请求 URL: {url}\nPayload:\n{_format_payload(body)}")
 
     try:
         async with http_client.get_streaming_client(**kwargs) as client:
@@ -255,11 +266,13 @@ async def stream_post_async(
                     if r.status_code != 200:
                         from fastapi import Response
                         resp_content = await r.aread() if hasattr(r, "aread") else getattr(r, "content", b"")
-                        log.error(f"[HTTP STREAM RESPONSE ERROR] URL: {url} | Status: {r.status_code}\nResponse Body:\n{_format_payload(resp_content)}")
+                        log.error(
+                            f"[HTTP STREAM RESPONSE ERROR] URL: {url} | Status: {r.status_code}\nResponse Body:\n{_format_payload(resp_content)}")
                         yield Response(resp_content, r.status_code, _filter_response_headers(r.headers))
                         return
 
-                    log.debug(f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
+                    log.debug(
+                        f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
                     if native:
                         async for chunk in r.aiter_content():
                             yield chunk
@@ -273,11 +286,13 @@ async def stream_post_async(
                     if r.status_code != 200:
                         from fastapi import Response
                         resp_content = await r.aread() if hasattr(r, "aread") else getattr(r, "content", b"")
-                        log.error(f"[HTTP STREAM RESPONSE ERROR] URL: {url} | Status: {r.status_code}\nResponse Body:\n{_format_payload(resp_content)}")
+                        log.error(
+                            f"[HTTP STREAM RESPONSE ERROR] URL: {url} | Status: {r.status_code}\nResponse Body:\n{_format_payload(resp_content)}")
                         yield Response(resp_content, r.status_code, _filter_response_headers(r.headers))
                         return
 
-                    log.debug(f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
+                    log.debug(
+                        f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
                     if native:
                         async for chunk in r.aiter_bytes():
                             yield chunk

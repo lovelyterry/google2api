@@ -91,7 +91,8 @@ class Credentials:
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-            log.info(f"[Google OAuth] Token 刷新响应状态码: {response.status_code}, 内容: {response.text[:300]}")
+            log.info(
+                f"[Google OAuth] Token 刷新响应状态码: {response.status_code}, 内容: {response.text}")
             response.raise_for_status()
 
             token_data = response.json()
@@ -136,11 +137,13 @@ class Credentials:
                 expiry_str = data["expiry"]
                 if isinstance(expiry_str, str):
                     if expiry_str.endswith("Z"):
-                        expires_at = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                        expires_at = datetime.fromisoformat(
+                            expiry_str.replace("Z", "+00:00"))
                     elif "+" in expiry_str:
                         expires_at = datetime.fromisoformat(expiry_str)
                     else:
-                        expires_at = datetime.fromisoformat(expiry_str).replace(tzinfo=timezone.utc)
+                        expires_at = datetime.fromisoformat(
+                            expiry_str).replace(tzinfo=timezone.utc)
             except ValueError:
                 log.warning(f"无法解析过期时间: {expiry_str}")
 
@@ -218,11 +221,14 @@ class Flow:
         try:
             oauth_base_url = await get_oauth_proxy_url()
             token_url = f"{oauth_base_url.rstrip('/')}/token"
-            log.info(f"[Google OAuth] 正在发送 Code 换取 Token 请求 -> URL: {token_url}")
+            log.info(
+                f"[Google OAuth] 正在发送 Code 换取 Token 请求 -> URL: {token_url}")
             response = await post_async(
-                token_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"}
+                token_url, data=data, headers={
+                    "Content-Type": "application/x-www-form-urlencoded"}
             )
-            log.info(f"[Google OAuth] Code 换取 Token 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
+            log.info(
+                f"[Google OAuth] Code 换取 Token 响应状态码: {response.status_code}, 内容: {response.text}")
             response.raise_for_status()
 
             token_data = response.json()
@@ -231,7 +237,8 @@ class Flow:
             expires_at = None
             if "expires_in" in token_data:
                 expires_in = int(token_data["expires_in"])
-                expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                expires_at = datetime.now(
+                    timezone.utc) + timedelta(seconds=expires_in)
 
             # 创建凭证对象
             self.credentials = Credentials(
@@ -297,16 +304,19 @@ class ServiceAccount:
 
         assertion = self.create_jwt()
 
-        data = {"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": assertion}
+        data = {"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": assertion}
 
         try:
             oauth_base_url = await get_oauth_proxy_url()
             token_url = f"{oauth_base_url.rstrip('/')}/token"
             log.info(f"[Google OAuth] SA 请求 Token -> URL: {token_url}")
             response = await post_async(
-                token_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"}
+                token_url, data=data, headers={
+                    "Content-Type": "application/x-www-form-urlencoded"}
             )
-            log.info(f"[Google OAuth] SA 请求 Token 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
+            log.info(
+                f"[Google OAuth] SA 请求 Token 响应状态码: {response.status_code}, 内容: {response.text}")
             response.raise_for_status()
 
             token_data = response.json()
@@ -314,7 +324,8 @@ class ServiceAccount:
 
             if "expires_in" in token_data:
                 expires_in = int(token_data["expires_in"])
-                self.expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                self.expires_at = datetime.now(
+                    timezone.utc) + timedelta(seconds=expires_in)
 
             return self.access_token
 
@@ -344,9 +355,11 @@ async def get_user_info(credentials: Credentials) -> Optional[Dict[str, Any]]:
         userinfo_url = f"{googleapis_base_url.rstrip('/')}/oauth2/v2/userinfo"
         log.info(f"[Google API] 请求 userinfo -> URL: {userinfo_url}")
         response = await get_async(
-            userinfo_url, headers={"Authorization": f"Bearer {credentials.access_token}"}
+            userinfo_url, headers={
+                "Authorization": f"Bearer {credentials.access_token}"}
         )
-        log.info(f"[Google API] userinfo 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
+        log.info(
+            f"[Google API] userinfo 响应状态码: {response.status_code}, 内容: {response.text}")
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -404,7 +417,8 @@ async def validate_token(token: str) -> Optional[Dict[str, Any]]:
         log.info(f"[Google OAuth] 请求 tokeninfo -> URL: {tokeninfo_url}")
 
         response = await get_async(tokeninfo_url)
-        log.info(f"[Google OAuth] tokeninfo 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
+        log.info(
+            f"[Google OAuth] tokeninfo 响应状态码: {response.status_code}, 内容: {response.text}")
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -440,9 +454,11 @@ async def enable_required_apis(credentials: Credentials, project_id: str) -> boo
                 f"{service_usage_base_url.rstrip('/')}/v1/projects/{project_id}/services/{service}"
             )
             try:
-                log.info(f"[Google ServiceUsage API] 检查服务: {service} -> URL: {check_url}")
+                log.info(
+                    f"[Google ServiceUsage API] 检查服务: {service} -> URL: {check_url}")
                 check_response = await get_async(check_url, headers=headers)
-                log.info(f"[Google ServiceUsage API] 检查服务 {service} 状态码: {check_response.status_code}, 内容: {check_response.text[:300]}")
+                log.info(
+                    f"[Google ServiceUsage API] 检查服务 {service} 状态码: {check_response.status_code}, 内容: {check_response.text}")
                 if check_response.status_code == 200:
                     service_data = check_response.json()
                     if service_data.get("state") == "ENABLED":
@@ -454,9 +470,11 @@ async def enable_required_apis(credentials: Credentials, project_id: str) -> boo
             # 启用服务
             enable_url = f"{service_usage_base_url.rstrip('/')}/v1/projects/{project_id}/services/{service}:enable"
             try:
-                log.info(f"[Google ServiceUsage API] 启用服务: {service} -> URL: {enable_url}")
+                log.info(
+                    f"[Google ServiceUsage API] 启用服务: {service} -> URL: {enable_url}")
                 enable_response = await post_async(enable_url, headers=headers, json={})
-                log.info(f"[Google ServiceUsage API] 启用服务 {service} 状态码: {enable_response.status_code}, 内容: {enable_response.text[:300]}")
+                log.info(
+                    f"[Google ServiceUsage API] 启用服务 {service} 状态码: {enable_response.status_code}, 内容: {enable_response.text}")
 
                 if enable_response.status_code in [200, 201]:
                     log.info(f"✅ 成功启用服务: {service}")
@@ -499,7 +517,8 @@ async def get_user_projects(credentials: Credentials) -> List[Dict[str, Any]]:
         log.info(f"[Google Resource Manager] 正在调用 API: {url}")
         response = await get_async(url, headers=headers)
 
-        log.info(f"[Google Resource Manager] API 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
+        log.info(
+            f"[Google Resource Manager] API 响应状态码: {response.status_code}, 内容: {response.text}")
 
         if response.status_code == 200:
             data = response.json()
@@ -530,7 +549,8 @@ async def select_default_project(projects: List[Dict[str, Any]]) -> Optional[str
         # Google API returns projectId in camelCase
         project_id = project.get("projectId", "")
         if "default" in display_name or "default" in project_id.lower():
-            log.info(f"选择默认项目: {project_id} ({project.get('displayName', project_id)})")
+            log.info(
+                f"选择默认项目: {project_id} ({project.get('displayName', project_id)})")
             return project_id
 
     # 策略2：选择第一个项目
@@ -595,7 +615,8 @@ async def fetch_project_id_and_tier(
         if "free" in tier_lower:
             return "free"
 
-        log.warning(f"[fetch_project_id_and_tier] Unrecognized raw tier: '{raw_tier}', falling back to original tier string")
+        log.warning(
+            f"[fetch_project_id_and_tier] Unrecognized raw tier: '{raw_tier}', falling back to original tier string")
         return tier_lower
 
     subscription_tier = None
@@ -627,10 +648,12 @@ async def fetch_project_id_and_tier(
                 return project_id, subscription_tier, credit_amount
             return project_id, subscription_tier
 
-        log.warning("[fetch_project_id_and_tier] loadCodeAssist did not return project_id, falling back to onboardUser")
+        log.warning(
+            "[fetch_project_id_and_tier] loadCodeAssist did not return project_id, falling back to onboardUser")
 
     except Exception as e:
-        log.warning(f"[fetch_project_id_and_tier] loadCodeAssist failed: {type(e).__name__}: {e}")
+        log.warning(
+            f"[fetch_project_id_and_tier] loadCodeAssist failed: {type(e).__name__}: {e}")
         log.warning("[fetch_project_id_and_tier] Falling back to onboardUser")
 
     # 步骤 2: 回退到 onboardUser
@@ -641,15 +664,18 @@ async def fetch_project_id_and_tier(
                 return project_id, subscription_tier, credit_amount
             return project_id, subscription_tier
 
-        log.error("[fetch_project_id_and_tier] Failed to get project_id from both loadCodeAssist and onboardUser")
+        log.error(
+            "[fetch_project_id_and_tier] Failed to get project_id from both loadCodeAssist and onboardUser")
         if include_credits:
             return None, subscription_tier, credit_amount
         return None, subscription_tier
 
     except Exception as e:
-        log.error(f"[fetch_project_id_and_tier] onboardUser failed: {type(e).__name__}: {e}")
+        log.error(
+            f"[fetch_project_id_and_tier] onboardUser failed: {type(e).__name__}: {e}")
         import traceback
-        log.debug(f"[fetch_project_id_and_tier] Traceback: {traceback.format_exc()}")
+        log.debug(
+            f"[fetch_project_id_and_tier] Traceback: {traceback.format_exc()}")
         if include_credits:
             return None, subscription_tier, credit_amount
         return None, subscription_tier
@@ -674,7 +700,8 @@ async def _try_load_code_assist(
         }
     }
 
-    log.info(f"[loadCodeAssist] 请求 URL: {request_url}, Request body: {request_body}")
+    log.info(
+        f"[loadCodeAssist] 请求 URL: {request_url}, Request body: {request_body}")
 
     response = await post_async(
         request_url,
@@ -683,7 +710,8 @@ async def _try_load_code_assist(
         timeout=30.0,
     )
 
-    log.info(f"[loadCodeAssist] Response status: {response.status_code}, body: {response.text[:500]}")
+    log.info(
+        f"[loadCodeAssist] Response status: {response.status_code}, body: {response.text[:500]}")
 
     if response.status_code == 200:
         response_text = response.text
@@ -695,7 +723,8 @@ async def _try_load_code_assist(
         # 提取订阅等级 - 优先使用 paidTier（更准确反映实际权益）
         paid_tier = data.get("paidTier", {})
         current_tier = data.get("currentTier", {})
-        available_credits = paid_tier.get("availableCredits", []) if isinstance(paid_tier, dict) else []
+        available_credits = paid_tier.get(
+            "availableCredits", []) if isinstance(paid_tier, dict) else []
 
         # paidTier.id 优先，然后是 currentTier.id
         subscription_tier = None
@@ -704,7 +733,8 @@ async def _try_load_code_assist(
             log.info(f"[loadCodeAssist] Found paidTier: {subscription_tier}")
         elif isinstance(current_tier, dict) and current_tier.get("id"):
             subscription_tier = current_tier.get("id")
-            log.info(f"[loadCodeAssist] Found currentTier: {subscription_tier}")
+            log.info(
+                f"[loadCodeAssist] Found currentTier: {subscription_tier}")
 
         # 提取积分数量（如果返回了 availableCredits）
         credit_amount = None
@@ -713,7 +743,8 @@ async def _try_load_code_assist(
             if isinstance(first_credit, dict):
                 credit_amount = first_credit.get("creditAmount")
                 if credit_amount is not None:
-                    log.info(f"[loadCodeAssist] Found creditAmount: {credit_amount}")
+                    log.info(
+                        f"[loadCodeAssist] Found creditAmount: {credit_amount}")
 
         # 检查是否有不可用/需验证的 tier 原因
         ineligible_tiers = data.get("ineligibleTiers", [])
@@ -721,7 +752,8 @@ async def _try_load_code_assist(
         for it in ineligible_tiers:
             if it.get("reasonCode") == "VALIDATION_REQUIRED":
                 validation_required = True
-                log.warning(f"[loadCodeAssist] 账号需要完成 Google 验证: {it.get('reasonMessage')}")
+                log.warning(
+                    f"[loadCodeAssist] 账号需要完成 Google 验证: {it.get('reasonMessage')}")
                 break
 
         # 检查是否有 currentTier（表示用户已激活）
@@ -731,14 +763,16 @@ async def _try_load_code_assist(
             # 使用服务器返回的 project_id
             project_id = data.get("cloudaicompanionProject")
             if project_id:
-                log.info(f"[loadCodeAssist] Successfully fetched project_id: {project_id}, tier: {subscription_tier}")
+                log.info(
+                    f"[loadCodeAssist] Successfully fetched project_id: {project_id}, tier: {subscription_tier}")
                 return project_id, subscription_tier, credit_amount
 
             log.warning("[loadCodeAssist] No project_id in response")
             return None, subscription_tier, credit_amount
         else:
             if validation_required:
-                log.info("[loadCodeAssist] 账号尚未激活且需要完成 Google 验证 (VALIDATION_REQUIRED)")
+                log.info(
+                    "[loadCodeAssist] 账号尚未激活且需要完成 Google 验证 (VALIDATION_REQUIRED)")
                 return None, "unverified", credit_amount
             log.info("[loadCodeAssist] User not activated yet (no currentTier)")
             return None, None, credit_amount
@@ -789,7 +823,8 @@ async def _try_onboard_user(
 
     while attempt < max_attempts:
         attempt += 1
-        log.info(f"[onboardUser] 轮询请求 ({attempt}/{max_attempts}) -> URL: {request_url}, Body: {request_body}")
+        log.info(
+            f"[onboardUser] 轮询请求 ({attempt}/{max_attempts}) -> URL: {request_url}, Body: {request_body}")
 
         response = await post_async(
             request_url,
@@ -798,7 +833,8 @@ async def _try_onboard_user(
             timeout=30.0,
         )
 
-        log.info(f"[onboardUser] 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
+        log.info(
+            f"[onboardUser] 响应状态码: {response.status_code}, 内容: {response.text}")
 
         if response.status_code == 200:
             data = response.json()
@@ -820,20 +856,25 @@ async def _try_onboard_user(
                     project_id = None
 
                 if project_id:
-                    log.info(f"[onboardUser] Successfully fetched project_id: {project_id}")
+                    log.info(
+                        f"[onboardUser] Successfully fetched project_id: {project_id}")
                     return project_id
                 else:
-                    log.warning("[onboardUser] Operation completed but no project_id in response")
+                    log.warning(
+                        "[onboardUser] Operation completed but no project_id in response")
                     return None
             else:
-                log.debug("[onboardUser] Operation still in progress, waiting 2 seconds...")
+                log.debug(
+                    "[onboardUser] Operation still in progress, waiting 2 seconds...")
                 await asyncio.sleep(2)
         else:
             log.warning(f"[onboardUser] Failed: HTTP {response.status_code}")
             log.warning(f"[onboardUser] Response body: {response.text[:500]}")
-            raise Exception(f"HTTP {response.status_code}: {response.text[:200]}")
+            raise Exception(
+                f"HTTP {response.status_code}: {response.text[:200]}")
 
-    log.error("[onboardUser] Timeout: Operation did not complete within 10 seconds")
+    log.error(
+        "[onboardUser] Timeout: Operation did not complete within 10 seconds")
     return None
 
 
@@ -865,7 +906,8 @@ async def _get_onboard_tier(
         timeout=30.0,
     )
 
-    log.info(f"[_get_onboard_tier] 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
+    log.info(
+        f"[_get_onboard_tier] 响应状态码: {response.status_code}, 内容: {response.text}")
 
     if response.status_code == 200:
         data = response.json()
@@ -883,7 +925,6 @@ async def _get_onboard_tier(
         log.warning("[_get_onboard_tier] No default tier found, using LEGACY")
         return "LEGACY"
     else:
-        log.error(f"[_get_onboard_tier] Failed to fetch tier info: HTTP {response.status_code}")
+        log.error(
+            f"[_get_onboard_tier] Failed to fetch tier info: HTTP {response.status_code}")
         return None
-
-

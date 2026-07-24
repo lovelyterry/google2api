@@ -26,7 +26,8 @@ class QuotaRefreshService:
             from src.auth import Credentials
             from src.utils import ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET
             credential_data.setdefault("client_id", ANTIGRAVITY_CLIENT_ID)
-            credential_data.setdefault("client_secret", ANTIGRAVITY_CLIENT_SECRET)
+            credential_data.setdefault(
+                "client_secret", ANTIGRAVITY_CLIENT_SECRET)
             creds = Credentials.from_dict(credential_data)
             await creds.refresh_if_needed()
 
@@ -38,7 +39,8 @@ class QuotaRefreshService:
 
             # 直接使用 creds 对象中的 access_token（刷新后的最新值），
             # 避免因凭证文件字段名为 "token" 而非 "access_token" 导致读到旧的过期 token
-            access_token = creds.access_token or credential_data.get("access_token") or credential_data.get("token")
+            access_token = creds.access_token or credential_data.get(
+                "access_token") or credential_data.get("token")
             if not access_token:
                 return False
 
@@ -48,7 +50,8 @@ class QuotaRefreshService:
 
             if quota_summary.get("success"):
                 groups = quota_summary.get("groups", [])
-                gemini_groups = [g for g in groups if "GEMINI" in g.get("displayName", "").upper()] or groups
+                gemini_groups = [g for g in groups if "GEMINI" in g.get(
+                    "displayName", "").upper()] or groups
                 await storage_adapter.update_credential_state(
                     filename,
                     {"quota_groups": gemini_groups},
@@ -97,7 +100,8 @@ class QuotaRefreshService:
             # 将 1 分钟 (60 秒) 均匀平摊给所有活跃账号
             step_delay = max(1.0, self._interval / count)
 
-            log.debug(f"⏰ [QuotaRefresh] 开始平滑定时刷新 {count} 个 Antigravity 凭证额度 (平均每 {step_delay:.1f} 秒刷新 1 个账号)...")
+            log.debug(
+                f"⏰ [QuotaRefresh] 开始平滑定时刷新 {count} 个 Antigravity 凭证额度 (平均每 {step_delay:.1f} 秒刷新 1 个账号)...")
             for fn in active_filenames:
                 success = await self._refresh_credential_quota(fn, storage_adapter)
                 if success:
@@ -132,7 +136,8 @@ class QuotaRefreshService:
         """启动定时服务"""
         if self._task and not self._task.done():
             return
-        self._task = asyncio.create_task(self._run(), name="antigravity_quota_refresh_service")
+        self._task = asyncio.create_task(
+            self._run(), name="antigravity_quota_refresh_service")
 
     async def stop(self):
         """停止定时服务"""

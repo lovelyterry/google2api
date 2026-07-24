@@ -65,14 +65,19 @@ class Storage:
 
             try:
                 self._credentials_dir = os.getenv("CREDENTIALS_DIR", "./creds")
-                self._geminicli_dir = os.path.join(self._credentials_dir, "geminicli")
-                self._antigravity_dir = os.path.join(self._credentials_dir, "antigravity")
+                self._geminicli_dir = os.path.join(
+                    self._credentials_dir, "geminicli")
+                self._antigravity_dir = os.path.join(
+                    self._credentials_dir, "antigravity")
 
                 os.makedirs(self._credentials_dir, exist_ok=True)
 
-                self._geminicli_state_file = os.path.join(self._credentials_dir, "geminicli_state.json")
-                self._antigravity_state_file = os.path.join(self._credentials_dir, "antigravity_state.json")
-                self._config_file = os.path.join(self._credentials_dir, "config.json")
+                self._geminicli_state_file = os.path.join(
+                    self._credentials_dir, "geminicli_state.json")
+                self._antigravity_state_file = os.path.join(
+                    self._credentials_dir, "antigravity_state.json")
+                self._config_file = os.path.join(
+                    self._credentials_dir, "config.json")
 
                 # 加载现有 SQLite 数据库（如果存在）进行平滑自动迁移
                 await self._migrate_from_sqlite_if_exists()
@@ -92,7 +97,8 @@ class Storage:
                 await self._sync_credentials_from_disk("antigravity")
 
                 self._initialized = True
-                log.info(f"JSON storage initialized at {self._credentials_dir}")
+                log.info(
+                    f"JSON storage initialized at {self._credentials_dir}")
 
             except Exception as e:
                 log.error(f"Error initializing JSON storage: {e}")
@@ -106,14 +112,17 @@ class Storage:
 
         try:
             import sqlite3
-            log.info("Found legacy SQLite database credentials.db, starting automatic migration to JSON...")
+            log.info(
+                "Found legacy SQLite database credentials.db, starting automatic migration to JSON...")
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
 
-            tables = [r[0] for r in cursor.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            tables = [r[0] for r in cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
 
             if "credentials" in tables:
-                cursor.execute("SELECT filename, credential_data, disabled, error_codes, error_messages, last_success, user_email, model_cooldowns, preview, tier, rotation_order FROM credentials")
+                cursor.execute(
+                    "SELECT filename, credential_data, disabled, error_codes, error_messages, last_success, user_email, model_cooldowns, preview, tier, rotation_order FROM credentials")
                 rows = cursor.fetchall()
                 geminicli_state = {}
                 for row in rows:
@@ -124,7 +133,8 @@ class Storage:
                         with open(cpath, "w", encoding="utf-8") as f:
                             json.dump(cdata, f, ensure_ascii=False, indent=2)
                     except Exception as ex:
-                        log.warning(f"Failed to migrate credential file {fname}: {ex}")
+                        log.warning(
+                            f"Failed to migrate credential file {fname}: {ex}")
 
                     geminicli_state[fname] = {
                         "disabled": bool(row[2]),
@@ -142,7 +152,8 @@ class Storage:
                     json.dump(geminicli_state, f, ensure_ascii=False, indent=2)
 
             if "antigravity_credentials" in tables:
-                cursor.execute("SELECT filename, credential_data, disabled, error_codes, error_messages, last_success, user_email, model_cooldowns, tier, enable_credit, rotation_order FROM antigravity_credentials")
+                cursor.execute(
+                    "SELECT filename, credential_data, disabled, error_codes, error_messages, last_success, user_email, model_cooldowns, tier, enable_credit, rotation_order FROM antigravity_credentials")
                 rows = cursor.fetchall()
                 ag_state = {}
                 for row in rows:
@@ -153,7 +164,8 @@ class Storage:
                         with open(cpath, "w", encoding="utf-8") as f:
                             json.dump(cdata, f, ensure_ascii=False, indent=2)
                     except Exception as ex:
-                        log.warning(f"Failed to migrate antigravity credential file {fname}: {ex}")
+                        log.warning(
+                            f"Failed to migrate antigravity credential file {fname}: {ex}")
 
                     ag_state[fname] = {
                         "disabled": bool(row[2]),
@@ -192,7 +204,8 @@ class Storage:
                 except Exception:
                     pass
             os.rename(db_path, bak_path)
-            log.info(f"SQLite migration complete! Database backed up to {bak_path}")
+            log.info(
+                f"SQLite migration complete! Database backed up to {bak_path}")
 
         except Exception as e:
             log.error(f"Error during SQLite migration: {e}")
@@ -235,13 +248,16 @@ class Storage:
                     try:
                         from src.model_mapping import model_mapping_manager
                         if "custom_map" in self._config_cache and isinstance(self._config_cache["custom_map"], dict):
-                            model_mapping_manager._custom_map.update(self._config_cache["custom_map"])
+                            model_mapping_manager._custom_map.update(
+                                self._config_cache["custom_map"])
                         if "fallback_map" in self._config_cache and isinstance(self._config_cache["fallback_map"], dict):
-                            model_mapping_manager._fallback_map.update(self._config_cache["fallback_map"])
+                            model_mapping_manager._fallback_map.update(
+                                self._config_cache["fallback_map"])
                     except Exception:
                         pass
             except Exception as e:
-                log.error(f"Error reading config file {self._config_file}: {e}")
+                log.error(
+                    f"Error reading config file {self._config_file}: {e}")
                 self._config_cache = {}
         else:
             self._config_cache = {}
@@ -287,7 +303,8 @@ class Storage:
                     except Exception as e:
                         log.warning(f"Could not move {f}: {e}")
 
-        disk_files = set(f for f in os.listdir(mode_dir) if f.endswith(".json")) if os.path.exists(mode_dir) else set()
+        disk_files = set(f for f in os.listdir(mode_dir) if f.endswith(
+            ".json")) if os.path.exists(mode_dir) else set()
         state_dict = self._states[mode]
         updated = False
 
@@ -337,7 +354,8 @@ class Storage:
                         try:
                             with open(filepath, "r", encoding="utf-8") as f:
                                 cdata = json.load(f)
-                            local_email = cdata.get("user_email") or cdata.get("email") or cdata.get("account")
+                            local_email = cdata.get("user_email") or cdata.get(
+                                "email") or cdata.get("account")
                             if local_email and isinstance(local_email, str) and "@" in local_email:
                                 email = local_email
                                 st["user_email"] = email
@@ -359,7 +377,8 @@ class Storage:
                                     log.info(f"重复的凭证文件已存在，删除旧文件: {old_fname}")
                                 else:
                                     os.rename(old_path, new_path)
-                                    log.info(f"重命名凭证文件: {old_fname} -> {new_fname}")
+                                    log.info(
+                                        f"重命名凭证文件: {old_fname} -> {new_fname}")
 
                                 if new_fname in state_dict and new_fname != old_fname:
                                     old_st = state_dict.pop(old_fname)
@@ -370,10 +389,12 @@ class Storage:
                                     if old_st.get("disabled", False):
                                         state_dict[new_fname]["disabled"] = True
                                 else:
-                                    state_dict[new_fname] = state_dict.pop(old_fname)
+                                    state_dict[new_fname] = state_dict.pop(
+                                        old_fname)
                                 updated = True
                         except Exception as e:
-                            log.error(f"重命名凭证文件失败 {old_fname} -> {new_fname}: {e}")
+                            log.error(
+                                f"重命名凭证文件失败 {old_fname} -> {new_fname}: {e}")
 
             if updated:
                 await self._save_states(mode)
@@ -403,7 +424,8 @@ class Storage:
         try:
             async with self._lock:
                 temp_path = filepath + ".tmp"
-                data_str = json.dumps(credential_data, ensure_ascii=False, indent=2)
+                data_str = json.dumps(
+                    credential_data, ensure_ascii=False, indent=2)
                 async with aiofiles.open(temp_path, "w", encoding="utf-8") as f:
                     await f.write(data_str)
                 os.replace(temp_path, filepath)
@@ -453,7 +475,8 @@ class Storage:
     async def list_credentials(self, mode: str = "geminicli") -> List[str]:
         self._ensure_initialized()
         state_dict = self._states[mode]
-        sorted_files = sorted(state_dict.keys(), key=lambda k: state_dict[k].get("rotation_order", 0))
+        sorted_files = sorted(
+            state_dict.keys(), key=lambda k: state_dict[k].get("rotation_order", 0))
         return sorted_files
 
     async def delete_credential(self, filename: str, mode: str = "geminicli") -> bool:
@@ -486,7 +509,8 @@ class Storage:
         async with self._lock:
             state_dict = self._states[mode]
             if filename not in state_dict:
-                log.warning(f"Credential {filename} state not found for update")
+                log.warning(
+                    f"Credential {filename} state not found for update")
                 return False
 
             st = state_dict[filename]
@@ -507,10 +531,12 @@ class Storage:
                         if os.path.exists(old_path):
                             if os.path.exists(new_path):
                                 os.remove(old_path)
-                                log.info(f"Duplicate credential file {new_filename} already exists, removed old file {filename}")
+                                log.info(
+                                    f"Duplicate credential file {new_filename} already exists, removed old file {filename}")
                             else:
                                 os.rename(old_path, new_path)
-                                log.info(f"Renamed credential file from {filename} to {new_filename} on state update")
+                                log.info(
+                                    f"Renamed credential file from {filename} to {new_filename} on state update")
 
                             if new_filename in state_dict and new_filename != filename:
                                 old_st = state_dict.pop(filename)
@@ -518,9 +544,11 @@ class Storage:
                                     if k not in state_dict[new_filename] or state_dict[new_filename][k] is None:
                                         state_dict[new_filename][k] = v
                             else:
-                                state_dict[new_filename] = state_dict.pop(filename)
+                                state_dict[new_filename] = state_dict.pop(
+                                    filename)
                     except Exception as e:
-                        log.error(f"Failed to rename credential file {filename} to {new_filename} on state update: {e}")
+                        log.error(
+                            f"Failed to rename credential file {filename} to {new_filename} on state update: {e}")
 
             await self._save_states(mode)
             return True
@@ -569,7 +597,8 @@ class Storage:
         for filename, st in self._states[mode].items():
             model_cooldowns = st.get("model_cooldowns", {})
             if model_cooldowns:
-                model_cooldowns = {k: v for k, v in model_cooldowns.items() if v > current_time}
+                model_cooldowns = {
+                    k: v for k, v in model_cooldowns.items() if v > current_time}
 
             item = {
                 "disabled": bool(st.get("disabled", False)),
@@ -639,7 +668,8 @@ class Storage:
                         rem = 1.0
                     rem = max(0.0, min(1.0, rem))
 
-                    reset_time_raw = bucket.get("resetTimeRaw") or bucket.get("resetTime")
+                    reset_time_raw = bucket.get(
+                        "resetTimeRaw") or bucket.get("resetTime")
                     reset_ts = float("inf")
 
                     if reset_time_raw:
@@ -679,7 +709,7 @@ class Storage:
 
         # 3. 周重置时间戳 reset_ts：
         # 同一阶梯内，重置时间戳越小（越早重置）排在越前面 -> 重置日期临近优先
-        
+
         # 4. 原始 rotation_order 作为平局兜底
         rot_order = st.get("rotation_order", 0)
 
@@ -692,7 +722,8 @@ class Storage:
         state_dict = self._states[mode]
         current_time = time.time()
 
-        sorted_files = sorted(state_dict.keys(), key=lambda f: self._credential_schedule_key(state_dict, f))
+        sorted_files = sorted(
+            state_dict.keys(), key=lambda f: self._credential_schedule_key(state_dict, f))
 
         for fname in sorted_files:
             st = state_dict[fname]
@@ -718,8 +749,10 @@ class Storage:
     async def get_available_credentials_list(self) -> List[str]:
         self._ensure_initialized()
         state_dict = self._states["geminicli"]
-        available = [f for f, st in state_dict.items() if not st.get("disabled", False)]
-        available.sort(key=lambda f: self._credential_schedule_key(state_dict, f))
+        available = [f for f, st in state_dict.items(
+        ) if not st.get("disabled", False)]
+        available.sort(
+            key=lambda f: self._credential_schedule_key(state_dict, f))
         return available
 
     # ============ 摘要与查询 ============
@@ -762,7 +795,8 @@ class Storage:
         current_selected, current_selected_time = None, None
 
         all_summaries = []
-        sorted_files = sorted(state_dict.keys(), key=lambda f: state_dict[f].get("rotation_order", 0))
+        sorted_files = sorted(
+            state_dict.keys(), key=lambda f: state_dict[f].get("rotation_order", 0))
 
         for fname in sorted_files:
             st = state_dict[fname]
@@ -793,7 +827,8 @@ class Storage:
                     continue
 
             model_cooldowns = st.get("model_cooldowns", {})
-            active_cooldowns = {k: v for k, v in model_cooldowns.items() if v > current_time} if model_cooldowns else {}
+            active_cooldowns = {k: v for k, v in model_cooldowns.items(
+            ) if v > current_time} if model_cooldowns else {}
 
             tier = st.get("tier", "pro")
             if tier_filter and tier_filter in ("free", "pro", "ultra"):
@@ -801,7 +836,8 @@ class Storage:
                     continue
 
             fname_base = os.path.basename(fname)
-            is_selected = bool(current_selected and (fname_base == current_selected or fname == current_selected))
+            is_selected = bool(current_selected and (
+                fname_base == current_selected or fname == current_selected))
 
             summary = {
                 "filename": fname,
@@ -836,7 +872,7 @@ class Storage:
 
         total_count = len(all_summaries)
         if limit is not None:
-            summaries = all_summaries[offset : offset + limit]
+            summaries = all_summaries[offset: offset + limit]
         else:
             summaries = all_summaries[offset:]
 

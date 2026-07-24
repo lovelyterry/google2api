@@ -44,7 +44,8 @@ def _refresh_config():
     level = os.getenv("LOG_LEVEL", "info").lower()
     _cached_log_level = LOG_LEVELS.get(level, LOG_LEVELS["info"])
     _cached_log_file = os.getenv("LOG_FILE", "log.txt")
-    _log_enabled = os.getenv("ENABLE_LOG", "1").strip().lower() not in ("0", "false", "no", "off")
+    _log_enabled = os.getenv("ENABLE_LOG", "1").strip(
+    ).lower() not in ("0", "false", "no", "off")
 
 
 def _get_current_log_level() -> int:
@@ -76,12 +77,14 @@ def _open_log_file(mode: str = "a") -> bool:
     _close_log_file()
     try:
         # 使用较大缓冲区（64 KB），由 writer 线程定期 flush，减少系统调用
-        _log_file_handle = open(_cached_log_file, mode, encoding="utf-8", buffering=65536)
+        _log_file_handle = open(_cached_log_file, mode,
+                                encoding="utf-8", buffering=65536)
         return True
     except (PermissionError, OSError, IOError) as e:
         _file_writing_disabled = True
         _disable_reason = str(e)
-        print(f"Warning: Cannot open log file, disabling file writing: {e}", file=sys.stderr)
+        print(
+            f"Warning: Cannot open log file, disabling file writing: {e}", file=sys.stderr)
         print("Log messages will continue to display in console only.", file=sys.stderr)
         return False
     except Exception as e:
@@ -144,7 +147,8 @@ def _log_writer_worker():
                 if _log_file_handle is not None:
                     _log_file_handle.write(chunk)
             except Exception as e:
-                print(f"Warning: Failed to write log batch: {e}", file=sys.stderr)
+                print(
+                    f"Warning: Failed to write log batch: {e}", file=sys.stderr)
                 _close_log_file()
                 try:
                     _open_log_file("a")
@@ -184,7 +188,8 @@ def _start_writer_thread():
 
     if _writer_thread is None or not _writer_thread.is_alive():
         _writer_running = True
-        _writer_thread = threading.Thread(target=_log_writer_worker, daemon=True, name="LogWriter")
+        _writer_thread = threading.Thread(
+            target=_log_writer_worker, daemon=True, name="LogWriter")
         _writer_thread.start()
 
 
@@ -256,7 +261,8 @@ def set_log_level(level: str):
     global _cached_log_level
     level = level.lower()
     if level not in LOG_LEVELS:
-        print(f"Warning: Unknown log level '{level}'. Valid levels: {', '.join(LOG_LEVELS.keys())}")
+        print(
+            f"Warning: Unknown log level '{level}'. Valid levels: {', '.join(LOG_LEVELS.keys())}")
         return False
     _cached_log_level = LOG_LEVELS[level]
     return True

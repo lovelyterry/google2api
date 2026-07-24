@@ -35,6 +35,7 @@ LITE_SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "BLOCK_NONE"},
 ]
 
+
 def _append_schema_hint(schema: Dict[str, Any], hint: str) -> None:
     """Move fragile validation details into description instead of sending them raw."""
     if not hint:
@@ -78,7 +79,8 @@ def _clean_parameters_json_schema(
         return {"type": "object", "description": "circular reference"}
     visited.add(schema_id)
 
-    ref_key = "$ref" if "$ref" in schema else ("ref" if "ref" in schema else None)
+    ref_key = "$ref" if "$ref" in schema else (
+        "ref" if "ref" in schema else None)
     if ref_key:
         resolved = _resolve_schema_ref(schema[ref_key], root_schema)
         if resolved:
@@ -91,13 +93,16 @@ def _clean_parameters_json_schema(
     if "allOf" in schema:
         result: Dict[str, Any] = {}
         for item in schema.get("allOf") or []:
-            cleaned_item = _clean_parameters_json_schema(item, root_schema, visited)
+            cleaned_item = _clean_parameters_json_schema(
+                item, root_schema, visited)
             if not isinstance(cleaned_item, dict):
                 continue
             if "properties" in cleaned_item:
-                result.setdefault("properties", {}).update(cleaned_item["properties"])
+                result.setdefault("properties", {}).update(
+                    cleaned_item["properties"])
             if "required" in cleaned_item:
-                result.setdefault("required", []).extend(cleaned_item["required"])
+                result.setdefault("required", []).extend(
+                    cleaned_item["required"])
             for key, value in cleaned_item.items():
                 if key not in ("properties", "required"):
                     result[key] = value
@@ -163,7 +168,8 @@ def _clean_parameters_json_schema(
                 None,
             )
             if preferred is None:
-                preferred = next((item for item in cleaned_items if item.get("type") or item.get("enum")), None)
+                preferred = next((item for item in cleaned_items if item.get(
+                    "type") or item.get("enum")), None)
             if preferred:
                 original_description = result.get("description")
                 result.update(preferred)
@@ -176,12 +182,14 @@ def _clean_parameters_json_schema(
         items = result.get("items")
         if isinstance(items, list):
             if items:
-                result["items"] = _clean_parameters_json_schema(items[0], root_schema, visited)
+                result["items"] = _clean_parameters_json_schema(
+                    items[0], root_schema, visited)
                 _append_schema_hint(result, "tuple schema simplified")
             else:
                 result.pop("items", None)
         elif isinstance(items, dict):
-            result["items"] = _clean_parameters_json_schema(items, root_schema, visited)
+            result["items"] = _clean_parameters_json_schema(
+                items, root_schema, visited)
 
     validation_keys = {
         "default", "minLength", "maxLength", "minimum", "maximum",
@@ -191,7 +199,8 @@ def _clean_parameters_json_schema(
         if key in validation_keys:
             value = result.pop(key)
             if value not in (None, "", {}, []):
-                _append_schema_hint(result, f"{key}: {json.dumps(value, ensure_ascii=False)}")
+                _append_schema_hint(
+                    result, f"{key}: {json.dumps(value, ensure_ascii=False)}")
 
     unsupported_keys = {
         "title", "$schema", "$id", "$ref", "ref", "strict", "nullable",
@@ -219,14 +228,16 @@ def _clean_parameters_json_schema(
                     )
                 ):
                     nullable_props.add(prop_name)
-            cleaned_props[prop_name] = _clean_parameters_json_schema(prop_schema, root_schema, visited)
+            cleaned_props[prop_name] = _clean_parameters_json_schema(
+                prop_schema, root_schema, visited)
         result["properties"] = cleaned_props
 
     if "properties" in result and "type" not in result:
         result["type"] = "object"
 
     if isinstance(result.get("required"), list):
-        prop_names = set(result.get("properties", {}).keys()) if isinstance(result.get("properties"), dict) else None
+        prop_names = set(result.get("properties", {}).keys()) if isinstance(
+            result.get("properties"), dict) else None
         required = []
         for item in result["required"]:
             if not isinstance(item, str):
@@ -270,14 +281,16 @@ def _normalize_tools_for_internal_api(tools: Any) -> Any:
                 if "parametersJsonSchema" in normalized_declaration:
                     schema = normalized_declaration["parametersJsonSchema"]
                 elif "parameters_json_schema" in normalized_declaration:
-                    schema = normalized_declaration.pop("parameters_json_schema", None)
+                    schema = normalized_declaration.pop(
+                        "parameters_json_schema", None)
                 else:
                     schema = normalized_declaration.pop("parameters", None)
 
                 normalized_declaration.pop("parameters", None)
                 normalized_declaration.pop("parameters_json_schema", None)
                 if schema not in (None, {}, []):
-                    normalized_declaration["parametersJsonSchema"] = _clean_parameters_json_schema(schema)
+                    normalized_declaration["parametersJsonSchema"] = _clean_parameters_json_schema(
+                        schema)
                 else:
                     normalized_declaration.pop("parametersJsonSchema", None)
 
@@ -305,24 +318,26 @@ def _ensure_empty_tool_schema_for_claude(tools: Any, model_name: str, mode: str 
                 continue
 
             normalized_tool = tool.copy()
-            
+
             schema = {"type": "object", "properties": {}}
             name = ""
             description = ""
-            
+
             # Extract schema from either format
             custom_tool = normalized_tool.get("custom")
             if isinstance(custom_tool, dict):
-                schema = custom_tool.get("input_schema") or custom_tool.get("inputSchema") or schema
+                schema = custom_tool.get("input_schema") or custom_tool.get(
+                    "inputSchema") or schema
                 name = custom_tool.get("name", "")
                 description = custom_tool.get("description", "")
             else:
-                declarations = normalized_tool.get("functionDeclarations") or normalized_tool.get("function_declarations")
+                declarations = normalized_tool.get(
+                    "functionDeclarations") or normalized_tool.get("function_declarations")
                 if isinstance(declarations, list) and declarations and isinstance(declarations[0], dict):
                     decl = declarations[0]
                     schema = (
-                        decl.get("parametersJsonSchema") or 
-                        decl.get("parameters_json_schema") or 
+                        decl.get("parametersJsonSchema") or
+                        decl.get("parameters_json_schema") or
                         decl.get("parameters") or schema
                     )
                     name = decl.get("name", "")
@@ -351,11 +366,12 @@ def _ensure_empty_tool_schema_for_claude(tools: Any, model_name: str, mode: str 
             continue
 
         normalized_tool = tool.copy()
-        
+
         # 1. 如果包含 Anthropic 原生的 "custom" 工具格式，将其转换为 Gemini 的 functionDeclarations 格式
         custom_tool = normalized_tool.get("custom")
         if isinstance(custom_tool, dict):
-            schema = custom_tool.get("input_schema") or custom_tool.get("inputSchema")
+            schema = custom_tool.get(
+                "input_schema") or custom_tool.get("inputSchema")
             if schema in (None, {}, []):
                 schema = {"type": "object", "properties": {}}
             declaration = {
@@ -369,14 +385,15 @@ def _ensure_empty_tool_schema_for_claude(tools: Any, model_name: str, mode: str 
             continue
 
         # 2. 如果包含标准的 functionDeclarations 格式，确保参数不为空且只使用 parameters 字段
-        declarations = normalized_tool.get("functionDeclarations") or normalized_tool.get("function_declarations")
+        declarations = normalized_tool.get(
+            "functionDeclarations") or normalized_tool.get("function_declarations")
         if isinstance(declarations, list):
             normalized_declarations = []
             for declaration in declarations:
                 if not isinstance(declaration, dict):
                     normalized_declarations.append(declaration)
                     continue
-                
+
                 normalized_declaration = declaration.copy()
                 # 兼容不同字段格式并归一化到 parameters
                 schema = (
@@ -384,17 +401,17 @@ def _ensure_empty_tool_schema_for_claude(tools: Any, model_name: str, mode: str 
                     or normalized_declaration.get("parametersJsonSchema")
                     or normalized_declaration.get("parameters_json_schema")
                 )
-                
+
                 if schema in (None, {}, []):
                     schema = {"type": "object", "properties": {}}
-                
+
                 # 只保留 parameters 字段，防止与 parametersJsonSchema 冲突
                 normalized_declaration["parameters"] = schema
                 normalized_declaration.pop("parametersJsonSchema", None)
                 normalized_declaration.pop("parameters_json_schema", None)
-                
+
                 normalized_declarations.append(normalized_declaration)
-                
+
             normalized_tool.pop("function_declarations", None)
             normalized_tool["functionDeclarations"] = normalized_declarations
 
@@ -646,7 +663,9 @@ def is_thinking_model(model_name: str) -> bool:
     """检查是否为思考模型 (包含 -thinking 或 pro)"""
     return "think" in model_name or "pro" in model_name.lower()
 
+
 DYNAMIC_EXACT_MODELS: set = set()
+
 
 def update_dynamic_exact_models(models: Any) -> None:
     """从 API 动态获取并更新支持的原生模型 ID 列表"""
@@ -660,7 +679,8 @@ def update_dynamic_exact_models(models: Any) -> None:
                     DYNAMIC_EXACT_MODELS.add(lowered)
                     added_count += 1
         if added_count > 0:
-            log.info(f"[DYNAMIC MODELS] 动态更新了 {added_count} 个原生模型 ID 到匹配白名单中 (当前总数: {len(DYNAMIC_EXACT_MODELS)})")
+            log.info(
+                f"[DYNAMIC MODELS] 动态更新了 {added_count} 个原生模型 ID 到匹配白名单中 (当前总数: {len(DYNAMIC_EXACT_MODELS)})")
 
 
 def map_antigravity_gemini_model(model_name: str, thinking_level: Optional[str], thinking_budget: Optional[int]) -> str:
@@ -668,7 +688,7 @@ def map_antigravity_gemini_model(model_name: str, thinking_level: Optional[str],
     将客户端请求的 Gemini 模型和思考参数，映射到 Antigravity 后端支持的精确模型 ID。
     """
     model_lower = model_name.lower()
-    
+
     # 1. 后端支持的默认/备用精确模型 ID 列表
     exact_models = {
         "gemini-3-flash", "gemini-3-flash-agent",
@@ -680,17 +700,17 @@ def map_antigravity_gemini_model(model_name: str, thinking_level: Optional[str],
         "tab_flash_lite_preview", "tab_jump_flash_lite_preview", "gpt-oss-120b-medium",
         "chat_20706", "chat_23310"
     }
-    
+
     # 优先匹配动态获取的模型列表或静态白名单（完整名称匹配）
     if model_lower in DYNAMIC_EXACT_MODELS or model_lower in exact_models:
         return model_name
 
     base_model = get_base_model_name(model_lower)
-    
+
     # 已经是一个精确的后端模型 ID 则直接返回
     if base_model in DYNAMIC_EXACT_MODELS or base_model in exact_models:
         return base_model
-        
+
     # 2. 根据请求的模型名后缀直接映射
     if "gemini-3.1-pro" in base_model:
         if "-high" in model_lower:
@@ -698,7 +718,7 @@ def map_antigravity_gemini_model(model_name: str, thinking_level: Optional[str],
             return "gemini-pro-agent"
         elif "-low" in model_lower:
             return "gemini-3.1-pro-low"
-            
+
     if "gemini-3.5-flash" in base_model:
         if "-extra-low" in model_lower or "-minimal" in model_lower:
             return "gemini-3.5-flash-extra-low"
@@ -706,17 +726,17 @@ def map_antigravity_gemini_model(model_name: str, thinking_level: Optional[str],
             return "gemini-3.5-flash-low"
         elif "-high" in model_lower:
             return "gemini-3.5-flash-high"
-            
+
     if "gemini-3-flash" in base_model:
         return "gemini-3-flash-agent"
-        
+
     # 3. 如果请求的是基础名，根据传入的 thinkingLevel 参数进行映射
     if "gemini-3.1-pro" in base_model:
         if thinking_level and thinking_level.upper() == "HIGH":
             return "gemini-pro-agent"
         else:
             return "gemini-3.1-pro-low"
-            
+
     if "gemini-3.5-flash" in base_model:
         if thinking_level and thinking_level.upper() in ("MINIMAL", "EXTRA-LOW"):
             return "gemini-3.5-flash-extra-low"
@@ -752,12 +772,15 @@ async def normalize_gemini_request(
 
     result = request.copy()
     model = result.get("model", "")
-    generation_config = (result.get("generationConfig") or {}).copy()  # 创建副本避免修改原对象
+    generation_config = (result.get("generationConfig")
+                         or {}).copy()  # 创建副本避免修改原对象
     tools = result.get("tools")
-    system_instruction = result.get("systemInstruction") or result.get("system_instructions")
-    
+    system_instruction = result.get(
+        "systemInstruction") or result.get("system_instructions")
+
     # 记录原始请求
-    log.debug(f"[GEMINI_FIX] 原始请求 - 模型: {model}, mode: {mode}, generationConfig: {generation_config}")
+    log.debug(
+        f"[GEMINI_FIX] 原始请求 - 模型: {model}, mode: {mode}, generationConfig: {generation_config}")
 
     # 获取配置值
     return_thoughts = await get_return_thoughts_to_frontend()
@@ -770,8 +793,10 @@ async def normalize_gemini_request(
 
         # 其次使用传入的思考预算（如果未从模型名称获取）
         if thinking_budget is None and thinking_level is None:
-            thinking_budget = generation_config.get("thinkingConfig", {}).get("thinkingBudget")
-            thinking_level = generation_config.get("thinkingConfig", {}).get("thinkingLevel")
+            thinking_budget = generation_config.get(
+                "thinkingConfig", {}).get("thinkingBudget")
+            thinking_level = generation_config.get(
+                "thinkingConfig", {}).get("thinkingLevel")
 
         # 假如 is_thinking_model 为真或者思考预算/等级不为空，设置 thinkingConfig
         if is_thinking_model(model) or thinking_budget is not None or thinking_level is not None:
@@ -784,10 +809,12 @@ async def normalize_gemini_request(
             # 设置思考预算或等级（互斥）
             if thinking_budget is not None:
                 thinking_config["thinkingBudget"] = thinking_budget
-                thinking_config.pop("thinkingLevel", None)  # 避免与 thinkingBudget 冲突
+                # 避免与 thinkingBudget 冲突
+                thinking_config.pop("thinkingLevel", None)
             elif thinking_level is not None:
                 thinking_config["thinkingLevel"] = thinking_level
-                thinking_config.pop("thinkingBudget", None)  # 避免与 thinkingLevel 冲突
+                # 避免与 thinkingLevel 冲突
+                thinking_config.pop("thinkingBudget", None)
 
             # includeThoughts 逻辑:
             # 1. 如果是 pro 模型，为 return_thoughts
@@ -821,7 +848,7 @@ async def normalize_gemini_request(
         result["model"] = get_base_model_name(model)
 
     elif mode == "antigravity":
-        
+
         '''
         # 1. 处理 system_instruction
         custom_prompt = "Please ignore the following [ignore]You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**[/ignore]"
@@ -848,16 +875,20 @@ async def normalize_gemini_request(
 
             # 其次使用传入的思考预算/等级
             if thinking_budget is None and thinking_level is None:
-                thinking_budget = generation_config.get("thinkingConfig", {}).get("thinkingBudget")
-                thinking_level = generation_config.get("thinkingConfig", {}).get("thinkingLevel")
+                thinking_budget = generation_config.get(
+                    "thinkingConfig", {}).get("thinkingBudget")
+                thinking_level = generation_config.get(
+                    "thinkingConfig", {}).get("thinkingLevel")
 
             # 针对 Gemini 模型：根据思考设置映射至真实的 Antigravity 后端模型 ID
             if "gemini" in model.lower():
-                mapped_model = map_antigravity_gemini_model(model, thinking_level, thinking_budget)
-                log.debug(f"[ANTIGRAVITY] Mapped Gemini model: {model} -> {mapped_model}")
+                mapped_model = map_antigravity_gemini_model(
+                    model, thinking_level, thinking_budget)
+                log.debug(
+                    f"[ANTIGRAVITY] Mapped Gemini model: {model} -> {mapped_model}")
                 model = mapped_model
                 result["model"] = model
-                
+
                 # 既然 Antigravity 后端是通过模型名（如 -high/-low）来确定思考深度的，
                 # 对于 Gemini 3/3.5 模型必须移除 thinkingLevel 配置以防止 API 返回参数冲突错误。
                 if "gemini-3" in model or "gemini-3.5" in model:
@@ -878,16 +909,18 @@ async def normalize_gemini_request(
                     # 直接设置 thinkingConfig
                     if "thinkingConfig" not in generation_config:
                         generation_config["thinkingConfig"] = {}
-                    
+
                     thinking_config = generation_config["thinkingConfig"]
-                    
+
                     # 设置思考预算或等级（互斥）
                     if thinking_budget is not None:
                         thinking_config["thinkingBudget"] = thinking_budget
-                        thinking_config.pop("thinkingLevel", None)  # 避免与 thinkingBudget 冲突
+                        # 避免与 thinkingBudget 冲突
+                        thinking_config.pop("thinkingLevel", None)
                     elif thinking_level is not None:
                         thinking_config["thinkingLevel"] = thinking_level.upper()
-                        thinking_config.pop("thinkingBudget", None)  # 避免与 thinkingLevel 冲突
+                        # 避免与 thinkingLevel 冲突
+                        thinking_config.pop("thinkingBudget", None)
                     else:
                         # 默认兜底
                         thinking_config["thinkingBudget"] = 1024
@@ -901,17 +934,19 @@ async def normalize_gemini_request(
                 if "claude" in model.lower():
                     # 检测是否有工具调用（MCP场景）
                     has_tool_calls = any(
-                        isinstance(content, dict) and 
+                        isinstance(content, dict) and
                         any(
-                            isinstance(part, dict) and ("functionCall" in part or "function_call" in part)
+                            isinstance(part, dict) and (
+                                "functionCall" in part or "function_call" in part)
                             for part in content.get("parts", [])
                         )
                         for content in contents
                     )
-                    
+
                     if has_tool_calls:
                         # MCP 场景：检测到工具调用，移除 thinkingConfig
-                        log.warning(f"[ANTIGRAVITY] 检测到工具调用（MCP场景），移除 thinkingConfig 避免失效")
+                        log.warning(
+                            f"[ANTIGRAVITY] 检测到工具调用（MCP场景），移除 thinkingConfig 避免失效")
                         generation_config.pop("thinkingConfig", None)
                     else:
                         # 非 MCP 场景：填充思考块
@@ -928,9 +963,10 @@ async def normalize_gemini_request(
                                 # 如果第一个 part 不是 thinking，则插入
                                 if not parts or not (isinstance(parts[0], dict) and ("thought" in parts[0] or "thoughtSignature" in parts[0])):
                                     content["parts"] = [thinking_part] + parts
-                                    log.debug(f"[ANTIGRAVITY] 已在最后一个 assistant 消息开头插入思考块（含跳过验证签名）")
+                                    log.debug(
+                                        f"[ANTIGRAVITY] 已在最后一个 assistant 消息开头插入思考块（含跳过验证签名）")
                                 break
-                
+
             # 移除 -thinking 等后缀并提取基础名
             if "claude" in model.lower():
                 model = get_base_model_name(model).replace("-thinking", "")
@@ -947,10 +983,11 @@ async def normalize_gemini_request(
                 elif "claude" in model.lower():
                     # Claude 模型兜底：如果包含 claude 但不是 opus/sonnet/haiku
                     model = "claude-sonnet-4-6"
-                
+
                 result["model"] = model
                 if original_model != model:
-                    log.debug(f"[ANTIGRAVITY] 映射模型: {original_model} -> {model}")
+                    log.debug(
+                        f"[ANTIGRAVITY] 映射模型: {original_model} -> {model}")
 
         # 5. 模型特殊处理：循环移除末尾的 model 消息，保证以用户消息结尾
         # 因为该模型不支持预填充
@@ -961,7 +998,8 @@ async def normalize_gemini_request(
                 contents.pop()
                 removed_count += 1
             if removed_count > 0:
-                log.warning(f"[ANTIGRAVITY] {model} 不支持预填充，移除了 {removed_count} 条末尾 model 消息")
+                log.warning(
+                    f"[ANTIGRAVITY] {model} 不支持预填充，移除了 {removed_count} 条末尾 model 消息")
                 result["contents"] = contents
 
         # 6. 移除 antigravity 模式不支持的字段
@@ -973,13 +1011,15 @@ async def normalize_gemini_request(
 
     # 1. 安全设置覆盖
     if "tools" in result:
-        result["tools"] = _normalize_tools_for_internal_api(result.get("tools"))
+        result["tools"] = _normalize_tools_for_internal_api(
+            result.get("tools"))
         # 对于 Claude 模型：
         # - geminicli 内部 API 需要 Anthropic 原生 {"custom": {..., "input_schema": ...}} 格式
         # - antigravity/Vertex AI 通道需要标准 functionDeclarations/parametersJsonSchema 格式
         # 对于 Gemini 模型：
         # - 统一转换为 functionDeclarations 并确保只使用 parameters 字段（移除 parametersJsonSchema 以防报错）
-        result["tools"] = _ensure_empty_tool_schema_for_claude(result.get("tools"), model, mode)
+        result["tools"] = _ensure_empty_tool_schema_for_claude(
+            result.get("tools"), model, mode)
 
     if "gemini-2.5-flash-lite" in model.lower():
         result["safetySettings"] = LITE_SAFETY_SETTINGS
@@ -1002,7 +1042,7 @@ async def normalize_gemini_request(
                 for part in content["parts"]:
                     if not isinstance(part, dict):
                         continue
-                    
+
                     # 检查 part 是否有有效的非空值
                     # 过滤掉空字典或所有值都为空的 part
                     has_valid_value = any(
@@ -1010,7 +1050,7 @@ async def normalize_gemini_request(
                         for key, value in part.items()
                         if key != "thought"  # thought 字段可以为空
                     )
-                    
+
                     if has_valid_value:
                         part = _normalize_part_thought_signature(part, model)
 
@@ -1021,7 +1061,8 @@ async def normalize_gemini_request(
                                 # 如果是列表，合并为字符串
                                 # 注意: list 中的元素可能是 dict（如 {"type":"text","text":"..."}），不能直接 str(dict)
                                 # 否则会产生 Python repr 字符串 "{'type': 'text', 'text': '...'}"，污染 model 历史
-                                log.warning(f"[GEMINI_FIX] text 字段是列表，自动合并: {text_value}")
+                                log.warning(
+                                    f"[GEMINI_FIX] text 字段是列表，自动合并: {text_value}")
                                 text_parts = []
                                 for t in text_value:
                                     if isinstance(t, dict) and "text" in t:
@@ -1036,23 +1077,25 @@ async def normalize_gemini_request(
                                 part["text"] = text_value.rstrip()
                             else:
                                 # 其他类型转为字符串
-                                log.warning(f"[GEMINI_FIX] text 字段类型异常 ({type(text_value)}), 转为字符串: {text_value}")
+                                log.warning(
+                                    f"[GEMINI_FIX] text 字段类型异常 ({type(text_value)}), 转为字符串: {text_value}")
                                 part["text"] = str(text_value)
 
                         valid_parts.append(part)
                     else:
                         log.warning(f"[GEMINI_FIX] 移除空的或无效的 part: {part}")
-                
+
                 # 只添加有有效 parts 的 content
                 if valid_parts:
                     cleaned_content = content.copy()
                     cleaned_content["parts"] = valid_parts
                     cleaned_contents.append(cleaned_content)
                 else:
-                    log.warning(f"[GEMINI_FIX] 跳过没有有效 parts 的 content: {content.get('role')}")
+                    log.warning(
+                        f"[GEMINI_FIX] 跳过没有有效 parts 的 content: {content.get('role')}")
             else:
                 cleaned_contents.append(content)
-        
+
         result["contents"] = cleaned_contents
 
     if generation_config:

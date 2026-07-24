@@ -19,8 +19,10 @@ async def authenticate_flexible(
     x_api_key: Optional[str] = Header(None, alias="x-api-key"),
     access_token: Optional[str] = Header(None, alias="access_token"),
     x_goog_api_key: Optional[str] = Header(None, alias="x-goog-api-key"),
-    x_anthropic_auth_token: Optional[str] = Header(None, alias="x-anthropic-auth-token"),
-    anthropic_auth_token: Optional[str] = Header(None, alias="anthropic-auth-token"),
+    x_anthropic_auth_token: Optional[str] = Header(
+        None, alias="x-anthropic-auth-token"),
+    anthropic_auth_token: Optional[str] = Header(
+        None, alias="anthropic-auth-token"),
     key: Optional[str] = Query(None),
 ) -> str:
     """

@@ -113,7 +113,8 @@ async def auth_callback(request: AuthCallbackRequest, token: str = Depends(verif
                 # 使用JSON响应
                 return JSONResponse(
                     status_code=400,
-                    content={"error": result["error"], "requires_manual_project_id": True},
+                    content={"error": result["error"],
+                             "requires_manual_project_id": True},
                 )
             elif result.get("requires_project_selection"):
                 # 返回项目列表供用户选择
@@ -165,7 +166,8 @@ async def auth_callback_url(request: AuthCallbackUrlRequest, token: str = Depend
             if result.get("requires_manual_project_id"):
                 return JSONResponse(
                     status_code=400,
-                    content={"error": result["error"], "requires_manual_project_id": True},
+                    content={"error": result["error"],
+                             "requires_manual_project_id": True},
                 )
             elif result.get("requires_project_selection"):
                 return JSONResponse(

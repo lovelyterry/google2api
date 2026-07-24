@@ -91,6 +91,7 @@ def _cleanup_auth_flow_server(state: str):
 
 class _OAuthLibPatcher:
     """oauthlib参数验证补丁的上下文管理器"""
+
     def __init__(self):
         import oauthlib.oauth2.rfc6749.parameters
         self.module = oauthlib.oauth2.rfc6749.parameters
@@ -221,7 +222,8 @@ class AuthCallbackHandler(BaseHTTPRequestHandler):
                 if loop and loop.is_running():
                     flow_mode = auth_flows[state].get("mode", "geminicli")
                     asyncio.run_coroutine_threadsafe(
-                        complete_auth_flow_from_callback_url(full_callback_url, mode=flow_mode),
+                        complete_auth_flow_from_callback_url(
+                            full_callback_url, mode=flow_mode),
                         loop
                     )
             except Exception as e:
@@ -256,7 +258,8 @@ class AuthCallbackHandler(BaseHTTPRequestHandler):
             self.send_response(400)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(b"<h1>Authentication failed.</h1><p>Please try again.</p>")
+            self.wfile.write(
+                b"<h1>Authentication failed.</h1><p>Please try again.</p>")
 
     def log_message(self, format, *args):
         # 减少日志噪音
@@ -320,7 +323,8 @@ async def create_auth_url(
         # 严格控制认证流程数量 - 超过限制时立即清理最旧的
         if len(auth_flows) >= MAX_AUTH_FLOWS:
             # 清理最旧的认证流程
-            oldest_state = min(auth_flows.keys(), key=lambda k: auth_flows[k].get("created_at", 0))
+            oldest_state = min(
+                auth_flows.keys(), key=lambda k: auth_flows[k].get("created_at", 0))
             try:
                 # 清理服务器资源
                 old_flow = auth_flows[oldest_state]
@@ -329,7 +333,8 @@ async def create_auth_url(
                     port = old_flow.get("callback_port")
                     async_shutdown_server(server, port)
             except Exception as e:
-                log.warning(f"Failed to cleanup old auth flow {oldest_state}: {e}")
+                log.warning(
+                    f"Failed to cleanup old auth flow {oldest_state}: {e}")
 
             del auth_flows[oldest_state]
             log.debug(f"Removed oldest auth flow: {oldest_state}")
@@ -517,13 +522,15 @@ async def complete_auth_flow(
                 if not project_id:
                     project_id = DEFAULT_PROJECT_ID
                     flow_data["project_id"] = project_id
-                    log.warning(f"仍未获取到project_id，使用默认project_id: {project_id}")
+                    log.warning(
+                        f"仍未获取到project_id，使用默认project_id: {project_id}")
 
                 # 保存凭证
                 saved_filename = await save_credentials(credentials, project_id)
 
                 # 准备返回的凭证数据
-                creds_data = _prepare_credentials_data(credentials, project_id, mode="geminicli")
+                creds_data = _prepare_credentials_data(
+                    credentials, project_id, mode="geminicli")
 
                 # 清理使用过的流程
                 _cleanup_auth_flow_server(state)
@@ -553,7 +560,8 @@ async def _execute_code_exchange_once(state: str, code: str, mode: str = "antigr
     """
     if state not in auth_flows:
         if auth_flows:
-            state = max(auth_flows.keys(), key=lambda k: auth_flows[k].get("created_at", 0))
+            state = max(auth_flows.keys(),
+                        key=lambda k: auth_flows[k].get("created_at", 0))
         else:
             return {"success": False, "error": "未找到对应的认证流程，请重新获取授权链接"}
 
@@ -597,7 +605,8 @@ async def _execute_code_exchange_once(state: str, code: str, mode: str = "antigr
                     project_id = DEFAULT_PROJECT_ID
 
                 saved_filename = await save_credentials(credentials, project_id, mode="antigravity", subscription_tier=subscription_tier)
-                creds_data = _prepare_credentials_data(credentials, project_id, mode="antigravity", subscription_tier=subscription_tier)
+                creds_data = _prepare_credentials_data(
+                    credentials, project_id, mode="antigravity", subscription_tier=subscription_tier)
                 result = {
                     "success": True,
                     "credentials": creds_data,
@@ -610,7 +619,8 @@ async def _execute_code_exchange_once(state: str, code: str, mode: str = "antigr
                 if not project_id:
                     project_id = DEFAULT_PROJECT_ID
                 saved_filename = await save_credentials(credentials, project_id, mode="geminicli")
-                creds_data = _prepare_credentials_data(credentials, project_id, mode="geminicli")
+                creds_data = _prepare_credentials_data(
+                    credentials, project_id, mode="geminicli")
                 result = {
                     "success": True,
                     "credentials": creds_data,
@@ -741,7 +751,8 @@ async def complete_auth_flow_from_callback_url(
         if state not in auth_flows:
             log.warning(f"state '{state}' 未在 auth_flows 找到，尝试使用最新创建的授权流程...")
             if auth_flows:
-                latest_state = max(auth_flows.keys(), key=lambda k: auth_flows[k].get("created_at", 0))
+                latest_state = max(
+                    auth_flows.keys(), key=lambda k: auth_flows[k].get("created_at", 0))
                 flow_data = auth_flows[latest_state]
                 state = latest_state
             else:
@@ -794,7 +805,8 @@ async def save_credentials(creds: Credentials, project_id: str, mode: str = "gem
         filename = f"{prefix}{project_id}-{timestamp}.json"
 
     # 准备凭证数据
-    creds_data = _prepare_credentials_data(creds, project_id, mode, subscription_tier)
+    creds_data = _prepare_credentials_data(
+        creds, project_id, mode, subscription_tier)
 
     # 通过存储适配器保存
     storage_adapter = await get_storage()
@@ -819,7 +831,8 @@ async def save_credentials(creds: Credentials, project_id: str, mode: str = "gem
             # 自动触发新账号额度刷新
             try:
                 from src.panel.quota import quota_refresh_service
-                asyncio.create_task(quota_refresh_service.refresh_single(filename, mode=mode))
+                asyncio.create_task(
+                    quota_refresh_service.refresh_single(filename, mode=mode))
             except Exception as e:
                 log.warning(f"触发新账号额度刷新警告: {e}")
         except Exception as e:
@@ -862,7 +875,8 @@ def async_shutdown_server(server, port):
             log.debug(f"异步关闭服务器时出错: {e}")
 
     # 在后台线程中关闭服务器，不阻塞主流程
-    shutdown_thread = threading.Thread(target=shutdown_server_async, daemon=True)
+    shutdown_thread = threading.Thread(
+        target=shutdown_server_async, daemon=True)
     shutdown_thread.start()
     log.debug(f"开始异步关闭端口 {port} 的OAuth回调服务器")
 

@@ -35,7 +35,8 @@ class QuotaWarmupService:
             from src.utils import ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET
             if mode == "antigravity":
                 credential_data.setdefault("client_id", ANTIGRAVITY_CLIENT_ID)
-                credential_data.setdefault("client_secret", ANTIGRAVITY_CLIENT_SECRET)
+                credential_data.setdefault(
+                    "client_secret", ANTIGRAVITY_CLIENT_SECRET)
 
             creds = Credentials.from_dict(credential_data)
             await creds.refresh_if_needed()
@@ -46,7 +47,8 @@ class QuotaWarmupService:
                 await storage_adapter.store_credential(filename, updated_data, mode=mode)
                 credential_data = updated_data
 
-            access_token = credential_data.get("access_token") or credential_data.get("token")
+            access_token = credential_data.get(
+                "access_token") or credential_data.get("token")
             project_id = credential_data.get("project_id", "")
             if not access_token or not project_id:
                 return False
@@ -85,20 +87,24 @@ class QuotaWarmupService:
             current_time = time.time()
             await storage_adapter.update_credential_state(
                 filename,
-                {"last_warmup_time": current_time, "last_touch_time": current_time},
+                {"last_warmup_time": current_time,
+                    "last_touch_time": current_time},
                 mode=mode
             )
 
             if response.status_code == 200:
-                log.info(f"⚡ [QuotaWarmup] 凭证 {filename} ({mode}) 成功发送微量保鲜探针，已激活 Google 5小时/周 滚动窗口")
+                log.info(
+                    f"⚡ [QuotaWarmup] 凭证 {filename} ({mode}) 成功发送微量保鲜探针，已激活 Google 5小时/周 滚动窗口")
                 try:
                     from src.panel.quota import quota_refresh_service
-                    asyncio.create_task(quota_refresh_service.refresh_single(filename, mode=mode))
+                    asyncio.create_task(
+                        quota_refresh_service.refresh_single(filename, mode=mode))
                 except Exception:
                     pass
                 return True
             else:
-                log.debug(f"[QuotaWarmup] 探针响应非 200 ({response.status_code}): {filename}")
+                log.debug(
+                    f"[QuotaWarmup] 探针响应非 200 ({response.status_code}): {filename}")
                 return False
         except Exception as e:
             log.warning(f"[QuotaWarmup] 发送保鲜探针异常 {filename}: {e}")
@@ -129,7 +135,8 @@ class QuotaWarmupService:
                     if st.get("disabled", False):
                         continue
 
-                    last_touch = st.get("last_touch_time") or st.get("last_warmup_time") or st.get("last_used_time") or 0
+                    last_touch = st.get("last_touch_time") or st.get(
+                        "last_warmup_time") or st.get("last_used_time") or 0
                     elapsed = current_time - last_touch
 
                     # 检查是否 100% 满额
@@ -147,7 +154,8 @@ class QuotaWarmupService:
 
                     # 当账号满额且连续闲置满设定时长时，触发微量探针打点
                     if is_full and elapsed >= idle_threshold_seconds:
-                        log.info(f"发现闲置满额账号 {fn} ({mode})，闲置时间 {elapsed/3600:.2f}h >= {idle_hours}h，开始保鲜打点...")
+                        log.info(
+                            f"发现闲置满额账号 {fn} ({mode})，闲置时间 {elapsed/3600:.2f}h >= {idle_hours}h，开始保鲜打点...")
                         await self._probe_single_credential(fn, mode=mode, storage_adapter=storage_adapter)
                         await asyncio.sleep(2.0)
         except Exception as e:
@@ -170,7 +178,8 @@ class QuotaWarmupService:
         """启动定时服务"""
         if self._task and not self._task.done():
             return
-        self._task = asyncio.create_task(self._run(), name="quota_warmup_service")
+        self._task = asyncio.create_task(
+            self._run(), name="quota_warmup_service")
 
     async def stop(self):
         """停止定时服务"""
