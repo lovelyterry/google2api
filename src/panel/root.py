@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
 
 from src.log import log
+from src.utils import get_resource_path
 from .sse import sse_manager
 
 
@@ -16,7 +17,7 @@ router = APIRouter(tags=["root"])
 async def serve_control_panel(request: Request):
     """提供统一控制面板"""
     try:
-        html_file_path = os.path.join("front", "dashboard.html")
+        html_file_path = get_resource_path(os.path.join("front", "dashboard.html"))
         if not os.path.exists(html_file_path):
             raise HTTPException(status_code=500, detail="控制面板 HTML 文件未找到")
 
@@ -34,7 +35,7 @@ async def serve_control_panel(request: Request):
 @router.get("/favicon.ico", include_in_schema=False)
 async def serve_favicon_ico():
     """提供 favicon.ico"""
-    favicon_path = os.path.join("front", "favicon.ico")
+    favicon_path = get_resource_path(os.path.join("front", "favicon.ico"))
     if os.path.exists(favicon_path):
         return FileResponse(favicon_path, media_type="image/x-icon")
     raise HTTPException(status_code=404, detail="Favicon not found")

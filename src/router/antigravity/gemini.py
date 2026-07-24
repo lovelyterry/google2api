@@ -126,7 +126,7 @@ async def generate_content(
                 from src.token_usage import count_token_usage
                 count_token_usage(
                     target_data["usageMetadata"],
-                    api_request.get("model", real_model),
+                    real_model,
                 )
 
             # 如果有 response 包装，解包装它

@@ -61,6 +61,10 @@ async def get_config(token: str = Depends(verify_panel_token)):
         current_config["antigravity_switch_credential_enabled"] = await config.get_antigravity_switch_credential_enabled()
         current_config["antigravity_telemetry_enabled"] = await config.get_antigravity_telemetry_enabled()
 
+        # 配额保鲜预热配置
+        current_config["quota_warmup_enabled"] = await config.get_quota_warmup_enabled()
+        current_config["quota_warmup_idle_hours"] = await config.get_quota_warmup_idle_hours()
+
         # 服务器配置
         current_config["host"] = await config.get_server_host()
         current_config["port"] = await config.get_server_port()

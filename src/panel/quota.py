@@ -57,6 +57,22 @@ class QuotaRefreshService:
             log.warning(f"[QuotaRefresh] 刷新 {filename} 额度失败: {e}")
         return False
 
+    async def refresh_single(self, filename: str, mode: str = "antigravity") -> bool:
+        """刷新单个凭证的额度，并触发 SSE 广播通知前端刷新界面"""
+        try:
+            storage_adapter = await get_storage()
+            success = await self._refresh_credential_quota(filename, storage_adapter)
+            if success:
+                try:
+                    from src.panel.sse import sse_manager
+                    await sse_manager.broadcast("creds_updated")
+                except Exception:
+                    pass
+            return success
+        except Exception as e:
+            log.warning(f"[QuotaRefresh] 单个刷新 {filename} 额度失败: {e}")
+            return False
+
     async def refresh_all(self):
         """均衡平滑地在 1 分钟内完成所有 Antigravity 凭证额度刷新"""
         try:

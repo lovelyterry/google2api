@@ -52,7 +52,7 @@ class IsolatedClientPool:
                 self._pool[key] = (session, now)
                 return session
 
-            session_kwargs: Dict[str, Any] = {"impersonate": impersonate}
+            session_kwargs: Dict[str, Any] = {"impersonate": impersonate, "verify": False}
             if proxy:
                 session_kwargs["proxy"] = proxy
 
@@ -96,6 +96,7 @@ class HttpClientManager:
             session_kwargs: Dict[str, Any] = {
                 "timeout": timeout,
                 "impersonate": impersonate,
+                "verify": False,
             }
             if proxy:
                 session_kwargs["proxy"] = proxy
@@ -116,6 +117,7 @@ class HttpClientManager:
         else:
             session_kwargs: Dict[str, Any] = {
                 "impersonate": impersonate,
+                "verify": False,
             }
             if timeout is not None:
                 session_kwargs["timeout"] = timeout

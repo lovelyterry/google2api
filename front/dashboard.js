@@ -822,18 +822,21 @@ const app = createApp({
             return Math.min(100, Math.max(0, 100 - rem));
         };
 
+        const getBucketLabel = (bucket) => {
+            if (!bucket) return '';
+            let rawLabel = bucket.displayName || bucket.window || '配额';
+            return rawLabel
+                .replace(/Weekly Limit/gi, '周限额')
+                .replace(/Five Hour Limit/gi, '五小时限额');
+        };
+
         const getBucketTitle = (bucket) => {
             if (!bucket) return '';
-            const label = bucket.displayName || bucket.window || '配额';
+            const label = getBucketLabel(bucket);
             const used = getBucketPercent(bucket);
             const rem = getBucketRemainingPercent(bucket);
             const reset = bucket.resetTime ? ` (刷新重置: ${bucket.resetTime})` : '';
             return `${label}: 已使用 ${used}% (剩余 ${rem}%)${reset}`;
-        };
-
-        const getBucketLabel = (bucket) => {
-            if (!bucket) return '';
-            return bucket.displayName || bucket.window || '配额';
         };
 
         const getBucketResetTime = (bucket) => {
@@ -980,59 +983,53 @@ const app = createApp({
             return null;
         };
 
+        const classifyAccountBuckets = (item) => {
+            const buckets = getQuotaBuckets(item.quota_groups);
+            let weeklyBucket = null;
+            let dailyBucket = null;
+
+            if (buckets && buckets.length > 0) {
+                buckets.forEach(b => {
+                    const name = (b.displayName || b.window || b.bucketId || '').toLowerCase();
+                    if (name.includes('week') || name.includes('周')) {
+                        weeklyBucket = b;
+                    } else if (name.includes('day') || name.includes('daily') || name.includes('hour') || name.includes('five') || name.includes('日') || name.includes('小时')) {
+                        dailyBucket = b;
+                    }
+                });
+
+                if (!weeklyBucket && !dailyBucket) {
+                    if (buckets.length === 1) {
+                        weeklyBucket = buckets[0];
+                    } else {
+                        weeklyBucket = buckets[0];
+                        dailyBucket = buckets[1];
+                    }
+                } else if (!weeklyBucket && dailyBucket) {
+                    weeklyBucket = buckets.find(b => b !== dailyBucket) || dailyBucket;
+                } else if (weeklyBucket && !dailyBucket) {
+                    dailyBucket = buckets.find(b => b !== weeklyBucket) || null;
+                }
+            }
+
+            return { weeklyBucket, dailyBucket };
+        };
+
         const getDailyQuotaUsedAvgNum = (type) => {
             const m = getManager(type);
             const activeItems = (m.items || []).filter(item => !item.disabled);
             if (activeItems.length === 0) return 0;
 
-            const nowMs = Date.now();
-            let sumEffectiveDailyPercent = 0;
-
+            let sumDailyUsedFrac = 0;
             activeItems.forEach(item => {
-                const buckets = getQuotaBuckets(item.quota_groups);
-                let minWeeklyFrac = 1.0;
-                let resetDate = null;
-
-                if (buckets && buckets.length > 0) {
-                    let minB = null;
-                    buckets.forEach(b => {
-                        const frac = b.remainingFraction !== undefined ? b.remainingFraction : 1.0;
-                        if (frac < minWeeklyFrac) {
-                            minWeeklyFrac = frac;
-                            minB = b;
-                        }
-                    });
-                    if (minB) {
-                        resetDate = parseBucketResetDate(minB);
-                    } else {
-                        resetDate = parseBucketResetDate(buckets[0]);
-                    }
-                }
-
-                let effective24hQuota = 0;
-                if (resetDate) {
-                    const hoursUntilReset = (resetDate.getTime() - nowMs) / 3600000;
-                    if (hoursUntilReset <= 0) {
-                        effective24hQuota = (24 / 168.0) * 1.0;
-                    } else if (hoursUntilReset <= 24) {
-                        const remainingHoursAfterReset = 24 - hoursUntilReset;
-                        effective24hQuota = minWeeklyFrac + (remainingHoursAfterReset / 168.0) * 1.0;
-                    } else {
-                        effective24hQuota = minWeeklyFrac * (24.0 / hoursUntilReset);
-                    }
-                } else {
-                    effective24hQuota = minWeeklyFrac / 7.0;
-                }
-
-                effective24hQuota = Math.min(1.0, Math.max(0.0, effective24hQuota));
-                sumEffectiveDailyPercent += (effective24hQuota * 100);
+                const { weeklyBucket, dailyBucket } = classifyAccountBuckets(item);
+                const targetBucket = dailyBucket || weeklyBucket;
+                const frac = targetBucket && targetBucket.remainingFraction !== undefined ? targetBucket.remainingFraction : 1.0;
+                sumDailyUsedFrac += (1.0 - frac);
             });
 
-            const avgDailyRem = sumEffectiveDailyPercent / activeItems.length;
-            // 24小时满额基准为 24/168 = 14.285%
-            const fullDailyBase = (24.0 / 168.0) * 100;
-            const usedDailyPct = Math.max(0, Math.min(100, ((fullDailyBase - avgDailyRem) / fullDailyBase) * 100));
-            return Number(usedDailyPct.toFixed(1));
+            const avgDailyUsedPercent = (sumDailyUsedFrac / activeItems.length) * 100;
+            return Number(avgDailyUsedPercent.toFixed(1));
         };
 
         const getWeeklyQuotaUsedAvgNum = (type) => {
@@ -1042,13 +1039,9 @@ const app = createApp({
 
             let sumWeeklyUsedFrac = 0;
             activeItems.forEach(item => {
-                const buckets = getQuotaBuckets(item.quota_groups);
-                let minWeeklyFrac = 1.0;
-                if (buckets && buckets.length > 0) {
-                    const fracs = buckets.map(b => b.remainingFraction !== undefined ? b.remainingFraction : 1.0);
-                    minWeeklyFrac = Math.min(...fracs);
-                }
-                sumWeeklyUsedFrac += (1.0 - minWeeklyFrac);
+                const { weeklyBucket } = classifyAccountBuckets(item);
+                const frac = weeklyBucket && weeklyBucket.remainingFraction !== undefined ? weeklyBucket.remainingFraction : 1.0;
+                sumWeeklyUsedFrac += (1.0 - frac);
             });
 
             const avgWeeklyUsedPercent = (sumWeeklyUsedFrac / activeItems.length) * 100;
@@ -1056,95 +1049,21 @@ const app = createApp({
         };
 
         const getDailyQuotaAvg = (type) => {
-            const m = getManager(type);
-            const activeItems = (m.items || []).filter(item => !item.disabled);
-            if (activeItems.length === 0) return '100.0%';
-
-            const nowMs = Date.now();
-            let sumEffectiveDailyPercent = 0;
-
-            activeItems.forEach(item => {
-                const buckets = getQuotaBuckets(item.quota_groups);
-                let minWeeklyFrac = 1.0;
-                let resetDate = null;
-
-                if (buckets && buckets.length > 0) {
-                    let minB = null;
-                    buckets.forEach(b => {
-                        const frac = b.remainingFraction !== undefined ? b.remainingFraction : 1.0;
-                        if (frac < minWeeklyFrac) {
-                            minWeeklyFrac = frac;
-                            minB = b;
-                        }
-                    });
-                    if (minB) {
-                        resetDate = parseBucketResetDate(minB);
-                    } else {
-                        resetDate = parseBucketResetDate(buckets[0]);
-                    }
-                }
-
-                let effective24hQuota = 0;
-                if (resetDate) {
-                    const hoursUntilReset = (resetDate.getTime() - nowMs) / 3600000;
-                    if (hoursUntilReset <= 0) {
-                        effective24hQuota = (24 / 168.0) * 1.0;
-                    } else if (hoursUntilReset <= 24) {
-                        const remainingHoursAfterReset = 24 - hoursUntilReset;
-                        effective24hQuota = minWeeklyFrac + (remainingHoursAfterReset / 168.0) * 1.0;
-                    } else {
-                        effective24hQuota = minWeeklyFrac * (24.0 / hoursUntilReset);
-                    }
-                } else {
-                    effective24hQuota = minWeeklyFrac / 7.0;
-                }
-
-                effective24hQuota = Math.min(1.0, Math.max(0.0, effective24hQuota));
-                sumEffectiveDailyPercent += (effective24hQuota * 100);
-            });
-
-            const avgDailyPercent = sumEffectiveDailyPercent / activeItems.length;
-            return avgDailyPercent.toFixed(1) + '%';
+            const used = getDailyQuotaUsedAvgNum(type);
+            return (100 - used).toFixed(1) + '%';
         };
 
         const getWeeklyQuotaAvg = (type) => {
-            const m = getManager(type);
-            const activeItems = (m.items || []).filter(item => !item.disabled);
-            if (activeItems.length === 0) return '100.0%';
-
-            let sumWeeklyRemFrac = 0;
-            activeItems.forEach(item => {
-                const buckets = getQuotaBuckets(item.quota_groups);
-                let minWeeklyFrac = 1.0;
-                if (buckets && buckets.length > 0) {
-                    const fracs = buckets.map(b => b.remainingFraction !== undefined ? b.remainingFraction : 1.0);
-                    minWeeklyFrac = Math.min(...fracs);
-                }
-                sumWeeklyRemFrac += minWeeklyFrac;
-            });
-
-            const avgWeeklyRemPercent = (sumWeeklyRemFrac / activeItems.length) * 100;
-            return avgWeeklyRemPercent.toFixed(1) + '%';
+            const used = getWeeklyQuotaUsedAvgNum(type);
+            return (100 - used).toFixed(1) + '%';
         };
 
         const getWeeklyQuotaUsedAvg = (type) => {
-            const m = getManager(type);
-            const activeItems = (m.items || []).filter(item => !item.disabled);
-            if (activeItems.length === 0) return '0.0%';
+            return getWeeklyQuotaUsedAvgNum(type).toFixed(1) + '%';
+        };
 
-            let sumWeeklyUsedFrac = 0;
-            activeItems.forEach(item => {
-                const buckets = getQuotaBuckets(item.quota_groups);
-                let minWeeklyFrac = 1.0;
-                if (buckets && buckets.length > 0) {
-                    const fracs = buckets.map(b => b.remainingFraction !== undefined ? b.remainingFraction : 1.0);
-                    minWeeklyFrac = Math.min(...fracs);
-                }
-                sumWeeklyUsedFrac += (1.0 - minWeeklyFrac);
-            });
-
-            const avgWeeklyUsedPercent = (sumWeeklyUsedFrac / activeItems.length) * 100;
-            return avgWeeklyUsedPercent.toFixed(1) + '%';
+        const getDailyQuotaUsedAvg = (type) => {
+            return getDailyQuotaUsedAvgNum(type).toFixed(1) + '%';
         };
 
         const totalPages = (type) => {
@@ -1545,9 +1464,9 @@ const app = createApp({
                 tokenTrendChart.data.labels = labels;
                 tokenTrendChart.data.datasets[0].data = promptData;
                 tokenTrendChart.data.datasets[1].data = completionData;
-                tokenTrendChart.data.datasets[2].data = totalData;
-                tokenTrendChart.data.datasets[3].data = cachedData;
-                tokenTrendChart.data.datasets[4].data = thoughtsData;
+                tokenTrendChart.data.datasets[2].data = cachedData;
+                tokenTrendChart.data.datasets[3].data = thoughtsData;
+                tokenTrendChart.data.datasets[4].data = totalData;
                 tokenTrendChart.data.datasets[5].data = requestsData;
                 tokenTrendChart.options.scales.x.ticks.color = textColor;
                 tokenTrendChart.options.scales.x.grid.color = gridColor;
@@ -1570,7 +1489,7 @@ const app = createApp({
                     labels,
                     datasets: [
                         {
-                            label: '📥 输入 (prompt)',
+                            label: '📥 输入',
                             data: promptData,
                             borderColor: '#2563eb',
                             borderWidth: 1.8,
@@ -1584,7 +1503,7 @@ const app = createApp({
                             yAxisID: 'y'
                         },
                         {
-                            label: '📤 输出 (candidates)',
+                            label: '📤 输出',
                             data: completionData,
                             borderColor: '#10b981',
                             borderWidth: 1.8,
@@ -1598,22 +1517,7 @@ const app = createApp({
                             yAxisID: 'y'
                         },
                         {
-                            label: '💎 总 Token (total)',
-                            data: totalData,
-                            borderColor: '#8b5cf6',
-                            backgroundColor: totalGradient,
-                            borderWidth: 2.2,
-                            pointRadius: 3.5,
-                            pointHoverRadius: 6,
-                            pointBackgroundColor: '#ffffff',
-                            pointBorderColor: '#8b5cf6',
-                            pointBorderWidth: 2,
-                            fill: true,
-                            tension: 0.3,
-                            yAxisID: 'y'
-                        },
-                        {
-                            label: '⚡ 缓存 (cached)',
+                            label: '⚡ 缓存',
                             data: cachedData,
                             borderColor: '#06b6d4',
                             borderWidth: 1.5,
@@ -1628,7 +1532,7 @@ const app = createApp({
                             yAxisID: 'y'
                         },
                         {
-                            label: '🧠 思考 (thoughts)',
+                            label: '🧠 思考',
                             data: thoughtsData,
                             borderColor: '#f59e0b',
                             borderWidth: 1.5,
@@ -1643,7 +1547,22 @@ const app = createApp({
                             yAxisID: 'y'
                         },
                         {
-                            label: '🚀 API 请求数 (calls)',
+                            label: '💎 总 Token',
+                            data: totalData,
+                            borderColor: '#8b5cf6',
+                            backgroundColor: totalGradient,
+                            borderWidth: 2.2,
+                            pointRadius: 3.5,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: '#ffffff',
+                            pointBorderColor: '#8b5cf6',
+                            pointBorderWidth: 2,
+                            fill: true,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '🚀 API 请求数',
                             data: requestsData,
                             borderColor: '#ec4899',
                             borderWidth: 1.8,
@@ -2013,6 +1932,7 @@ const app = createApp({
             getDailyQuotaAvg,
             getWeeklyQuotaAvg,
             getWeeklyQuotaUsedAvg,
+            getDailyQuotaUsedAvg,
             changePage,
             cpUrl,
             cpAllUrls,

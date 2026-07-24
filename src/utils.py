@@ -1,3 +1,5 @@
+import os
+import sys
 from typing import List, Optional
 
 from src.auth import (
@@ -18,6 +20,32 @@ from src.auth import (
     security,
     verify_panel_token,
 )
+
+def get_resource_path(relative_path: str) -> str:
+    """
+    获取资源文件的绝对路径（兼容源码运行、Nuitka 和 PyInstaller 打包应用）
+    """
+    if hasattr(sys, "_MEIPASS"):
+        path = os.path.join(getattr(sys, "_MEIPASS"), relative_path)
+        if os.path.exists(path):
+            return path
+
+    main_module = sys.modules.get('__main__')
+    main_file = getattr(main_module, '__file__', __file__) if main_module else __file__
+    main_dir = os.path.dirname(os.path.abspath(main_file))
+
+    candidates = [
+        os.path.join(main_dir, relative_path),
+        os.path.join(os.path.dirname(main_dir), relative_path),
+        os.path.join(os.getcwd(), relative_path),
+    ]
+
+    for cand in candidates:
+        if os.path.exists(cand):
+            return cand
+
+    return relative_path
+
 
 # Model name lists for different features
 BASE_MODELS = [

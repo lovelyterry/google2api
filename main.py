@@ -114,11 +114,13 @@ async def lifespan(app: FastAPI):
 
     # OAuth回调服务器将在需要时按需启动
 
-    # 启动 Antigravity 凭证额度 15 分钟定时刷新服务
+    # 启动 Antigravity 凭证额度定时刷新服务与账号配额保鲜预热服务
     try:
         await quota_refresh_service.start()
+        from src.panel.warmup import quota_warmup_service
+        await quota_warmup_service.start()
     except Exception as e:
-        log.error(f"额度定时刷新服务启动失败: {e}")
+        log.error(f"定时服务启动失败: {e}")
 
     # 异步预热并初始化 API 动态模型白名单列表
     async def _init_models_bg():
@@ -137,8 +139,10 @@ async def lifespan(app: FastAPI):
 
     try:
         await quota_refresh_service.stop()
+        from src.panel.warmup import quota_warmup_service
+        await quota_warmup_service.stop()
     except Exception as e:
-        log.error(f"关闭额度定时刷新服务时出错: {e}")
+        log.error(f"关闭定时服务时出错: {e}")
 
     # 然后关闭凭证管理器
     if global_credential_manager:
@@ -205,12 +209,17 @@ app.include_router(vertex_openai_router, prefix="", tags=["Vertex OpenAI API"])
 # Vertex AI 路由 - 模型列表
 app.include_router(vertex_model_list_router, prefix="", tags=["Vertex Model List"])
 
+from src.utils import get_resource_path
+
 # 静态文件路由 - 服务docs目录下的文件
-if os.path.exists("docs"):
-    app.mount("/docs", StaticFiles(directory="docs"), name="docs")
+docs_dir = get_resource_path("docs")
+if os.path.exists(docs_dir):
+    app.mount("/docs", StaticFiles(directory=docs_dir), name="docs")
 
 # 静态文件路由 - 服务front目录下的文件（HTML、JS、CSS等）
-app.mount("/front", StaticFiles(directory="front"), name="front")
+front_dir = get_resource_path("front")
+if os.path.exists(front_dir):
+    app.mount("/front", StaticFiles(directory=front_dir), name="front")
 
 
 _instance_lock_file = None

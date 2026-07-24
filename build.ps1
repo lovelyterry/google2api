@@ -1,7 +1,7 @@
-# Nuitka Build Script for PowerShell (google2api)
 param (
     [switch]$OneFile,
-    [switch]$Lto
+    [switch]$Lto,
+    [switch]$DisableClcache
 )
 
 $ErrorActionPreference = "Continue"
@@ -23,7 +23,6 @@ if (-not (Test-Path -Path $VenvPython)) {
 
 Write-Host "[+] Using virtual environment Python: $VenvPython" -ForegroundColor Green
 
-# Check nuitka
 if (-not (Test-Path -Path $VenvNuitkaDir)) {
     Write-Host "[!] Nuitka is NOT installed in .venv." -ForegroundColor Yellow
     Write-Host "[*] Trying to install nuitka and zstandard into .venv..." -ForegroundColor Cyan
@@ -56,14 +55,13 @@ if (-not (Test-Path -Path $MainPy)) {
     exit 1
 }
 
-# Ensure build output directory exists
 if (-not (Test-Path -Path $BuildDir)) {
     New-Item -ItemType Directory -Path $BuildDir | Out-Null
 }
 
-$ModeFlag = "--standalone"
-if ($OneFile) {
-    $ModeFlag = "--onefile"
+$ModeFlag = "--onefile"
+if ($PSBoundParameters.ContainsKey('OneFile') -and -not $OneFile) {
+    $ModeFlag = "--standalone"
 }
 
 $LtoValue = "no"
@@ -74,10 +72,13 @@ if ($Lto) {
 $NuitkaArgs = @(
     "-m", "nuitka",
     $ModeFlag,
+    "--msvc=latest",
+    "--disable-ccache",
     "--output-dir=$BuildDir",
     "--windows-console-mode=force",
     "--output-filename=google2api.exe",
     "--lto=$LtoValue",
+    "--python-flag=-O",
     "--show-progress",
     "--show-memory",
     "--assume-yes-for-downloads",
@@ -88,10 +89,12 @@ $NuitkaArgs = @(
     "--include-package=tiktoken",
     "--include-package=pydantic",
     "--include-package=pypinyin",
+    "--include-package-data=pypinyin",
     "--include-package=starlette",
     "--include-package=dotenv",
     "--include-package=aiofiles",
-    "--include-package-data=tiktoken"
+    "--include-package-data=tiktoken",
+    "--include-package-data=curl_cffi"
 )
 
 if (Test-Path -Path $FrontDir) {
@@ -102,7 +105,7 @@ if (Test-Path -Path $FrontDir) {
 $NuitkaArgs += $MainPy
 
 Write-Host "`n==========================================" -ForegroundColor Cyan
-Write-Host "Starting build [Mode: $ModeFlag]..." -ForegroundColor Cyan
+Write-Host "Starting build [Mode: $ModeFlag, Compiler: MSVC (clcache disabled)]..." -ForegroundColor Cyan
 Write-Host "Output Directory: $BuildDir" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "Command: $VenvPython $($NuitkaArgs -join ' ')" -ForegroundColor Gray
@@ -114,7 +117,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "`n==========================================" -ForegroundColor Green
     Write-Host "Build completed successfully!" -ForegroundColor Green
     Write-Host "==========================================" -ForegroundColor Green
-    if ($OneFile) {
+    if ($ModeFlag -eq "--onefile") {
         Write-Host "Executable file: $BuildDir\google2api.exe" -ForegroundColor Yellow
     } else {
         Write-Host "Output directory: $BuildDir\main.dist" -ForegroundColor Yellow

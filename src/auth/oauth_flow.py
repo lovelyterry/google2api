@@ -219,8 +219,9 @@ class AuthCallbackHandler(BaseHTTPRequestHandler):
                     loop = asyncio.get_event_loop()
 
                 if loop and loop.is_running():
+                    flow_mode = auth_flows[state].get("mode", "geminicli")
                     asyncio.run_coroutine_threadsafe(
-                        complete_auth_flow_from_callback_url(full_callback_url),
+                        complete_auth_flow_from_callback_url(full_callback_url, mode=flow_mode),
                         loop
                     )
             except Exception as e:
@@ -686,7 +687,7 @@ async def asyncio_complete_auth_flow(
         if "exchange_result" in flow_data:
             return flow_data["exchange_result"]
 
-        max_wait_time = 10
+        max_wait_time = 180
         wait_interval = 1
         waited = 0
 
@@ -708,7 +709,8 @@ async def asyncio_complete_auth_flow(
             }
 
         auth_code = flow_data["code"]
-        return await _execute_code_exchange_once(state, auth_code, mode=mode)
+        flow_mode = flow_data.get("mode", mode)
+        return await _execute_code_exchange_once(state, auth_code, mode=flow_mode)
 
     except Exception as e:
         log.error(f"异步完成认证流程失败: {e}")
@@ -752,7 +754,8 @@ async def complete_auth_flow_from_callback_url(
 
         # 将 code 存在 flow_data 中供状态共享
         flow_data["code"] = code
-        return await _execute_code_exchange_once(state, code, mode=mode)
+        flow_mode = flow_data.get("mode", mode)
+        return await _execute_code_exchange_once(state, code, mode=flow_mode)
 
     except Exception as e:
         log.error(f"从回调URL完成认证流程失败: {e}")
@@ -815,8 +818,8 @@ async def save_credentials(creds: Credentials, project_id: str, mode: str = "gem
 
             # 自动触发新账号额度刷新
             try:
-                from .credential_manager import credential_manager
-                asyncio.create_task(credential_manager.refresh_credential_quota(filename, mode=mode))
+                from src.panel.quota import quota_refresh_service
+                asyncio.create_task(quota_refresh_service.refresh_single(filename, mode=mode))
             except Exception as e:
                 log.warning(f"触发新账号额度刷新警告: {e}")
         except Exception as e:

@@ -45,6 +45,8 @@ ENV_MAPPINGS = {
     "API_PASSWORD": "api_password",
     "PANEL_PASSWORD": "panel_password",
     "PASSWORD": "password",
+    "QUOTA_WARMUP_ENABLED": "quota_warmup_enabled",
+    "QUOTA_WARMUP_IDLE_HOURS": "quota_warmup_idle_hours",
 }
 
 
@@ -475,5 +477,25 @@ async def get_antigravity_api_url() -> str:
             "ANTIGRAVITY_API_URL",
         )
     )
+
+
+async def get_quota_warmup_enabled() -> bool:
+    """Get quota warmup enabled setting (default: True)."""
+    env_value = os.getenv("QUOTA_WARMUP_ENABLED")
+    if env_value:
+        return env_value.lower() in ("true", "1", "yes", "on")
+    return bool(await get_config_value("quota_warmup_enabled", True))
+
+
+async def get_quota_warmup_idle_hours() -> float:
+    """Get quota warmup idle hours threshold (default: 4.5)."""
+    env_value = os.getenv("QUOTA_WARMUP_IDLE_HOURS")
+    if env_value:
+        try:
+            return float(env_value)
+        except ValueError:
+            pass
+    return float(await get_config_value("quota_warmup_idle_hours", 4.5))
+
 
 
