@@ -1039,6 +1039,18 @@ body.dark-theme .selected-account-indicator .indicator-email {
     color: #818cf8;
 }
 
+.badge-warning {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #d97706;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+body.dark-theme .badge-warning {
+    background-color: rgba(245, 158, 11, 0.25);
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.4);
+}
+
 .account-card-header {
     display: flex;
     align-items: center;

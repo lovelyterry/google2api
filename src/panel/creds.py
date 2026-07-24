@@ -590,12 +590,19 @@ async def verify_credential_project_common(filename: str, mode: str = "geminicli
 
         return JSONResponse(content=response_data)
     else:
+        err_msg = "检验失败：无法获取Project ID，请检查凭证是否有效"
+        if subscription_tier == "unverified":
+            err_msg = "检验失败：该账号需要登录 Google 官网完成手机号/账号身份验证后方可激活"
+            # 记录 tier 状态为 unverified
+            await storage_adapter.update_credential_state(filename, {"tier": "unverified"}, mode=mode)
+
         return JSONResponse(
             status_code=400,
             content={
                 "success": False,
                 "filename": filename,
-                "message": "检验失败：无法获取Project ID，请检查凭证是否有效"
+                "subscription_tier": subscription_tier,
+                "message": err_msg
             }
         )
 

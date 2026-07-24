@@ -17,8 +17,13 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"><\/script>');
         }
     </script>
-    <!-- Chart.js 静态文件引入（带有 CDN 回退保障） -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chart.js 优先本地加载，失败时自动回退至 CDN -->
+    <script src="/front/chart.umd.js?v=4.4.0"></script>
+    <script>
+        if (typeof Chart === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>');
+        }
+    </script>
 </head>
 
 <body>
@@ -318,12 +323,16 @@
                                         <span v-if="item.disabled" class="badge badge-secondary" title="已禁用">🚫 已禁用</span>
                                         <span v-else class="badge badge-success">正常</span>
                                         <span v-for="code in item.error_codes" :key="code" class="badge badge-danger">ERR {{ code }}</span>
-                                        <span class="badge badge-primary">{{ (item.tier || 'pro').toUpperCase() }}</span>
+                                        <span v-if="item.tier === 'unverified'" class="badge badge-warning" title="账号尚未在 Google 完成身份/手机号验证，无法激活使用">⚠️ 未验证激活</span>
+                                        <span v-else class="badge badge-primary">{{ (item.tier || 'pro').toUpperCase() }}</span>
                                         <span v-if="item.enable_credit" class="badge badge-success">Credit ON</span>
                                         <span v-for="(until, model) in getActiveCooldowns(item.model_cooldowns)" :key="model" class="badge cooldown-badge" :title="'模型: ' + model">⏰ {{ formatCooldownBadge(model, until) }}</span>
                                     </div>
                                     <!-- 额度进度条与刷新重置时间 -->
-                                    <div v-if="getQuotaBuckets(item.quota_groups).length > 0" class="quota-box">
+                                    <div v-if="item.tier === 'unverified'" class="quota-box" style="padding: 10px; text-align: center; color: #d97706; background: rgba(245, 158, 11, 0.08); border: 1px dashed rgba(245, 158, 11, 0.3); border-radius: 6px; font-size: 12px;">
+                                        ⚠️ 该账号尚未在 Google 完成身份/手机号验证，需验证后方可获取额度与激活服务
+                                    </div>
+                                    <div v-else-if="getQuotaBuckets(item.quota_groups).length > 0" class="quota-box">
                                         <div v-for="(b, bIdx) in getQuotaBuckets(item.quota_groups)" :key="b.bucketId || bIdx" class="quota-item" :title="getBucketTitle(b)">
                                             <div class="quota-item-header">
                                                 <span class="quota-item-title">{{ getBucketIcon(b) }} {{ getBucketLabel(b) }}</span>

@@ -248,38 +248,42 @@ async def stream_post_async(
 
     log.debug(f"[HTTP STREAM POST] 请求 URL: {url}\nPayload:\n{_format_payload(body)}")
 
-    async with http_client.get_streaming_client(**kwargs) as client:
-        if CURL_CFFI_AVAILABLE and isinstance(client, CurlAsyncSession):
-            async with client.stream("POST", url, json=body, headers=headers) as r:
-                if r.status_code != 200:
-                    from fastapi import Response
-                    resp_content = await r.aread() if hasattr(r, "aread") else getattr(r, "content", b"")
-                    log.error(f"[HTTP STREAM RESPONSE ERROR] URL: {url} | Status: {r.status_code}\nResponse Body:\n{_format_payload(resp_content)}")
-                    yield Response(resp_content, r.status_code, _filter_response_headers(r.headers))
-                    return
+    try:
+        async with http_client.get_streaming_client(**kwargs) as client:
+            if CURL_CFFI_AVAILABLE and isinstance(client, CurlAsyncSession):
+                async with client.stream("POST", url, json=body, headers=headers) as r:
+                    if r.status_code != 200:
+                        from fastapi import Response
+                        resp_content = await r.aread() if hasattr(r, "aread") else getattr(r, "content", b"")
+                        log.error(f"[HTTP STREAM RESPONSE ERROR] URL: {url} | Status: {r.status_code}\nResponse Body:\n{_format_payload(resp_content)}")
+                        yield Response(resp_content, r.status_code, _filter_response_headers(r.headers))
+                        return
 
-                log.debug(f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
-                if native:
-                    async for chunk in r.aiter_content():
-                        yield chunk
-                else:
-                    async for line in r.aiter_lines():
-                        if isinstance(line, bytes):
-                            line = line.decode("utf-8", errors="replace")
-                        yield line
-        else:
-            async with client.stream("POST", url, json=body, headers=headers) as r:
-                if r.status_code != 200:
-                    from fastapi import Response
-                    resp_content = await r.aread() if hasattr(r, "aread") else getattr(r, "content", b"")
-                    log.error(f"[HTTP STREAM RESPONSE ERROR] URL: {url} | Status: {r.status_code}\nResponse Body:\n{_format_payload(resp_content)}")
-                    yield Response(resp_content, r.status_code, _filter_response_headers(r.headers))
-                    return
+                    log.debug(f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
+                    if native:
+                        async for chunk in r.aiter_content():
+                            yield chunk
+                    else:
+                        async for line in r.aiter_lines():
+                            if isinstance(line, bytes):
+                                line = line.decode("utf-8", errors="replace")
+                            yield line
+            else:
+                async with client.stream("POST", url, json=body, headers=headers) as r:
+                    if r.status_code != 200:
+                        from fastapi import Response
+                        resp_content = await r.aread() if hasattr(r, "aread") else getattr(r, "content", b"")
+                        log.error(f"[HTTP STREAM RESPONSE ERROR] URL: {url} | Status: {r.status_code}\nResponse Body:\n{_format_payload(resp_content)}")
+                        yield Response(resp_content, r.status_code, _filter_response_headers(r.headers))
+                        return
 
-                log.debug(f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
-                if native:
-                    async for chunk in r.aiter_bytes():
-                        yield chunk
-                else:
-                    async for line in r.aiter_lines():
-                        yield line
+                    log.debug(f"[HTTP STREAM RESPONSE START] URL: {url} | Status: 200 OK")
+                    if native:
+                        async for chunk in r.aiter_bytes():
+                            yield chunk
+                    else:
+                        async for line in r.aiter_lines():
+                            yield line
+    except (GeneratorExit, asyncio.CancelledError):
+        log.debug(f"[HTTP STREAM] 客户端断开连接，取消流式传输: {url}")
+        return

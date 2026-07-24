@@ -699,6 +699,10 @@ class Storage:
             if st.get("disabled", False):
                 continue
 
+            # 排除未验证(unverified)账号
+            if st.get("tier") == "unverified":
+                continue
+
             if model_name:
                 model_cooldowns = st.get("model_cooldowns", {})
                 cooldown_until = model_cooldowns.get(model_name, 0)

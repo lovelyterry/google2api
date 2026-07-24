@@ -85,11 +85,13 @@ class Credentials:
         try:
             oauth_base_url = await get_oauth_proxy_url()
             token_url = f"{oauth_base_url.rstrip('/')}/token"
+            log.info(f"[Google OAuth] 正在发送 Token 刷新请求 -> URL: {token_url}")
             response = await post_async(
                 token_url,
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
+            log.info(f"[Google OAuth] Token 刷新响应状态码: {response.status_code}, 内容: {response.text[:300]}")
             response.raise_for_status()
 
             token_data = response.json()
@@ -216,9 +218,11 @@ class Flow:
         try:
             oauth_base_url = await get_oauth_proxy_url()
             token_url = f"{oauth_base_url.rstrip('/')}/token"
+            log.info(f"[Google OAuth] 正在发送 Code 换取 Token 请求 -> URL: {token_url}")
             response = await post_async(
                 token_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"}
             )
+            log.info(f"[Google OAuth] Code 换取 Token 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
             response.raise_for_status()
 
             token_data = response.json()
@@ -298,9 +302,11 @@ class ServiceAccount:
         try:
             oauth_base_url = await get_oauth_proxy_url()
             token_url = f"{oauth_base_url.rstrip('/')}/token"
+            log.info(f"[Google OAuth] SA 请求 Token -> URL: {token_url}")
             response = await post_async(
                 token_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"}
             )
+            log.info(f"[Google OAuth] SA 请求 Token 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
             response.raise_for_status()
 
             token_data = response.json()
@@ -336,9 +342,11 @@ async def get_user_info(credentials: Credentials) -> Optional[Dict[str, Any]]:
     try:
         googleapis_base_url = await get_googleapis_proxy_url()
         userinfo_url = f"{googleapis_base_url.rstrip('/')}/oauth2/v2/userinfo"
+        log.info(f"[Google API] 请求 userinfo -> URL: {userinfo_url}")
         response = await get_async(
             userinfo_url, headers={"Authorization": f"Bearer {credentials.access_token}"}
         )
+        log.info(f"[Google API] userinfo 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -393,8 +401,10 @@ async def validate_token(token: str) -> Optional[Dict[str, Any]]:
     try:
         oauth_base_url = await get_oauth_proxy_url()
         tokeninfo_url = f"{oauth_base_url.rstrip('/')}/tokeninfo?access_token={token}"
+        log.info(f"[Google OAuth] 请求 tokeninfo -> URL: {tokeninfo_url}")
 
         response = await get_async(tokeninfo_url)
+        log.info(f"[Google OAuth] tokeninfo 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -430,7 +440,9 @@ async def enable_required_apis(credentials: Credentials, project_id: str) -> boo
                 f"{service_usage_base_url.rstrip('/')}/v1/projects/{project_id}/services/{service}"
             )
             try:
+                log.info(f"[Google ServiceUsage API] 检查服务: {service} -> URL: {check_url}")
                 check_response = await get_async(check_url, headers=headers)
+                log.info(f"[Google ServiceUsage API] 检查服务 {service} 状态码: {check_response.status_code}, 内容: {check_response.text[:300]}")
                 if check_response.status_code == 200:
                     service_data = check_response.json()
                     if service_data.get("state") == "ENABLED":
@@ -442,7 +454,9 @@ async def enable_required_apis(credentials: Credentials, project_id: str) -> boo
             # 启用服务
             enable_url = f"{service_usage_base_url.rstrip('/')}/v1/projects/{project_id}/services/{service}:enable"
             try:
+                log.info(f"[Google ServiceUsage API] 启用服务: {service} -> URL: {enable_url}")
                 enable_response = await post_async(enable_url, headers=headers, json={})
+                log.info(f"[Google ServiceUsage API] 启用服务 {service} 状态码: {enable_response.status_code}, 内容: {enable_response.text[:300]}")
 
                 if enable_response.status_code in [200, 201]:
                     log.info(f"✅ 成功启用服务: {service}")
@@ -482,12 +496,10 @@ async def get_user_projects(credentials: Credentials) -> List[Dict[str, Any]]:
         # 使用Resource Manager API的正确域名和端点
         resource_manager_base_url = await get_resource_manager_api_url()
         url = f"{resource_manager_base_url.rstrip('/')}/v1/projects"
-        log.info(f"正在调用API: {url}")
+        log.info(f"[Google Resource Manager] 正在调用 API: {url}")
         response = await get_async(url, headers=headers)
 
-        log.info(f"API响应状态码: {response.status_code}")
-        if response.status_code != 200:
-            log.error(f"API响应内容: {response.text}")
+        log.info(f"[Google Resource Manager] API 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
 
         if response.status_code == 200:
             data = response.json()
@@ -563,6 +575,7 @@ async def fetch_project_id_and_tier(
         if not raw_tier:
             return None
 
+        tier_lower = raw_tier.lower()
         tier_mapping = {
             "g1-ultra-tier": "ultra",
             "ws-ai-ultra-business-tier": "ultra",
@@ -570,9 +583,20 @@ async def fetch_project_id_and_tier(
             "helium-tier": "pro",
             "standard-tier": "pro",
             "free-tier": "free",
+            "g1-free-tier": "free",
+            "basic-tier": "free",
         }
 
-        return tier_mapping.get(raw_tier.lower(), "pro")
+        mapped = tier_mapping.get(tier_lower)
+        if mapped:
+            return mapped
+
+        # 如果含有 free 则识别为 free，否则回退为 raw_tier
+        if "free" in tier_lower:
+            return "free"
+
+        log.warning(f"[fetch_project_id_and_tier] Unrecognized raw tier: '{raw_tier}', falling back to original tier string")
+        return tier_lower
 
     subscription_tier = None
     credit_amount: Optional[int] = None
@@ -650,8 +674,7 @@ async def _try_load_code_assist(
         }
     }
 
-    log.debug(f"[loadCodeAssist] Fetching project_id from: {request_url}")
-    log.debug(f"[loadCodeAssist] Request body: {request_body}")
+    log.info(f"[loadCodeAssist] 请求 URL: {request_url}, Request body: {request_body}")
 
     response = await post_async(
         request_url,
@@ -660,7 +683,7 @@ async def _try_load_code_assist(
         timeout=30.0,
     )
 
-    log.debug(f"[loadCodeAssist] Response status: {response.status_code}")
+    log.info(f"[loadCodeAssist] Response status: {response.status_code}, body: {response.text[:500]}")
 
     if response.status_code == 200:
         response_text = response.text
@@ -692,6 +715,15 @@ async def _try_load_code_assist(
                 if credit_amount is not None:
                     log.info(f"[loadCodeAssist] Found creditAmount: {credit_amount}")
 
+        # 检查是否有不可用/需验证的 tier 原因
+        ineligible_tiers = data.get("ineligibleTiers", [])
+        validation_required = False
+        for it in ineligible_tiers:
+            if it.get("reasonCode") == "VALIDATION_REQUIRED":
+                validation_required = True
+                log.warning(f"[loadCodeAssist] 账号需要完成 Google 验证: {it.get('reasonMessage')}")
+                break
+
         # 检查是否有 currentTier（表示用户已激活）
         if current_tier:
             log.info("[loadCodeAssist] User is already activated")
@@ -705,6 +737,9 @@ async def _try_load_code_assist(
             log.warning("[loadCodeAssist] No project_id in response")
             return None, subscription_tier, credit_amount
         else:
+            if validation_required:
+                log.info("[loadCodeAssist] 账号尚未激活且需要完成 Google 验证 (VALIDATION_REQUIRED)")
+                return None, "unverified", credit_amount
             log.info("[loadCodeAssist] User not activated yet (no currentTier)")
             return None, None, credit_amount
     else:
@@ -754,7 +789,7 @@ async def _try_onboard_user(
 
     while attempt < max_attempts:
         attempt += 1
-        log.debug(f"[onboardUser] Polling attempt {attempt}/{max_attempts}")
+        log.info(f"[onboardUser] 轮询请求 ({attempt}/{max_attempts}) -> URL: {request_url}, Body: {request_body}")
 
         response = await post_async(
             request_url,
@@ -763,7 +798,7 @@ async def _try_onboard_user(
             timeout=30.0,
         )
 
-        log.debug(f"[onboardUser] Response status: {response.status_code}")
+        log.info(f"[onboardUser] 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
 
         if response.status_code == 200:
             data = response.json()
@@ -821,7 +856,7 @@ async def _get_onboard_tier(
         }
     }
 
-    log.debug(f"[_get_onboard_tier] Fetching tier info from: {request_url}")
+    log.info(f"[_get_onboard_tier] 请求 URL: {request_url}")
 
     response = await post_async(
         request_url,
@@ -829,6 +864,8 @@ async def _get_onboard_tier(
         headers=headers,
         timeout=30.0,
     )
+
+    log.info(f"[_get_onboard_tier] 响应状态码: {response.status_code}, 内容: {response.text[:300]}")
 
     if response.status_code == 200:
         data = response.json()
