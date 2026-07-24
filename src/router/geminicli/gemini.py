@@ -381,10 +381,14 @@ async def stream_generate_content(
 
                         target_data = data.get("response", data) if isinstance(data, dict) else {}
                         if isinstance(target_data, dict) and "usageMetadata" in target_data:
+                            candidate = (target_data.get("candidates", []) or [{}])[0] or {}
+                            is_final = bool(candidate.get("finishReason")) or (json_str == "[DONE]")
+
                             from src.token_usage import count_token_usage
                             count_token_usage(
                                 target_data["usageMetadata"],
                                 real_model,
+                                is_final=is_final,
                             )
 
                         # 展开 response 包装

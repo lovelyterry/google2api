@@ -279,8 +279,28 @@ def main():
         config = Config()
         config.bind = [f"{host}:{port}"]
         config.access_log_format = '%(h)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
-        # 自定义只在错误响应 (4xx, 5xx) 时记录 HTTP 请求日志
+        # 自定义 Hypercorn 日志输出，与项目统一为 [YYYY-MM-DD HH:MM:SS] [INFO] 格式
         import logging
+
+        class UnifiedLogHandler(logging.Handler):
+            def emit(self, record):
+                try:
+                    msg = record.getMessage()
+                    level = record.levelname.lower()
+                    if level in ("error", "critical"):
+                        log.error(msg)
+                    elif level == "warning":
+                        log.warning(msg)
+                    elif level == "debug":
+                        log.debug(msg)
+                    else:
+                        log.info(msg)
+                except Exception:
+                    pass
+
+        hypercorn_error_logger = logging.getLogger("hypercorn.error")
+        hypercorn_error_logger.handlers = [UnifiedLogHandler()]
+        hypercorn_error_logger.propagate = False
 
         class ErrorOnlyAccessLogger(logging.Logger):
             def handle(self, record):
@@ -298,7 +318,7 @@ def main():
         access_logger = logging.getLogger("hypercorn.access.error_only")
         access_logger.__class__ = ErrorOnlyAccessLogger
         config.accesslog = access_logger
-        config.errorlog = "-"
+        config.errorlog = hypercorn_error_logger
         config.loglevel = "INFO"
 
         await serve(app, config, shutdown_trigger=_shutdown_event.wait)

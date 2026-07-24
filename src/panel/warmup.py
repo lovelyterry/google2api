@@ -147,7 +147,7 @@ class QuotaWarmupService:
 
                     # 当账号满额且连续闲置满设定时长时，触发微量探针打点
                     if is_full and elapsed >= idle_threshold_seconds:
-                        log.info(f"🔥 [QuotaWarmup] 发现闲置满额账号 {fn} ({mode})，闲置时间 {elapsed/3600:.2f}h >= {idle_hours}h，开始保鲜打点...")
+                        log.info(f"发现闲置满额账号 {fn} ({mode})，闲置时间 {elapsed/3600:.2f}h >= {idle_hours}h，开始保鲜打点...")
                         await self._probe_single_credential(fn, mode=mode, storage_adapter=storage_adapter)
                         await asyncio.sleep(2.0)
         except Exception as e:
@@ -155,7 +155,7 @@ class QuotaWarmupService:
 
     async def _run(self):
         """后台轮询主循环"""
-        log.info("🔥 [QuotaWarmup] 账号配额保鲜预热服务已启动")
+        log.info("账号配额保鲜预热服务已启动")
         while True:
             try:
                 await self.check_and_warmup()

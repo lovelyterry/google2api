@@ -13,6 +13,7 @@ import base64
 import json
 import os
 import struct
+import sys
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -371,9 +372,9 @@ def _get_tiktoken_encoding() -> Optional[Any]:
     try:
         import tiktoken
         _tiktoken_encoding = tiktoken.get_encoding("cl100k_base")
-        log.info("[TokenUsage] 成功初始化 tiktoken (cl100k_base) 分词器")
+        log.info("成功初始化 tiktoken (cl100k_base) 分词器")
     except Exception as e:
-        log.warning(f"[TokenUsage] 初始化 tiktoken 失败: {e}，将采用加权降级算法")
+        log.warning(f"初始化 tiktoken 失败: {e}，将采用加权降级算法")
 
     return _tiktoken_encoding
 
@@ -559,6 +560,15 @@ def _fallback_text_tokens(text: str) -> int:
     return max(1, int(tokens))
 
 
+def format_token(count: int) -> str:
+    """将 Token 数量格式化为带 k/M 后缀的可读字符串"""
+    if count >= 1_000_000:
+        return f"{count / 1_000_000:.2f}".rstrip("0").rstrip(".") + "M"
+    elif count >= 1_000:
+        return f"{count / 1_000:.1f}k"
+    return str(count)
+
+
 # ==============================================================================
 # 3. Token 日志与结果解析 (Logger & Usage Parser)
 # ==============================================================================
@@ -566,9 +576,14 @@ def _fallback_text_tokens(text: str) -> int:
 def count_token_usage(
     usage_metadata: Any,
     model: str,
+    is_final: bool = True,
 ) -> None:
     """
     统计与打印 UsageMetadata 日志并记录到持久化服务
+
+    :param usage_metadata: Gemini 响应中的 usageMetadata 字典
+    :param model: 调用的模型名称
+    :param is_final: 是否为流式结束包或单次非流式响应包（is_final=False 时原地单行刷新，is_final=True 时换行并落库）
     """
     if not isinstance(usage_metadata, dict) or not usage_metadata:
         return
@@ -589,27 +604,36 @@ def count_token_usage(
     total_tokens = net_prompt_tokens + completion_tokens
 
     parts = [
-        f"输入={prompt_tokens}",
-        f"输出={completion_tokens}"
+        f"输入={format_token(prompt_tokens):>6}",
+        f"输出={format_token(completion_tokens):>6}",
+        f"缓存={format_token(cached_tokens):>6}",
+        f"思考={format_token(thoughts_tokens):>6}",
+        f"总计={format_token(total_tokens):>6}",
     ]
-    if cached_tokens:
-        parts.append(f"缓存={cached_tokens}")
-    if thoughts_tokens:
-        parts.append(f"思考={thoughts_tokens}")
-    parts.append(f"总计={total_tokens}")
 
-    log.info(f"[TokenUsage] 模型={model_str}{user_str} | {', '.join(parts)}")
+    log_msg = f"模型={model_str}{user_str} | {', '.join(parts)}"
 
-    try:
-        asyncio.create_task(
-            token_tracker.record_usage(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                cached_tokens=cached_tokens,
-                thoughts_tokens=thoughts_tokens,
-                model=model_str,
-                user_info=user_info,
+    now_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    if not is_final:
+        # 当流式未结束时：使用 \r 行首复位 + \033[K 清除残影（不换行，动态刷新）
+        sys.stdout.write(f"\r[{now_time}] [INFO] {log_msg}\033[K")
+        sys.stdout.flush()
+    else:
+        # 当流结束或非流式完成时：原位覆盖输出最终结果并加 \n 换行
+        sys.stdout.write(f"\r[{now_time}] [INFO] {log_msg}\033[K\n")
+        sys.stdout.flush()
+
+        # 仅在 is_final=True 时落库写盘
+        try:
+            asyncio.create_task(
+                token_tracker.record_usage(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    cached_tokens=cached_tokens,
+                    thoughts_tokens=thoughts_tokens,
+                    model=model_str,
+                    user_info=user_info,
+                )
             )
-        )
-    except Exception as e:
-        log.warning(f"[count_token_usage] 异步记录 Token 仪表盘数据失败: {e}")
+        except Exception as e:
+            log.warning(f"[count_token_usage] 异步记录 Token 仪表盘数据失败: {e}")

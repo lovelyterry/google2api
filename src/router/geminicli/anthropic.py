@@ -409,6 +409,10 @@ async def count_tokens(
     input_tokens = 0
     try:
         input_tokens = estimate_input_tokens(payload)
+        log.info(
+            f"[TokenEstimate] /messages/count_tokens 估算结果: 预估输入 Token={input_tokens} | "
+            f"模型={payload.get('model')} | 消息条数={len(payload.get('messages') or [])}"
+        )
     except Exception as e:
         log.error(f"[GEMINICLI-ANTHROPIC] token 估算失败: {e}")
 

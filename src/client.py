@@ -13,11 +13,22 @@ from src.config import get_proxy_config
 from src.log import log
 
 try:
+    from curl_cffi import CurlOpt
     from curl_cffi.requests import AsyncSession as CurlAsyncSession, Response as CurlResponse
     CURL_CFFI_AVAILABLE = True
 except ImportError:
     CURL_CFFI_AVAILABLE = False
+    CurlOpt = None
     log.error("curl_cffi 未安装，请安装 curl_cffi 依赖！")
+
+def _get_default_curl_options() -> Dict[Any, Any]:
+    """关闭 libcurl 30 秒低速断连检测 (LOW_SPEED_LIMIT=0, LOW_SPEED_TIME=0)"""
+    if CurlOpt:
+        try:
+            return {CurlOpt.LOW_SPEED_LIMIT: 0, CurlOpt.LOW_SPEED_TIME: 0}
+        except Exception:
+            pass
+    return {19: 0, 20: 0}
 
 async def _close_session(session: Any):
     if session is None:
@@ -52,7 +63,11 @@ class IsolatedClientPool:
                 self._pool[key] = (session, now)
                 return session
 
-            session_kwargs: Dict[str, Any] = {"impersonate": impersonate, "verify": False}
+            session_kwargs: Dict[str, Any] = {
+                "impersonate": impersonate,
+                "verify": False,
+                "curl_options": _get_default_curl_options(),
+            }
             if proxy:
                 session_kwargs["proxy"] = proxy
 
@@ -118,6 +133,7 @@ class HttpClientManager:
             session_kwargs: Dict[str, Any] = {
                 "impersonate": impersonate,
                 "verify": False,
+                "curl_options": _get_default_curl_options(),
             }
             if timeout is not None:
                 session_kwargs["timeout"] = timeout

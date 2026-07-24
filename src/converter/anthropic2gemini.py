@@ -1013,8 +1013,9 @@ async def gemini_stream_to_anthropic_stream(
             if "usageMetadata" in response:
                 usage = response["usageMetadata"]
                 if isinstance(usage, dict):
+                    is_final_chunk = bool(candidate.get("finishReason")) or (raw == b"[DONE]")
                     from src.token_usage import count_token_usage
-                    count_token_usage(usage, model)
+                    count_token_usage(usage, model, is_final=is_final_chunk)
 
                     if "promptTokenCount" in usage:
                         prompt_tokens_total = int(usage.get("promptTokenCount", 0) or 0)

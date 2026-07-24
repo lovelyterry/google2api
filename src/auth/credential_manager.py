@@ -56,6 +56,26 @@ class CredentialManager:
         self._storage_adapter = await get_storage()
         self._initialized = True
 
+    async def _resolve_account_email(
+        self,
+        filename: str,
+        mode: str = "geminicli",
+        st: Optional[Dict[str, Any]] = None,
+        cred_data: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        """从 state.json 或凭证内容中读取真正的邮箱地址"""
+        if st and st.get("user_email"):
+            return st["user_email"]
+        if not st and self._storage_adapter:
+            st = await self._storage_adapter.get_credential_state(filename, mode=mode)
+            if st and st.get("user_email"):
+                return st["user_email"]
+        if cred_data:
+            c_email = cred_data.get("client_email") or cred_data.get("user_email") or cred_data.get("email")
+            if c_email and isinstance(c_email, str):
+                return c_email
+        return None
+
     async def close(self):
         """清理资源"""
         log.debug("Closing credential manager...")
@@ -93,18 +113,19 @@ class CredentialManager:
                     cred_data = await self._storage_adapter.get_credential(active_filename, mode=mode)
                     if cred_data:
                         # 检查 Token 是否需要刷新
+                        user_acc = await self._resolve_account_email(active_filename, mode=mode, st=st, cred_data=cred_data)
                         if await self._should_refresh_token(cred_data):
                             refreshed_data = await self._refresh_token(cred_data, active_filename, mode=mode)
                             if refreshed_data:
                                 cred_data = refreshed_data
-                                self.set_current_account(active_filename)
+                                self.set_current_account(user_acc)
                                 return active_filename, cred_data
                             else:
                                 log.warning(f"当前激活账号 Token 刷新失败，将重新调度: {active_filename}")
                                 self._last_selected_account.pop(mode, None)
                         else:
                             # Token 有效，直接复用当前激活账号 (零重新调度、零 SSE 广播)
-                            self.set_current_account(active_filename)
+                            self.set_current_account(user_acc)
                             return active_filename, cred_data
 
         # 2. 当前激活账号不存在 / 禁用 / 处于冷却 / 报错重试 -> 执行调度算法选中新账号
@@ -121,6 +142,8 @@ class CredentialManager:
                 return None
 
             filename, credential_data = result
+            st = await self._storage_adapter.get_credential_state(filename, mode=mode)
+            user_acc = await self._resolve_account_email(filename, mode=mode, st=st, cred_data=credential_data)
 
             if await self._should_refresh_token(credential_data):
                 log.debug(f"Token需要刷新 - 文件: {filename} (mode={mode})")
@@ -129,14 +152,14 @@ class CredentialManager:
                     credential_data = refreshed_data
                     log.debug(f"Token刷新成功: {filename} (mode={mode})")
                     self._notify_dispatch(mode, filename)
-                    self.set_current_account(filename)
+                    self.set_current_account(user_acc)
                     return filename, credential_data
                 else:
                     log.warning(f"Token刷新失败，尝试获取下一个凭证: {filename} (mode={mode}, attempt={attempt+1}/{max_retries})")
                     continue
             else:
                 self._notify_dispatch(mode, filename)
-                self.set_current_account(filename)
+                self.set_current_account(user_acc)
                 return filename, credential_data
 
         self._last_selected_account.pop(mode, None)
@@ -220,7 +243,7 @@ class CredentialManager:
                     last_active_acc = self._last_selected_account.get(mode)
 
                     is_in_use = (
-                        (current_context_acc and os.path.basename(current_context_acc) == target_name) or
+                        (current_context_acc and (current_context_acc == target_name or os.path.basename(current_context_acc) == target_name)) or
                         (last_active_acc and os.path.basename(last_active_acc) == target_name)
                     )
 
