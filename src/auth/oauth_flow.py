@@ -48,7 +48,7 @@ def _prepare_credentials_data(credentials: Credentials, project_id: str, mode: s
         creds_data = {
             "client_id": ANTIGRAVITY_CLIENT_ID,
             "client_secret": ANTIGRAVITY_CLIENT_SECRET,
-            "token": credentials.access_token,
+            "access_token": credentials.access_token,
             "refresh_token": credentials.refresh_token,
             "scopes": ANTIGRAVITY_SCOPES,
             "token_uri": TOKEN_URL,
@@ -58,7 +58,7 @@ def _prepare_credentials_data(credentials: Credentials, project_id: str, mode: s
         creds_data = {
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
-            "token": credentials.access_token,
+            "access_token": credentials.access_token,
             "refresh_token": credentials.refresh_token,
             "scopes": SCOPES,
             "token_uri": TOKEN_URL,

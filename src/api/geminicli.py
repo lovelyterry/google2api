@@ -58,9 +58,9 @@ async def prepare_request_headers_and_payload(
     Raises:
         Exception: 如果凭证中缺少必要字段
     """
-    token = credential_data.get("token") or credential_data.get("access_token", "")
+    token = credential_data.get("access_token") or credential_data.get("token", "")
     if not token:
-        raise Exception("凭证中没有找到有效的访问令牌（token或access_token字段）")
+        raise Exception("凭证中没有找到有效的访问令牌（access_token字段）")
 
     source_request = payload.get("request", {})
 
@@ -191,7 +191,7 @@ async def stream_request(
         current_file, credential_data = cred_result
         try:
             # 只更新token和project_id,不重建整个headers和payload
-            token = credential_data.get("token") or credential_data.get("access_token", "")
+            token = credential_data.get("access_token") or credential_data.get("token", "")
             project_id = credential_data.get("project_id", "")
             if not token or not project_id:
                 return None
@@ -206,7 +206,7 @@ async def stream_request(
     def apply_cred_result(cred_result: Tuple[str, Dict[str, Any]]) -> bool:
         nonlocal current_file, credential_data, auth_headers, final_payload
         current_file, credential_data = cred_result
-        token = credential_data.get("token") or credential_data.get("access_token", "")
+        token = credential_data.get("access_token") or credential_data.get("token", "")
         project_id = credential_data.get("project_id", "")
         if not token or not project_id:
             return False
@@ -499,7 +499,7 @@ async def non_stream_request(
         current_file, credential_data = cred_result
         try:
             # 只更新token和project_id,不重建整个headers和payload
-            token = credential_data.get("token") or credential_data.get("access_token", "")
+            token = credential_data.get("access_token") or credential_data.get("token", "")
             project_id = credential_data.get("project_id", "")
             if not token or not project_id:
                 return None
@@ -514,7 +514,7 @@ async def non_stream_request(
     def apply_cred_result(cred_result: Tuple[str, Dict[str, Any]]) -> bool:
         nonlocal current_file, credential_data, auth_headers, final_payload
         current_file, credential_data = cred_result
-        token = credential_data.get("token") or credential_data.get("access_token", "")
+        token = credential_data.get("access_token") or credential_data.get("token", "")
         project_id = credential_data.get("project_id", "")
         if not token or not project_id:
             return False

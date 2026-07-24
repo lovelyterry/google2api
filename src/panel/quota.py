@@ -36,7 +36,9 @@ class QuotaRefreshService:
                 await storage_adapter.store_credential(filename, updated_data, mode="antigravity")
                 credential_data = updated_data
 
-            access_token = credential_data.get("access_token") or credential_data.get("token")
+            # 直接使用 creds 对象中的 access_token（刷新后的最新值），
+            # 避免因凭证文件字段名为 "token" 而非 "access_token" 导致读到旧的过期 token
+            access_token = creds.access_token or credential_data.get("access_token") or credential_data.get("token")
             if not access_token:
                 return False
 

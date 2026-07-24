@@ -143,7 +143,7 @@ class Credentials:
                 log.warning(f"无法解析过期时间: {expiry_str}")
 
         return cls(
-            access_token=data.get("token") or data.get("access_token", ""),
+            access_token=data.get("access_token") or data.get("token", ""),
             refresh_token=data.get("refresh_token"),
             client_id=data.get("client_id"),
             client_secret=data.get("client_secret"),
