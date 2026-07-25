@@ -711,7 +711,7 @@ async def _try_load_code_assist(
     )
 
     log.info(
-        f"[loadCodeAssist] Response status: {response.status_code}, body: {response.text[:500]}")
+        f"[loadCodeAssist] Response status: {response.status_code}, body: {response.text}")
 
     if response.status_code == 200:
         response_text = response.text
@@ -778,7 +778,7 @@ async def _try_load_code_assist(
             return None, None, credit_amount
     else:
         log.warning(f"[loadCodeAssist] Failed: HTTP {response.status_code}")
-        log.warning(f"[loadCodeAssist] Response body: {response.text[:500]}")
+        log.warning(f"[loadCodeAssist] Response body: {response.text}")
         raise Exception(f"HTTP {response.status_code}: {response.text[:200]}")
 
 
@@ -869,7 +869,7 @@ async def _try_onboard_user(
                 await asyncio.sleep(2)
         else:
             log.warning(f"[onboardUser] Failed: HTTP {response.status_code}")
-            log.warning(f"[onboardUser] Response body: {response.text[:500]}")
+            log.warning(f"[onboardUser] Response body: {response.text}")
             raise Exception(
                 f"HTTP {response.status_code}: {response.text[:200]}")
 

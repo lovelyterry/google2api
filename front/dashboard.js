@@ -1263,8 +1263,8 @@ const app = createApp({
             }
         };
 
-        const addModelMapping = async () => {
-            if (!models.newOriginal || !models.newTarget) return showStatus('请输入完整映射模型名称', 'error');
+        const saveModelMapping = async () => {
+            if (!models.newOriginal || !models.newTarget) return showStatus('请输入完整映射模型名称并选择目标模型', 'error');
             try {
                 const res = await fetch('./model-mappings', {
                     method: 'POST',
@@ -1276,18 +1276,34 @@ const app = createApp({
                     })
                 });
                 if (res.ok) {
-                    showStatus('添加模型映射成功！', 'success');
+                    showStatus('✅ 保存模型映射规则成功！', 'success');
                     models.newOriginal = '';
                     models.newTarget = '';
                     await loadModelMappings();
                 } else {
                     const errData = await res.json().catch(() => ({}));
-                    showStatus(`添加失败: ${errData.detail || '接口错误'}`, 'error');
+                    showStatus(`保存失败: ${errData.detail || '接口错误'}`, 'error');
                 }
             } catch (e) {
-                showStatus(`添加失败: ${e.message}`, 'error');
+                showStatus(`保存失败: ${e.message}`, 'error');
             }
         };
+
+        const handleNewOriginalKeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                saveModelMapping();
+            }
+        };
+
+        const handleLoginKeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                login();
+            }
+        };
+
+        const addModelMapping = saveModelMapping;
 
         const deleteModelMapping = async (orig) => {
             try {
@@ -1942,6 +1958,9 @@ const app = createApp({
             doUploadFiles,
             loadModelMappings,
             saveFallbackModel,
+            saveModelMapping,
+            handleNewOriginalKeydown,
+            handleLoginKeydown,
             addModelMapping,
             deleteModelMapping,
             clearModelMappings,

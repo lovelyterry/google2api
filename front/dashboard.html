@@ -49,7 +49,7 @@
             </div>
             <div class="login-body">
                 <div class="password-input-wrapper">
-                    <input type="password" v-model="loginPassword" placeholder="输入访问密码..." @keyup.enter="login" />
+                    <input type="password" v-model="loginPassword" placeholder="输入访问密码..." @keydown="handleLoginKeydown" />
                 </div>
                 <button class="btn btn-primary login-btn" @click="login">登 录 面 板</button>
             </div>
@@ -1084,75 +1084,30 @@
                                 </div>
                             </div>
 
-                            <!-- 1. 顶层映射与兜底控制 (并排 2-Column Grid) -->
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; margin-bottom: 16px;">
-                                <!-- 规则配置 (Fallback 兜底) -->
-                                <div class="config-section-card" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between;">
-                                    <div>
-                                        <div class="config-section-title">
-                                            <div class="config-section-title-left">
-                                                <span>🛡️</span>
-                                                <span>全局兜底模型设置</span>
-                                            </div>
-                                        </div>
-                                        <div class="form-group mb-2">
-                                            <label for="fallbackTargetModel" class="form-label" style="font-size: 12px; font-weight: 600;">兜底目标模型:</label>
-                                            <select id="fallbackTargetModel" v-model="models.fallbackModel" class="config-input-styled mapping-select">
-                                                <option value="">-- 选择兜底目标模型 (留空为禁用) --</option>
-                                                <option v-for="opt in models.availableOptions" :key="'fb-' + opt" :value="opt">{{ opt }}</option>
-                                            </select>
-                                            <small class="config-note" style="display: block; margin-top: 6px; opacity: 0.75;">当请求的模型未匹配任何规则且非可用模型时，自动兜底重定向至此模型</small>
-                                        </div>
-                                    </div>
-                                    <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
-                                        <button type="button" class="btn btn-primary" style="height: 32px; padding: 0 16px; font-size: 12.5px;" @click="saveFallbackModel">
-                                            💾 保存兜底设置
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <!-- 自定义映射规则配置卡片 -->
-                                <div class="config-section-card" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between;">
-                                    <div>
-                                        <div class="config-section-title">
-                                            <div class="config-section-title-left">
-                                                <span>➕</span>
-                                                <span>添加 / 修改自定义映射规则</span>
-                                            </div>
-                                        </div>
-                                        <div class="form-row-align-end mapping-form-row" style="margin-bottom: 8px;">
-                                            <div class="form-col-flex">
-                                                <label class="form-label" style="font-size: 12px; font-weight: 600;">前端请求模型:</label>
-                                                <input type="text" v-model="models.newOriginal" class="config-input-styled mapping-input" placeholder="例如: gpt-4, claude-3-5" />
-                                            </div>
-                                            <div class="arrow-separator mapping-arrow" style="align-self: flex-end; padding-bottom: 6px; font-weight: 700; color: var(--primary);">➔</div>
-                                            <div class="form-col-flex">
-                                                <label class="form-label" style="font-size: 12px; font-weight: 600;">映射目标模型:</label>
-                                                <select v-model="models.newTarget" class="config-input-styled mapping-select">
-                                                    <option value="" disabled>-- 选择目标模型 --</option>
-                                                    <option v-for="opt in models.availableOptions" :key="'target-' + opt" :value="opt">{{ opt }}</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
-                                        <button type="button" class="btn btn-primary btn-mapping-save" style="height: 32px; padding: 0 16px; font-size: 12.5px;" @click="addModelMapping">
-                                            ➕ 保存映射规则
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- 2. 已生效的手动 / 自定义映射规则列表 (宽屏全幅卡片) -->
+                            <!-- 自定义映射规则列表 -->
                             <div class="config-section-card mb-3">
                                 <div class="config-section-title">
                                     <div class="config-section-title-left">
                                         <span>⚙️</span>
-                                        <span>已生效的手动 / 自定义映射规则列表</span>
+                                        <span>自定义映射规则列表</span>
                                         <span class="badge badge-primary badge-ml-1">{{ Object.keys(models.mappings).length }} 条规则</span>
                                     </div>
                                     <button class="btn-xs btn-danger-outline" @click="clearModelMappings">🗑️ 清空所有自定义映射</button>
                                 </div>
+
+                                <!-- 全局兜底模型设置 -->
+                                <div class="mb-3 p-3" style="background: rgba(255, 255, 255, 0.03); border: 1px dashed var(--border-color); border-radius: 8px;">
+                                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                                        <span style="font-size: 14px;">🛡️</span>
+                                        <label for="fallbackTargetModel" class="form-label mb-0" style="font-size: 12.5px; font-weight: 600; white-space: nowrap;">全局兜底目标模型:</label>
+                                        <select id="fallbackTargetModel" v-model="models.fallbackModel" class="config-input-styled mapping-select" style="max-width: 320px; flex: 1; height: 32px; font-size: 12.5px;" @change="saveFallbackModel">
+                                            <option value="">-- 选择兜底目标模型 (留空为禁用) --</option>
+                                            <option v-for="opt in models.availableOptions" :key="'fb-' + opt" :value="opt">{{ opt }}</option>
+                                        </select>
+                                    </div>
+                                    <small class="config-note" style="display: block; margin-top: 6px; opacity: 0.75;">当请求的模型未匹配任何规则且非可用模型时，自动兜底重定向至此模型（修改后自动保存）</small>
+                                </div>
+
                                 <div class="table-container">
                                     <table>
                                         <thead>
@@ -1171,9 +1126,26 @@
                                                 <td style="text-align: right;"><button class="btn-xs btn-danger-outline" @click="deleteModelMapping(orig)">删除</button></td>
                                             </tr>
                                             <tr v-if="Object.keys(models.mappings).length === 0">
-                                                <td colspan="4" style="text-align: center; padding: 36px; opacity: 0.65;">
-                                                    <div style="font-size: 32px; margin-bottom: 8px;">📭</div>
-                                                    <div style="font-size: 13px;">暂无自定义重定向映射规则</div>
+                                                <td colspan="4" style="text-align: center; padding: 24px 16px; opacity: 0.65;">
+                                                    <div style="font-size: 13px;">暂无自定义重定向映射规则，可在下方直接添加：</div>
+                                                </td>
+                                            </tr>
+                                            <!-- 新增/修改自定义映射规则（表格末行保存） -->
+                                            <tr style="background: rgba(59, 130, 246, 0.03);">
+                                                <td>
+                                                    <input type="text" v-model="models.newOriginal" class="config-input-styled mapping-input" placeholder="例如: gpt-4, claude-3-5" style="width: 100%; height: 32px; font-size: 12.5px;" @keydown="handleNewOriginalKeydown" />
+                                                </td>
+                                                <td style="text-align: center;"><span class="model-arrow-badge">➔</span></td>
+                                                <td>
+                                                    <select v-model="models.newTarget" class="config-input-styled mapping-select" style="width: 100%; height: 32px; font-size: 12.5px;">
+                                                        <option value="" disabled>-- 选择目标模型 --</option>
+                                                        <option v-for="opt in models.availableOptions" :key="'target-' + opt" :value="opt">{{ opt }}</option>
+                                                    </select>
+                                                </td>
+                                                <td style="text-align: right;">
+                                                    <button type="button" class="btn btn-primary" style="height: 32px; padding: 0 14px; font-size: 12px; border-radius: 6px; white-space: nowrap;" @click="saveModelMapping">
+                                                        保存
+                                                    </button>
                                                 </td>
                                             </tr>
                                         </tbody>

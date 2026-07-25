@@ -744,7 +744,7 @@ async def stream_request(
                             buffer += raw_chunk
                             text = buffer.decode("utf-8", errors="replace")
                             log.debug(
-                                f"[VERTEX STREAM] raw buffer: {text[:500]}")
+                                f"[VERTEX STREAM] raw buffer: {text}")
                             last_end = 0
                             for obj, end_pos in _parse_json_objects(text):
                                 last_end = end_pos

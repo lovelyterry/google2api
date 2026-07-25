@@ -244,7 +244,7 @@ async def stream_request(
                     # 如果错误码是429、503或者在禁用码当中，做好记录后进行重试
                     if _is_retryable_status(status_code, DISABLE_ERROR_CODES):
                         log.warning(
-                            f"[GEMINICLI STREAM] 流式请求失败 (status={status_code}), 凭证: {current_file}, 响应: {error_body[:500] if error_body else '无'}")
+                            f"[GEMINICLI STREAM] 流式请求失败 (status={status_code}), 凭证: {current_file}, 响应: {error_body if error_body else '无'}")
 
                         # 解析冷却时间
                         cooldown_until = None
@@ -327,7 +327,7 @@ async def stream_request(
                     else:
                         # 错误码不在禁用码当中，直接返回，无需重试
                         log.error(
-                            f"[GEMINICLI STREAM] 流式请求失败，非重试错误码 (status={status_code}), 凭证: {current_file}, 响应: {error_body[:500] if error_body else '无'}")
+                            f"[GEMINICLI STREAM] 流式请求失败，非重试错误码 (status={status_code}), 凭证: {current_file}, 响应: {error_body if error_body else '无'}")
                         await record_api_call_error(
                             credential_manager, current_file, status_code,
                             None, mode="geminicli", model_name=model_name,
@@ -587,7 +587,7 @@ async def non_stream_request(
             # 统一处理所有需要重试的错误码（429、503、禁用码）
             if _is_retryable_status(status_code, DISABLE_ERROR_CODES):
                 log.warning(
-                    f"[NON-STREAM] 非流式请求失败 (status={status_code}), 凭证: {current_file}, 响应: {error_text[:500] if error_text else '无'}")
+                    f"[NON-STREAM] 非流式请求失败 (status={status_code}), 凭证: {current_file}, 响应: {error_text if error_text else '无'}")
 
                 # 解析冷却时间
                 cooldown_until = None
@@ -699,7 +699,7 @@ async def non_stream_request(
             else:
                 # 错误码不在重试范围内，直接返回
                 log.error(
-                    f"[NON-STREAM] 非流式请求失败，非重试错误码 (status={status_code}), 凭证: {current_file}, 响应: {error_text[:500] if error_text else '无'}")
+                    f"[NON-STREAM] 非流式请求失败，非重试错误码 (status={status_code}), 凭证: {current_file}, 响应: {error_text if error_text else '无'}")
                 await record_api_call_error(
                     credential_manager, current_file, status_code,
                     None, mode="geminicli", model_name=model_name,

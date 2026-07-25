@@ -299,6 +299,12 @@ async def stream_post_async(
                     else:
                         async for line in r.aiter_lines():
                             yield line
-    except (GeneratorExit, asyncio.CancelledError):
-        log.debug(f"[HTTP STREAM] 客户端断开连接，取消流式传输: {url}")
-        return
+    except GeneratorExit:
+        log.debug(f"[HTTP STREAM] 客户端关闭生成器，终止流式传输: {url}")
+        raise
+    except asyncio.CancelledError:
+        log.debug(f"[HTTP STREAM] 任务被取消，取消流式传输: {url}")
+        raise
+    except Exception as e:
+        log.error(f"[HTTP STREAM ERROR] 流式传输异常: {e}")
+        raise

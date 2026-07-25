@@ -457,7 +457,7 @@ async def stream_request(
                     # 如果错误码是429、503或者在禁用码当中，做好记录后进行重试
                     if _is_retryable_status(status_code, DISABLE_ERROR_CODES, error_body):
                         log.warning(
-                            f"[ANTIGRAVITY STREAM] 流式请求失败 (status={status_code}), 凭证: {current_file}, 响应: {error_body[:500] if error_body else '无'}")
+                            f"[ANTIGRAVITY STREAM] 流式请求失败 (status={status_code}), 凭证: {current_file}, 响应: {error_body if error_body else '无'}")
 
                         # 解析冷却时间
                         cooldown_until = None
@@ -501,7 +501,7 @@ async def stream_request(
                     else:
                         # 错误码不在禁用码当中，直接返回，无需重试
                         log.error(
-                            f"[ANTIGRAVITY STREAM] 流式请求失败，非重试错误码 (status={status_code}), 凭证: {current_file}, 响应: {error_body[:500] if error_body else '无'}")
+                            f"[ANTIGRAVITY STREAM] 流式请求失败，非重试错误码 (status={status_code}), 凭证: {current_file}, 响应: {error_body if error_body else '无'}")
                         await record_api_call_error(
                             credential_manager, current_file, status_code,
                             None, mode="antigravity", model_name=model_name,
@@ -819,7 +819,7 @@ async def non_stream_request(
 
                 if _is_retryable_status(status_code, DISABLE_ERROR_CODES, error_text):
                     log.warning(
-                        f"[ANTIGRAVITY] 非流式请求失败 (status={status_code}), 凭证: {current_file}, 响应: {error_text[:500] if error_text else '无'}")
+                        f"[ANTIGRAVITY] 非流式请求失败 (status={status_code}), 凭证: {current_file}, 响应: {error_text if error_text else '无'}")
 
                     # 解析冷却时间
                     cooldown_until = None
@@ -860,7 +860,7 @@ async def non_stream_request(
                 else:
                     # 错误码不在禁用码当中，直接返回，无需重试
                     log.error(
-                        f"[ANTIGRAVITY] 非流式请求失败，非重试错误码 (status={status_code}), 凭证: {current_file}, 响应: {error_text[:500] if error_text else '无'}")
+                        f"[ANTIGRAVITY] 非流式请求失败，非重试错误码 (status={status_code}), 凭证: {current_file}, 响应: {error_text if error_text else '无'}")
                     await record_api_call_error(
                         credential_manager, current_file, status_code,
                         None, mode="antigravity", model_name=model_name,
@@ -994,7 +994,7 @@ async def fetch_available_models(force_refresh: bool = False) -> List[Dict[str, 
         if response.status_code == 200:
             data = response.json()
             log.debug(
-                f"[ANTIGRAVITY] Raw models response: {json.dumps(data, ensure_ascii=False)[:500]}")
+                f"[ANTIGRAVITY] Raw models response: {json.dumps(data, ensure_ascii=False)}")
 
             # 转换为 OpenAI 格式的模型列表，使用 Model 类
             model_list = []
@@ -1041,7 +1041,7 @@ async def fetch_available_models(force_refresh: bool = False) -> List[Dict[str, 
             return model_list
         else:
             log.error(
-                f"[ANTIGRAVITY] Failed to fetch models ({response.status_code}): {response.text[:500]}")
+                f"[ANTIGRAVITY] Failed to fetch models ({response.status_code}): {response.text}")
             return _MODELS_CACHE if _MODELS_CACHE else []
 
     except Exception as e:
@@ -1104,7 +1104,7 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
         if response.status_code == 200:
             data = response.json()
             log.debug(
-                f"[ANTIGRAVITY QUOTA] Raw response: {json.dumps(data, ensure_ascii=False)[:500]}")
+                f"[ANTIGRAVITY QUOTA] Raw response: {json.dumps(data, ensure_ascii=False)}")
 
             quota_info = {}
 
@@ -1129,7 +1129,7 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
             }
         else:
             log.error(
-                f"[ANTIGRAVITY QUOTA] Failed to fetch quota ({response.status_code}): {response.text[:500]}")
+                f"[ANTIGRAVITY QUOTA] Failed to fetch quota ({response.status_code}): {response.text}")
             return {
                 "success": False,
                 "error": f"API返回错误: {response.status_code}"
@@ -1171,7 +1171,7 @@ async def fetch_quota_summary(access_token: str, project_id: Optional[str] = Non
         if response.status_code == 200:
             data = response.json()
             log.debug(
-                f"[ANTIGRAVITY QUOTA SUMMARY] Raw response: {json.dumps(data, ensure_ascii=False)[:500]}")
+                f"[ANTIGRAVITY QUOTA SUMMARY] Raw response: {json.dumps(data, ensure_ascii=False)}")
 
             groups = []
             if 'groups' in data and isinstance(data['groups'], list):
@@ -1206,7 +1206,7 @@ async def fetch_quota_summary(access_token: str, project_id: Optional[str] = Non
             }
         else:
             log.error(
-                f"[ANTIGRAVITY QUOTA SUMMARY] Failed to fetch quota summary ({response.status_code}): {response.text[:500]}")
+                f"[ANTIGRAVITY QUOTA SUMMARY] Failed to fetch quota summary ({response.status_code}): {response.text}")
             return {
                 "success": False,
                 "error": f"API返回错误: {response.status_code}"
