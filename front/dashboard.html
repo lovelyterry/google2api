@@ -313,8 +313,10 @@
                                         <div class="account-card-title">
                                             <div class="account-card-email-info">
                                                 <input type="checkbox" :value="item.filename" v-model="ag.selectedFiles">
-                                                <span class="account-card-email" :title="item.filename">{{ item.user_email || item.filename }}</span>
-                                                <span v-if="item.user_name" class="account-card-name">{{ item.user_name }}</span>
+                                                <div class="account-email-details">
+                                                    <span class="account-card-email" :title="item.filename">{{ item.user_email || item.filename }}</span>
+                                                    <span v-if="item.user_name" class="account-card-name">{{ item.user_name }}</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -412,7 +414,12 @@
                                             <tr :class="{ 'account-row-disabled': item.disabled, 'account-row-selected': item.is_selected || item.filename === ag.currentSelected }">
                                                 <td class="td-check"><input type="checkbox" :value="item.filename" v-model="ag.selectedFiles"></td>
                                                 <td class="td-index">{{ idx + 1 + (ag.currentPage - 1) * ag.pageSize }}</td>
-                                                <td class="td-email-truncate" :title="item.user_email || item.filename"><span class="table-email">{{ item.user_email || item.filename }}</span> <span v-if="item.user_name" class="user-name-sub">({{ item.user_name }})</span></td>
+                                                <td class="td-email-truncate" :title="item.user_email || item.filename">
+                                                    <div class="account-email-details">
+                                                        <span class="table-email">{{ item.user_email || item.filename }}</span>
+                                                        <span v-if="item.user_name" class="user-name-sub">{{ item.user_name }}</span>
+                                                    </div>
+                                                </td>
                                                 <td>
                                                     <div v-if="getQuotaBuckets(item.quota_groups).length > 0" class="quota-box quota-box-compact">
                                                         <div v-for="(b, bIdx) in getQuotaBuckets(item.quota_groups)" :key="b.bucketId || bIdx" class="quota-item" :title="getBucketTitle(b)">
@@ -641,8 +648,10 @@
                                         <div class="account-card-title">
                                             <div class="account-card-email-info">
                                                 <input type="checkbox" :value="item.filename" v-model="oauth.selectedFiles">
-                                                <span class="account-card-email" :title="item.filename">{{ item.user_email || item.filename }}</span>
-                                                <span v-if="item.user_name" class="account-card-name">{{ item.user_name }}</span>
+                                                <div class="account-email-details">
+                                                    <span class="account-card-email" :title="item.filename">{{ item.user_email || item.filename }}</span>
+                                                    <span v-if="item.user_name" class="account-card-name">{{ item.user_name }}</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -703,7 +712,12 @@
                                             <tr :class="{ 'account-row-disabled': item.disabled, 'account-row-selected': item.is_selected || item.filename === oauth.currentSelected }">
                                                 <td style="text-align: center;"><input type="checkbox" :value="item.filename" v-model="oauth.selectedFiles"></td>
                                                 <td style="text-align: center; color: var(--text-secondary);">{{ idx + 1 + (oauth.currentPage - 1) * oauth.pageSize }}</td>
-                                                <td style="min-width: 260px; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="item.user_email || item.filename"><span class="table-email">{{ item.user_email || item.filename }}</span> <span v-if="item.user_name" class="user-name-sub">({{ item.user_name }})</span></td>
+                                                <td style="min-width: 260px; max-width: 400px;" :title="item.user_email || item.filename">
+                                                    <div class="account-email-details">
+                                                        <span class="table-email">{{ item.user_email || item.filename }}</span>
+                                                        <span v-if="item.user_name" class="user-name-sub">{{ item.user_name }}</span>
+                                                    </div>
+                                                </td>
                                                 <td>
                                                     <span v-if="item.is_selected || item.filename === oauth.currentSelected" class="badge badge-selected-glow" title="当前调度算法选中的账号">🎯 当前调度选中</span>
                                                     <span v-if="item.disabled" class="badge badge-secondary">🚫 已禁用</span>
