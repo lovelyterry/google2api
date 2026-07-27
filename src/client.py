@@ -301,10 +301,10 @@ async def stream_post_async(
                             yield line
     except GeneratorExit:
         log.debug(f"[HTTP STREAM] 客户端关闭生成器，终止流式传输: {url}")
-        raise
+        return
     except asyncio.CancelledError:
         log.debug(f"[HTTP STREAM] 任务被取消，取消流式传输: {url}")
-        raise
+        return
     except Exception as e:
         log.error(f"[HTTP STREAM ERROR] 流式传输异常: {e}")
-        raise
+        raise e
