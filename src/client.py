@@ -122,8 +122,11 @@ class HttpClientManager:
             if proxy:
                 session_kwargs["proxy"] = proxy
 
-            async with CurlAsyncSession(**session_kwargs) as session:
+            session = CurlAsyncSession(**session_kwargs)
+            try:
                 yield session
+            finally:
+                await _close_session(session)
 
     @asynccontextmanager
     async def get_streaming_client(
