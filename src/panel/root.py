@@ -97,17 +97,48 @@ async def sse_stream(request: Request, token: str = None):
             # 建立连接时推送初始化成功事件
             yield "event: init\ndata: {\"connected\": true}\n\n"
             while True:
-                if await request.is_disconnected():
-                    break
+                # 同时等待两件事：队列有新事件 OR 客户端断开
+                # 谁先发生处理谁，彻底避免向死连接写数据
+                queue_task = asyncio.ensure_future(queue.get())
+                disconnect_task = asyncio.ensure_future(request.is_disconnected())
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                    event_type = event.get("type", "message")
-                    data_str = json.dumps(
-                        event.get("data", {}), ensure_ascii=False)
-                    yield f"event: {event_type}\ndata: {data_str}\n\n"
-                except asyncio.TimeoutError:
-                    # 15 秒心跳包，维持长连接活跃
+                    done, pending = await asyncio.wait(
+                        [queue_task, disconnect_task],
+                        timeout=15.0,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                finally:
+                    # 取消未完成的任务，避免泄漏
+                    for task in pending:
+                        task.cancel()
+                        try:
+                            await task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+
+                if not done:
+                    # 15 秒超时，发心跳包维持长连接
                     yield ": ping\n\n"
+                    continue
+
+                # 优先处理断开检测
+                if disconnect_task in done:
+                    try:
+                        if disconnect_task.result():
+                            break  # 客户端已断开，退出
+                    except Exception:
+                        break
+
+                # 处理队列事件
+                if queue_task in done:
+                    try:
+                        event = queue_task.result()
+                        event_type = event.get("type", "message")
+                        data_str = json.dumps(
+                            event.get("data", {}), ensure_ascii=False)
+                        yield f"event: {event_type}\ndata: {data_str}\n\n"
+                    except Exception:
+                        break
         finally:
             await sse_manager.disconnect(queue)
 

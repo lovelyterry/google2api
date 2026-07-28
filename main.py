@@ -306,6 +306,16 @@ def main():
         hypercorn_error_logger.handlers = [UnifiedLogHandler()]
         hypercorn_error_logger.propagate = False
 
+        # 过滤 asyncio 内部的 socket.send() 噪音：
+        # 该消息来自 Python 标准库 asyncio/selector_events.py（logger 名为 'asyncio'），
+        # 客户端主动断开连接时会触发，属于正常现象，降级为 debug 避免刷屏。
+        # 屏蔽 asyncio 内部的 socket.send() 噪音。
+        # 该消息产生于 asyncio.proactor_events（Windows）或 asyncio.selector_events（Linux）子logger。
+        # addFilter 对子logger传播上来的消息无效；
+        # 正确做法是设置父级 asyncio logger 的 level，
+        # 这会影响所有子 logger 的 isEnabledFor() 判断，让 WARNING 在产生时就直接丢弃。
+        logging.getLogger("asyncio").setLevel(logging.ERROR)
+
         class ErrorOnlyAccessLogger(logging.Logger):
             def handle(self, record):
                 # Hypercorn access log status code is in record.args['s'] or record.status

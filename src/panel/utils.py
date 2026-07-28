@@ -52,7 +52,8 @@ class ConnectionManager:
     async def send_personal_message(self, message: str, websocket: WebSocket):
         try:
             await websocket.send_text(message)
-        except Exception:
+        except Exception as e:
+            log.debug(f"WebSocket 单播发送失败（连接已断开）: {type(e).__name__}: {e}")
             self.disconnect(websocket)
 
     async def broadcast(self, message: str):
@@ -61,7 +62,9 @@ class ConnectionManager:
         for conn in self.active_connections:
             try:
                 await conn.send_text(message)
-            except Exception:
+            except Exception as e:
+                # 记录真实异常原因，方便排查；连接断开属于正常情况用 debug 级别
+                log.debug(f"WebSocket 广播失败（死连接已移除）: {type(e).__name__}: {e}")
                 dead_connections.append(conn)
 
         # 批量移除死连接
