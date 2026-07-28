@@ -1067,6 +1067,20 @@ def _parse_reset_time_to_beijing(reset_time_raw: str) -> str:
         return 'N/A'
 
 
+def _format_network_error(e: Exception) -> str:
+    """将网络/TLS/curl 底层异常转换为人性化的中文提示信息"""
+    err_str = str(e)
+    if any(k in err_str for k in ["TLS connect error", "SSLError", "OPENSSL_internal", "SSL"]):
+        return "网络连接失败 (TLS/SSL握手异常，请检查网络代理或代理节点联通性)"
+    if "Could not resolve host" in err_str or "resolve host" in err_str:
+        return "网络连接失败 (无法解析域名 DNS，请检查网络/代理设置)"
+    if "Connection refused" in err_str or "Failed to connect" in err_str:
+        return "网络连接失败 (目标地址或代理拒绝连接)"
+    if "Timeout" in err_str or "timed out" in err_str or "CURLE_OPERATION_TIMEDOUT" in err_str:
+        return "网络请求超时 (请检查代理节点响应速度或网络延迟)"
+    return f"网络请求异常: {err_str}"
+
+
 async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
     """
     获取指定凭证的额度信息
@@ -1075,74 +1089,76 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
         access_token: Antigravity 访问令牌
 
     Returns:
-        包含额度信息的字典，格式为：
-        {
-            "success": True/False,
-            "models": {
-                "model_name": {
-                    "remaining": 0.95,
-                    "resetTime": "12-20 10:30",
-                    "resetTimeRaw": "2025-12-20T02:30:00Z"
-                }
-            },
-            "error": "错误信息" (仅在失败时)
-        }
+        包含额度信息的字典
     """
 
     headers = build_antigravity_headers(access_token)
+    max_retries = 2
 
-    try:
-        antigravity_url = await get_antigravity_api_url()
+    for attempt in range(max_retries):
+        try:
+            antigravity_url = await get_antigravity_api_url()
 
-        response = await post_async(
-            url=f"{antigravity_url}/v1internal:fetchAvailableModels",
-            json={},
-            headers=headers,
-            timeout=30.0
-        )
+            response = await post_async(
+                url=f"{antigravity_url}/v1internal:fetchAvailableModels",
+                json={},
+                headers=headers,
+                timeout=30.0
+            )
 
-        if response.status_code == 200:
-            data = response.json()
-            log.debug(
-                f"[ANTIGRAVITY QUOTA] Raw response: {json.dumps(data, ensure_ascii=False)}")
+            if response.status_code == 200:
+                data = response.json()
+                log.debug(
+                    f"[ANTIGRAVITY QUOTA] Raw response: {json.dumps(data, ensure_ascii=False)}")
 
-            quota_info = {}
+                quota_info = {}
 
-            if 'models' in data and isinstance(data['models'], dict):
-                for model_id, model_data in data['models'].items():
-                    if isinstance(model_data, dict) and 'quotaInfo' in model_data:
-                        quota = model_data['quotaInfo']
-                        remaining = quota.get('remainingFraction', 0)
-                        reset_time_raw = quota.get('resetTime', '')
-                        reset_time_beijing = _parse_reset_time_to_beijing(
-                            reset_time_raw)
+                if 'models' in data and isinstance(data['models'], dict):
+                    for model_id, model_data in data['models'].items():
+                        if isinstance(model_data, dict) and 'quotaInfo' in model_data:
+                            quota = model_data['quotaInfo']
+                            remaining = quota.get('remainingFraction', 0)
+                            reset_time_raw = quota.get('resetTime', '')
+                            reset_time_beijing = _parse_reset_time_to_beijing(
+                                reset_time_raw)
 
-                        quota_info[model_id] = {
-                            "remaining": remaining,
-                            "resetTime": reset_time_beijing,
-                            "resetTimeRaw": reset_time_raw
-                        }
+                            quota_info[model_id] = {
+                                "remaining": remaining,
+                                "resetTime": reset_time_beijing,
+                                "resetTimeRaw": reset_time_raw
+                            }
 
-            return {
-                "success": True,
-                "models": quota_info
-            }
-        else:
-            log.error(
-                f"[ANTIGRAVITY QUOTA] Failed to fetch quota ({response.status_code}): {response.text}")
+                return {
+                    "success": True,
+                    "models": quota_info
+                }
+            else:
+                log.error(
+                    f"[ANTIGRAVITY QUOTA] Failed to fetch quota ({response.status_code}): {response.text}")
+                return {
+                    "success": False,
+                    "error": f"API返回错误: {response.status_code}"
+                }
+
+        except Exception as e:
+            err_str = str(e)
+            is_net_err = any(k in err_str for k in ["TLS connect error", "SSLError", "OPENSSL_internal", "resolve host", "Connection refused", "CURLE_"])
+            if is_net_err and attempt < max_retries - 1:
+                log.warning(f"[ANTIGRAVITY QUOTA] 网络/TLS握手异常，正在进行第 {attempt + 1} 次重试...")
+                await asyncio.sleep(0.5)
+                continue
+
+            friendly_err = _format_network_error(e)
+            if is_net_err:
+                log.warning(f"[ANTIGRAVITY QUOTA] 获取额度失败: {friendly_err}")
+            else:
+                import traceback
+                log.error(f"[ANTIGRAVITY QUOTA] Failed to fetch quota: {e}")
+                log.error(f"[ANTIGRAVITY QUOTA] Traceback: {traceback.format_exc()}")
             return {
                 "success": False,
-                "error": f"API返回错误: {response.status_code}"
+                "error": friendly_err
             }
-
-    except Exception as e:
-        import traceback
-        log.error(f"[ANTIGRAVITY QUOTA] Failed to fetch quota: {e}")
-        log.error(f"[ANTIGRAVITY QUOTA] Traceback: {traceback.format_exc()}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
 
 
 async def fetch_quota_summary(access_token: str, project_id: Optional[str] = None) -> Dict[str, Any]:
@@ -1158,67 +1174,79 @@ async def fetch_quota_summary(access_token: str, project_id: Optional[str] = Non
     """
     headers = build_antigravity_headers(access_token)
     payload = {"project": project_id} if project_id else {}
+    max_retries = 2
 
-    try:
-        antigravity_url = await get_antigravity_api_url()
-        response = await post_async(
-            url=f"{antigravity_url}/v1internal:retrieveUserQuotaSummary",
-            json=payload,
-            headers=headers,
-            timeout=30.0
-        )
+    for attempt in range(max_retries):
+        try:
+            antigravity_url = await get_antigravity_api_url()
+            response = await post_async(
+                url=f"{antigravity_url}/v1internal:retrieveUserQuotaSummary",
+                json=payload,
+                headers=headers,
+                timeout=30.0
+            )
 
-        if response.status_code == 200:
-            data = response.json()
-            log.debug(
-                f"[ANTIGRAVITY QUOTA SUMMARY] Raw response: {json.dumps(data, ensure_ascii=False)}")
+            if response.status_code == 200:
+                data = response.json()
+                log.debug(
+                    f"[ANTIGRAVITY QUOTA SUMMARY] Raw response: {json.dumps(data, ensure_ascii=False)}")
 
-            groups = []
-            if 'groups' in data and isinstance(data['groups'], list):
-                for group in data['groups']:
-                    buckets = []
-                    if 'buckets' in group and isinstance(group['buckets'], list):
-                        for bucket in group['buckets']:
-                            remaining = bucket.get('remainingFraction', 0.0)
-                            reset_time_raw = bucket.get('resetTime', '')
-                            reset_time_beijing = _parse_reset_time_to_beijing(
-                                reset_time_raw)
+                groups = []
+                if 'groups' in data and isinstance(data['groups'], list):
+                    for group in data['groups']:
+                        buckets = []
+                        if 'buckets' in group and isinstance(group['buckets'], list):
+                            for bucket in group['buckets']:
+                                remaining = bucket.get('remainingFraction', 0.0)
+                                reset_time_raw = bucket.get('resetTime', '')
+                                reset_time_beijing = _parse_reset_time_to_beijing(
+                                    reset_time_raw)
 
-                            buckets.append({
-                                "bucketId": bucket.get("bucketId", ""),
-                                "window": bucket.get("window", ""),
-                                "remainingFraction": remaining,
-                                "resetTime": reset_time_beijing,
-                                "resetTimeRaw": reset_time_raw,
-                                "displayName": bucket.get("displayName"),
-                                "description": bucket.get("description")
-                            })
+                                buckets.append({
+                                    "bucketId": bucket.get("bucketId", ""),
+                                    "window": bucket.get("window", ""),
+                                    "remainingFraction": remaining,
+                                    "resetTime": reset_time_beijing,
+                                    "resetTimeRaw": reset_time_raw,
+                                    "displayName": bucket.get("displayName"),
+                                    "description": bucket.get("description")
+                                })
 
-                    groups.append({
-                        "displayName": group.get("displayName", ""),
-                        "description": group.get("description"),
-                        "buckets": buckets
-                    })
+                        groups.append({
+                            "displayName": group.get("displayName", ""),
+                            "description": group.get("description"),
+                            "buckets": buckets
+                        })
 
-            return {
-                "success": True,
-                "groups": groups
-            }
-        else:
-            log.error(
-                f"[ANTIGRAVITY QUOTA SUMMARY] Failed to fetch quota summary ({response.status_code}): {response.text}")
+                return {
+                    "success": True,
+                    "groups": groups
+                }
+            else:
+                log.error(
+                    f"[ANTIGRAVITY QUOTA SUMMARY] Failed to fetch quota summary ({response.status_code}): {response.text}")
+                return {
+                    "success": False,
+                    "error": f"API返回错误: {response.status_code}"
+                }
+
+        except Exception as e:
+            err_str = str(e)
+            is_net_err = any(k in err_str for k in ["TLS connect error", "SSLError", "OPENSSL_internal", "resolve host", "Connection refused", "CURLE_"])
+            if is_net_err and attempt < max_retries - 1:
+                log.warning(f"[ANTIGRAVITY QUOTA SUMMARY] 网络/TLS握手异常，正在进行第 {attempt + 1} 次重试...")
+                await asyncio.sleep(0.5)
+                continue
+
+            friendly_err = _format_network_error(e)
+            if is_net_err:
+                log.warning(f"[ANTIGRAVITY QUOTA SUMMARY] 获取额度分组失败: {friendly_err}")
+            else:
+                import traceback
+                log.error(f"[ANTIGRAVITY QUOTA SUMMARY] Failed to fetch quota summary: {e}")
+                log.error(f"[ANTIGRAVITY QUOTA SUMMARY] Traceback: {traceback.format_exc()}")
             return {
                 "success": False,
-                "error": f"API返回错误: {response.status_code}"
+                "error": friendly_err
             }
 
-    except Exception as e:
-        import traceback
-        log.error(
-            f"[ANTIGRAVITY QUOTA SUMMARY] Failed to fetch quota summary: {e}")
-        log.error(
-            f"[ANTIGRAVITY QUOTA SUMMARY] Traceback: {traceback.format_exc()}")
-        return {
-            "success": False,
-            "error": str(e)
-        }

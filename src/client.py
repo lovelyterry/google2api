@@ -310,4 +310,16 @@ async def stream_post_async(
         return
     except Exception as e:
         log.error(f"[HTTP STREAM ERROR] 流式传输异常: {e}")
-        raise e
+        # 不要在异步生成器中 raise —— 当调用方 break/return 后，
+        # Python 对生成器执行 athrow(GeneratorExit) 进行清理，
+        # 此时 async with 的 __aexit__ 可能触发异常，
+        # 而在 finalization 阶段 raise 会导致
+        # "RuntimeError: No active exception to reraise"。
+        # 改为 yield 一个错误 Response，让调用方处理。
+        from fastapi import Response
+        yield Response(
+            content=json_lib.dumps(
+                {"error": {"message": f"Stream error: {e}", "type": "stream_error"}}
+            ),
+            status_code=502,
+        )
