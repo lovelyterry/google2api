@@ -698,10 +698,8 @@ def build_generation_config(payload: Dict[str, Any]) -> Dict[str, Any]:
             log.info(
                 f"[ANTHROPIC2GEMINI] Extended thinking enabled with budget: {thinking_config['thinkingBudget']}")
         elif thinking_type == "disabled":
-            # 明确禁用思考模式
-            config["thinkingConfig"] = {
-                "includeThoughts": False
-            }
+            # 明确禁用思考模式，物理移除 thinkingConfig 避免 API 拒绝
+            config.pop("thinkingConfig", None)
             log.info("[ANTHROPIC2GEMINI] Extended thinking explicitly disabled")
 
     stop_sequences = payload.get("stop_sequences")
@@ -990,9 +988,13 @@ async def gemini_stream_to_anthropic_stream(
                 log.warning(
                     f"[GEMINI_TO_ANTHROPIC] 收到 Response 对象，状态码: {chunk.status_code}，直接转发错误")
                 # 直接转发错误响应内容，不做格式转换
-                error_content = chunk.body if isinstance(
-                    chunk.body, bytes) else chunk.body.encode('utf-8')
-                yield error_content
+                body_val = getattr(chunk, 'body', None)
+                if isinstance(body_val, bytes):
+                    yield body_val
+                elif isinstance(body_val, str):
+                    yield body_val.encode('utf-8')
+                elif body_val is not None:
+                    yield str(body_val).encode('utf-8')
                 return
 
             # 记录接收到的原始chunk
@@ -1000,7 +1002,7 @@ async def gemini_stream_to_anthropic_stream(
                 f"[GEMINI_TO_ANTHROPIC] Raw chunk: {chunk[:200] if chunk else b''}")
 
             # 解析 Gemini 流式块
-            if not chunk or not chunk.startswith(b"data: "):
+            if not chunk or not isinstance(chunk, (bytes, bytearray)) or not chunk.startswith(b"data: "):
                 log.debug(
                     f"[GEMINI_TO_ANTHROPIC] Skipping chunk (not SSE format or empty)")
                 continue
@@ -1021,12 +1023,37 @@ async def gemini_stream_to_anthropic_stream(
                 continue
 
             # 处理 GeminiCLI 的 response 包装格式
-            if "response" in data:
+            if isinstance(data, dict) and "response" in data:
                 response = data["response"]
             else:
                 response = data
 
-            candidate = (response.get("candidates", []) or [{}])[0] or {}
+            if isinstance(response, dict) and "error" in response:
+                log.error(f"[GEMINI_TO_ANTHROPIC] Upstream error in payload: {response['error']}")
+                err_info = response["error"]
+                err_msg = err_info.get("message") if isinstance(err_info, dict) else str(err_info)
+                if not message_start_sent:
+                    message_start_sent = True
+                    yield _sse_event(
+                        "message_start",
+                        {
+                            "type": "message_start",
+                            "message": {
+                                "id": message_id,
+                                "type": "message",
+                                "role": "assistant",
+                                "model": model,
+                                "content": [],
+                                "stop_reason": None,
+                                "stop_sequence": None,
+                                "usage": _usage_payload(),
+                            },
+                        },
+                    )
+                yield _sse_event("error", {"type": "error", "error": {"type": "api_error", "message": err_msg or "Upstream error"}})
+                return
+
+            candidate = (response.get("candidates", []) or [{}])[0] or {} if isinstance(response, dict) else {}
             parts = (candidate.get("content", {}) or {}).get("parts", []) or []
 
             # 更新 usage metadata

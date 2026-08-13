@@ -7,7 +7,7 @@ import json
 import uuid
 from typing import Any, Dict, Optional
 
-from log import log
+from src.log import log
 from src.converter.thoughtSignature_fix import SKIP_THOUGHT_SIGNATURE_VALIDATOR
 
 # ==================== Gemini API 配置 ====================
@@ -604,7 +604,7 @@ def _normalize_antigravity_request(
         if "gemini-3" in model:
             generation_config.pop("thinkingConfig", None)
         else:
-            # 对于 Gemini 2.5 系列，保留 thinkingConfig
+            # 对于 Gemini 2.5 系列
             if thinking:
                 if "thinkingConfig" not in generation_config:
                     generation_config["thinkingConfig"] = {}
@@ -612,6 +612,8 @@ def _normalize_antigravity_request(
                 thinking_config["thinkingBudget"] = 1024
                 thinking_config.pop("thinkingLevel", None)
                 thinking_config["includeThoughts"] = return_thoughts
+            else:
+                generation_config.pop("thinkingConfig", None)
     else:
         # 针对非 Gemini 模型（如 Claude）
         if thinking:
@@ -623,6 +625,9 @@ def _normalize_antigravity_request(
             thinking_config["thinkingBudget"] = 1024
             thinking_config.pop("thinkingLevel", None)
             thinking_config["includeThoughts"] = return_thoughts
+        else:
+            # 显式处于非思考模式时，剔除残留的 thinkingConfig，放置被 upstream 拒绝
+            generation_config.pop("thinkingConfig", None)
 
         # 检查最后一个 assistant 消息是否以 thinking 块开始
         contents = result.get("contents", [])
@@ -699,7 +704,7 @@ async def normalize_antigravity_request(
         规范化后的请求
     """
     # 导入配置函数
-    from config import get_return_thoughts_to_frontend
+    from src.config import get_return_thoughts_to_frontend
 
     result = request.copy()
     model = result.get("model", "")

@@ -426,10 +426,12 @@ async def stream_request(
                     else:
                         # 记录API调用错误(不禁用)
                         await record_api_call_error(
+                            credential_manager,
                             current_file,
                             status_code=status_code,
                             error_message=error_body or f"HTTP {status_code}",
-                            mode="antigravity"
+                            mode="antigravity",
+                            model_name=model_name
                         )
 
                     # 判断是否需要重试
@@ -454,7 +456,7 @@ async def stream_request(
                 # 如果不是Response对象，则是正常数据流
                 if not success_recorded:
                     # 第一次收到正常数据时，记录调用成功并触发伴随流量
-                    await record_api_call_success(current_file, mode="antigravity")
+                    await record_api_call_success(credential_manager, current_file, mode="antigravity", model_name=model_name)
                     asyncio.create_task(
                         send_background_telemetry(
                             access_token, project_id, request_id, model_name
@@ -471,10 +473,12 @@ async def stream_request(
         except Exception as e:
             log.error(f"[ANTIGRAVITY STREAM] 请求引发异常: {e}")
             await record_api_call_error(
+                credential_manager,
                 current_file,
                 status_code=500,
                 error_message=str(e),
-                mode="antigravity"
+                mode="antigravity",
+                model_name=model_name
             )
 
             if attempt < max_retries:
@@ -639,7 +643,7 @@ async def non_stream_request(
             last_status_code = status_code
 
             if status_code == 200:
-                await record_api_call_success(current_file, mode="antigravity")
+                await record_api_call_success(credential_manager, current_file, mode="antigravity", model_name=model_name)
                 asyncio.create_task(
                     send_background_telemetry(
                         access_token, project_id, request_id, model_name
@@ -677,10 +681,12 @@ async def non_stream_request(
             else:
                 # 记录API调用错误(不禁用)
                 await record_api_call_error(
+                    credential_manager,
                     current_file,
                     status_code=status_code,
                     error_message=error_body or f"HTTP {status_code}",
-                    mode="antigravity"
+                    mode="antigravity",
+                    model_name=model_name
                 )
 
             # 判断是否需要重试
@@ -716,10 +722,12 @@ async def non_stream_request(
         except Exception as e:
             log.error(f"[ANTIGRAVITY NON-STREAM] 请求引发异常: {e}")
             await record_api_call_error(
+                credential_manager,
                 current_file,
                 status_code=500,
                 error_message=str(e),
-                mode="antigravity"
+                mode="antigravity",
+                model_name=model_name
             )
 
             last_error_data = {"error": f"Request failed: {str(e)}"}
