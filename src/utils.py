@@ -21,6 +21,11 @@ from src.auth import (
     verify_panel_token,
 )
 
+# Antigravity CLI 客户端仿真常量
+ANTIGRAVITY_CLI_VERSION = "1.1.9"
+ANTIGRAVITY_CLI_PLATFORM = "windows/amd64"
+ANTIGRAVITY_USER_AGENT = f"antigravity/cli/{ANTIGRAVITY_CLI_VERSION} {ANTIGRAVITY_CLI_PLATFORM}"
+
 
 def get_resource_path(relative_path: str) -> str:
     """
@@ -56,7 +61,7 @@ BASE_MODELS = [
     "gemini-3-flash-preview",
     "gemini-3.1-pro-preview",
     "gemini-3.1-flash-lite",
-    "gemini-3.5-flash"
+    "gemini-3.5-flash",
 ]
 
 
