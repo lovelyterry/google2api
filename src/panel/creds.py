@@ -1491,10 +1491,8 @@ async def test_credential(
         if not project_id:
             raise HTTPException(status_code=400, detail="凭证中没有项目ID")
 
-        # 根据模式选择 API 端点和请求头
-        # 对于 geminicli 模式，使用两次测试：gemini-2.5-flash 和 gemini-3-flash-preview
-        # 对于 antigravity 模式，只使用 gemini-2.5-flash
-        test_model = "gemini-2.5-flash"
+        # 统一使用 gemini-3.6-flash-medium 进行冒烟测试
+        test_model = "gemini-3.6-flash-medium"
 
         if mode == "antigravity":
             api_base_url = await get_antigravity_api_url()
@@ -1508,7 +1506,7 @@ async def test_credential(
                 "User-Agent": GEMINICLI_USER_AGENT,
             }
 
-        # 第一次测试：使用 gemini-2.5-flash
+        # 发送冒烟测试请求
         response = await post_async(
             url=f"{api_base_url}/v1internal:generateContent",
             json={
@@ -1535,50 +1533,6 @@ async def test_credential(
                     "error_codes": [],
                     "error_messages": {}
                 }, mode=mode)
-
-                # 如果是 geminicli 模式且第一次测试成功，继续测试 gemini-3-flash-preview
-                if mode == "geminicli":
-                    preview_model = "gemini-3-flash-preview"
-                    log.info(
-                        f"开始测试 preview 模型: {filename} (model={preview_model})")
-
-                    try:
-                        preview_response = await post_async(
-                            url=f"{api_base_url}/v1internal:generateContent",
-                            json={
-                                "model": preview_model,
-                                "project": project_id,
-                                "request": {
-                                    "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
-                                    "generationConfig": {"maxOutputTokens": 1}
-                                }
-                            },
-                            headers=headers,
-                            timeout=30.0
-                        )
-
-                        preview_status = preview_response.status_code
-
-                        if preview_status == 200 or preview_status == 429:
-                            # preview 模型测试成功，设置 preview=True
-                            log.info(
-                                f"Preview 模型测试成功: {filename} (status={preview_status})")
-                            await storage_adapter.update_credential_state(filename, {
-                                "preview": True
-                            }, mode=mode)
-                        elif preview_status == 404:
-                            # preview 模型返回 404，说明不支持，设置 preview=False
-                            log.warning(
-                                f"Preview 模型不支持: {filename} (status=404)")
-                            await storage_adapter.update_credential_state(filename, {
-                                "preview": False
-                            }, mode=mode)
-                        else:
-                            # 其他错误，保持默认 preview 状态
-                            log.warning(
-                                f"Preview 模型测试失败: {filename} (status={preview_status})")
-                    except Exception as e:
-                        log.error(f"Preview 模型测试异常: {filename} - {e}")
 
             # 返回成功响应（200 或 429）
             msg = "测试成功" if status_code == 200 else "凭证被限流但有效 (HTTP 429)"

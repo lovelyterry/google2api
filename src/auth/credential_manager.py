@@ -417,9 +417,9 @@ class CredentialManager:
 
                 await self.update_credential_state(credential_name, state_updates, mode=mode)
 
-                # 针对 429/503 等限流/服务不可用错误：若未能从响应体解析出具体 reset 时间，使用默认 5 分钟 (300 秒) 冷却
+                # 针对 429/503 等限流/服务不可用错误：若未能从响应体解析出具体 reset 时间，使用默认 1 分钟 (60 秒) 冷却
                 if (error_code in (429, 503)) and (cooldown_until is None or cooldown_until <= time.time()):
-                    cooldown_until = time.time() + 300
+                    cooldown_until = time.time() + 60
 
                 # 设置模型级冷却
                 if cooldown_until is not None:

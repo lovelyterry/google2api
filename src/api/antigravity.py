@@ -10,7 +10,7 @@ import json
 import uuid
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Callable, Tuple
 
 from fastapi import Response
@@ -25,7 +25,7 @@ from src.log import log
 from src.auth import credential_manager
 from src.client import stream_post_async, post_async, get_async
 from src.schemas import Model, model_to_dict
-from src.utils import ANTIGRAVITY_USER_AGENT
+from src.utils import ANTIGRAVITY_USER_AGENT, BASE_MODELS
 
 # 导入共同的基础功能
 from src.api.utils import (
@@ -40,26 +40,6 @@ from src.api.utils import (
 # ==================== 全局凭证管理器 ====================
 
 # 使用全局单例 credential_manager，自动初始化
-
-
-# ==================== 会话状态管理 ====================
-
-SESSION_TTL_SECONDS = 6 * 60 * 60
-MAX_SESSION_STATES = 1024
-
-
-@dataclass
-class AntigravitySessionState:
-    conversation_id: str
-    trajectory_id: str
-    session_id: str
-    step_index: int
-    created_at: float
-    last_used_at: float
-
-
-# 内存回退存储
-_session_states: Dict[str, AntigravitySessionState] = {}
 
 
 def _extract_first_user_text(request_payload: Dict[str, Any]) -> str:
@@ -78,69 +58,8 @@ def _extract_first_user_text(request_payload: Dict[str, Any]) -> str:
     return ""
 
 
-def _session_key(request_payload: Dict[str, Any], model: str = "") -> str:
-    session_id = request_payload.get("sessionId")
-    if session_id:
-        return f"session:{session_id}"
-    model_prefix = f"model:{model}:" if model else ""
-    first_user_text = _extract_first_user_text(request_payload)
-    if first_user_text:
-        digest = hashlib.sha256(
-            first_user_text.encode("utf-8")).hexdigest()[:32]
-        return f"{model_prefix}text:{digest}"
-    return f"{model_prefix}default"
-
-
-def _prune_session_states(now: float) -> None:
-    expired = [k for k, s in _session_states.items(
-    ) if now - s.last_used_at > SESSION_TTL_SECONDS]
-    for k in expired:
-        _session_states.pop(k, None)
-    if len(_session_states) <= MAX_SESSION_STATES:
-        return
-    overflow = len(_session_states) - MAX_SESSION_STATES
-    oldest = sorted(_session_states.items(),
-                    key=lambda item: item[1].last_used_at)
-    for k, _ in oldest[:overflow]:
-        _session_states.pop(k, None)
-
-
-def _make_new_state(first_user_text: str, now: float) -> AntigravitySessionState:
-    if first_user_text:
-        digest = hashlib.sha256(first_user_text.encode("utf-8")).digest()
-        session_id_val = int.from_bytes(digest[:8], "big") & 0x7FFFFFFFFFFFFFFF
-        session_id = f"-{session_id_val}"
-    else:
-        session_id = f"-{uuid.uuid4().int % 9_000_000_000_000_000_000}"
-    return AntigravitySessionState(
-        conversation_id=str(uuid.uuid4()),
-        trajectory_id=str(uuid.uuid4()),
-        session_id=session_id,
-        step_index=1,
-        created_at=now,
-        last_used_at=now,
-    )
-
-
-async def _get_session_state(request_payload: Dict[str, Any], model: str = "") -> AntigravitySessionState:
-    now = time.time()
-    key = _session_key(request_payload, model)
-    first_user_text = _extract_first_user_text(request_payload)
-
-    _prune_session_states(now)
-    state = _session_states.get(key)
-    if state:
-        state.step_index += 1
-        state.last_used_at = now
-        return state
-    state = _make_new_state(first_user_text, now)
-    _session_states[key] = state
-    return state
-
-
-def _generate_request_id(conversation_id: str, trajectory_id: str, step: int) -> str:
-    unix_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    return f"agent/{conversation_id}/{unix_ms}/{trajectory_id}/{step}"
+def _generate_request_id() -> str:
+    return f"agent/{uuid.uuid4()}"
 
 
 def _build_labels(model: str, trajectory_id: str, step: int) -> Dict[str, str]:
@@ -192,20 +111,24 @@ async def wrap_cli_request(
     返回 (payload, request_id)。
     """
     inner = copy.deepcopy(gemini_request)
+    first_user_text = _extract_first_user_text(inner)
 
     # 移除 safetySettings（CLI 不发送）
     inner.pop("safetySettings", None)
 
-    # 获取/更新会话状态
-    state = await _get_session_state(inner, model)
-
     # 注入 sessionId
-    if not inner.get("sessionId"):
-        inner["sessionId"] = state.session_id
+    session_id = str(inner.get("sessionId") or "").strip()
+    if not session_id:
+        if first_user_text:
+            digest = hashlib.sha256(first_user_text.encode("utf-8")).digest()
+            session_id_val = int.from_bytes(digest[:8], "big") & 0x7FFFFFFFFFFFFFFF
+            session_id = f"-{session_id_val}"
+        else:
+            session_id = f"-{uuid.uuid4().int % 9_000_000_000_000_000_000}"
+        inner["sessionId"] = session_id
 
     # 注入 labels
-    inner["labels"] = _build_labels(
-        model, state.trajectory_id, state.step_index)
+    inner["labels"] = _build_labels(model, session_id, 1)
 
     # toolConfig 默认 VALIDATED
     tool_config = inner.get("toolConfig") or {}
@@ -214,8 +137,7 @@ async def wrap_cli_request(
     tool_config["functionCallingConfig"] = func_config
     inner["toolConfig"] = tool_config
 
-    request_id = _generate_request_id(
-        state.conversation_id, state.trajectory_id, state.step_index)
+    request_id = _generate_request_id()
 
     payload = {
         "project": project_id,
@@ -266,7 +188,7 @@ async def send_background_telemetry(
 
         async def _safe_post(url: str, json_payload: dict, req_headers: dict):
             try:
-                await post_async(url=url, json=json_payload, headers=req_headers, timeout=5.0)
+                await post_async(url=url, json=json_payload, headers=req_headers, timeout=5.0, skip_interval=True)
             except Exception as ex:
                 log.debug(
                     f"[ANTIGRAVITY TELEMETRY] 伴随 POST 请求静默忽略异常 ({url}): {ex}")
@@ -836,3 +758,303 @@ async def get_models_list(
     models_data = [model_to_dict(Model(id=model_id))
                    for model_id in BASE_MODELS]
     return 200, {"object": "list", "data": models_data}
+
+
+_MODELS_CACHE: List[Dict[str, Any]] = []
+_MODELS_CACHE_TIME: float = 0.0
+
+
+async def fetch_available_models(force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """
+    获取可用模型列表，返回 OpenAI API 规范的字典列表。
+    系统启动时获取一次或使用内存缓存，提升响应速度。
+    """
+    global _MODELS_CACHE, _MODELS_CACHE_TIME
+    now = time.time()
+
+    if not force_refresh and _MODELS_CACHE:
+        return _MODELS_CACHE
+
+    cred_result = await credential_manager.get_valid_credential(mode="antigravity")
+    if not cred_result:
+        log.error(
+            "[ANTIGRAVITY] No valid credentials available for fetching models")
+        return _MODELS_CACHE if _MODELS_CACHE else []
+
+    current_file, credential_data = cred_result
+    access_token = credential_data.get(
+        "access_token") or credential_data.get("token")
+
+    if not access_token:
+        log.error(
+            f"[ANTIGRAVITY] No access token in credential: {current_file}")
+        return _MODELS_CACHE if _MODELS_CACHE else []
+
+    headers = build_antigravity_headers(access_token)
+
+    try:
+        antigravity_url = await get_antigravity_api_url()
+
+        response = await post_async(
+            url=f"{antigravity_url}/v1internal:fetchAvailableModels",
+            json={},
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            log.debug(
+                f"[ANTIGRAVITY] Raw models response: {json.dumps(data, ensure_ascii=False)}")
+
+            model_list = []
+            current_timestamp = int(datetime.now(timezone.utc).timestamp())
+
+            if 'models' in data and isinstance(data['models'], dict):
+                raw_model_ids = list(data['models'].keys())
+
+                for model_id in raw_model_ids:
+                    model = Model(
+                        id=model_id,
+                        object='model',
+                        created=current_timestamp,
+                        owned_by='google'
+                    )
+                    model_list.append(model_to_dict(model))
+
+            if "claude-sonnet-4-6" in data.get('models', {}):
+                model = Model(
+                    id='claude-sonnet-4-6-thinking',
+                    object='model',
+                    created=current_timestamp,
+                    owned_by='google'
+                )
+                model_list.append(model_to_dict(model))
+            if "claude-opus-4-6-thinking" in data.get('models', {}):
+                claude_opus_model = Model(
+                    id='claude-opus-4-6',
+                    object='model',
+                    created=current_timestamp,
+                    owned_by='google'
+                )
+                model_list.append(model_to_dict(claude_opus_model))
+
+            log.info(
+                f"[ANTIGRAVITY] Fetched {len(model_list)} available models")
+            _MODELS_CACHE = model_list
+            _MODELS_CACHE_TIME = now
+            return model_list
+        else:
+            log.error(
+                f"[ANTIGRAVITY] Failed to fetch models ({response.status_code}): {response.text}")
+            return _MODELS_CACHE if _MODELS_CACHE else []
+
+    except Exception as e:
+        import traceback
+        log.error(f"[ANTIGRAVITY] Failed to fetch models: {e}")
+        log.error(f"[ANTIGRAVITY] Traceback: {traceback.format_exc()}")
+        return _MODELS_CACHE if _MODELS_CACHE else []
+
+
+def _parse_reset_time_to_beijing(reset_time_raw: str) -> str:
+    """将 UTC ISO 时间字符串转换为北京时间格式 (MM-DD HH:MM)"""
+    if not reset_time_raw:
+        return 'N/A'
+    try:
+        reset_time_clean = reset_time_raw.rstrip('Z')
+        if '.' in reset_time_clean:
+            parts = reset_time_clean.split('.')
+            reset_time_clean = f"{parts[0]}.{parts[1][:6]}"
+            utc_date = datetime.strptime(reset_time_clean, '%Y-%m-%dT%H:%M:%S.%f')
+        else:
+            utc_date = datetime.strptime(reset_time_clean, '%Y-%m-%dT%H:%M:%S')
+
+        beijing_date = utc_date + timedelta(hours=8)
+        return beijing_date.strftime('%m-%d %H:%M')
+    except Exception as e:
+        log.warning(
+            f"[ANTIGRAVITY QUOTA] Failed to parse reset time ({reset_time_raw}): {e}")
+        return 'N/A'
+
+
+def _format_network_error(e: Exception) -> str:
+    """将网络/TLS/curl 底层异常转换为人性化的中文提示信息"""
+    err_str = str(e)
+    if any(k in err_str for k in ["TLS connect error", "SSLError", "OPENSSL_internal", "SSL"]):
+        return "网络连接失败 (TLS/SSL握手异常，请检查网络代理或代理节点联通性)"
+    if "Could not resolve host" in err_str or "resolve host" in err_str:
+        return "网络连接失败 (无法解析域名 DNS，请检查网络/代理设置)"
+    if "Connection refused" in err_str or "Failed to connect" in err_str:
+        return "网络连接失败 (目标地址或代理拒绝连接)"
+    if "Timeout" in err_str or "timed out" in err_str or "CURLE_OPERATION_TIMEDOUT" in err_str:
+        return "网络请求超时 (请检查代理节点响应速度或网络延迟)"
+    return f"网络请求异常: {err_str}"
+
+
+async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
+    """
+    获取指定凭证的额度信息
+
+    Args:
+        access_token: Antigravity 访问令牌
+
+    Returns:
+        包含额度信息的字典
+    """
+    headers = build_antigravity_headers(access_token)
+    max_retries = 2
+
+    for attempt in range(max_retries):
+        try:
+            antigravity_url = await get_antigravity_api_url()
+
+            response = await post_async(
+                url=f"{antigravity_url}/v1internal:fetchAvailableModels",
+                json={},
+                headers=headers,
+                timeout=30.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                log.debug(
+                    f"[ANTIGRAVITY QUOTA] Raw response: {json.dumps(data, ensure_ascii=False)}")
+
+                quota_info = {}
+
+                if 'models' in data and isinstance(data['models'], dict):
+                    for model_id, model_data in data['models'].items():
+                        if isinstance(model_data, dict) and 'quotaInfo' in model_data:
+                            quota = model_data['quotaInfo']
+                            remaining = quota.get('remainingFraction', 0)
+                            reset_time_raw = quota.get('resetTime', '')
+                            reset_time_beijing = _parse_reset_time_to_beijing(
+                                reset_time_raw)
+
+                            quota_info[model_id] = {
+                                "remaining": remaining,
+                                "resetTime": reset_time_beijing,
+                                "resetTimeRaw": reset_time_raw
+                            }
+
+                return {
+                    "success": True,
+                    "models": quota_info
+                }
+            else:
+                log.error(
+                    f"[ANTIGRAVITY QUOTA] Failed to fetch quota ({response.status_code}): {response.text}")
+                return {
+                    "success": False,
+                    "error": f"API返回错误: {response.status_code}"
+                }
+
+        except Exception as e:
+            err_str = str(e)
+            is_net_err = any(k in err_str for k in ["TLS connect error", "SSLError", "OPENSSL_internal", "resolve host", "Connection refused", "CURLE_"])
+            if is_net_err and attempt < max_retries - 1:
+                log.warning(f"[ANTIGRAVITY QUOTA] 网络/TLS握手异常，正在进行第 {attempt + 1} 次重试...")
+                await asyncio.sleep(0.5)
+                continue
+
+            friendly_err = _format_network_error(e)
+            if is_net_err:
+                log.warning(f"[ANTIGRAVITY QUOTA] 获取额度失败: {friendly_err}")
+            else:
+                import traceback
+                log.error(f"[ANTIGRAVITY QUOTA] Failed to fetch quota: {e}")
+                log.error(f"[ANTIGRAVITY QUOTA] Traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "error": friendly_err
+            }
+
+
+async def fetch_quota_summary(access_token: str, project_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    获取指定凭证的详细额度分组信息 (retrieveUserQuotaSummary)
+
+    Args:
+        access_token: Antigravity 访问令牌
+        project_id: 项目 ID (可选)
+
+    Returns:
+        包含额度分组信息的字典
+    """
+    headers = build_antigravity_headers(access_token)
+    payload = {"project": project_id} if project_id else {}
+    max_retries = 2
+
+    for attempt in range(max_retries):
+        try:
+            antigravity_url = await get_antigravity_api_url()
+            response = await post_async(
+                url=f"{antigravity_url}/v1internal:retrieveUserQuotaSummary",
+                json=payload,
+                headers=headers,
+                timeout=30.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                log.debug(
+                    f"[ANTIGRAVITY QUOTA SUMMARY] Raw response: {json.dumps(data, ensure_ascii=False)}")
+
+                groups = []
+                if 'groups' in data and isinstance(data['groups'], list):
+                    for group in data['groups']:
+                        buckets = []
+                        if 'buckets' in group and isinstance(group['buckets'], list):
+                            for bucket in group['buckets']:
+                                remaining = bucket.get('remainingFraction', 0.0)
+                                reset_time_raw = bucket.get('resetTime', '')
+                                reset_time_beijing = _parse_reset_time_to_beijing(
+                                    reset_time_raw)
+
+                                buckets.append({
+                                    "bucketId": bucket.get("bucketId", ""),
+                                    "window": bucket.get("window", ""),
+                                    "remainingFraction": remaining,
+                                    "resetTime": reset_time_beijing,
+                                    "resetTimeRaw": reset_time_raw,
+                                    "displayName": bucket.get("displayName"),
+                                    "description": bucket.get("description")
+                                })
+
+                        groups.append({
+                            "displayName": group.get("displayName", ""),
+                            "description": group.get("description"),
+                            "buckets": buckets
+                        })
+
+                return {
+                    "success": True,
+                    "groups": groups
+                }
+            else:
+                log.error(
+                    f"[ANTIGRAVITY QUOTA SUMMARY] Failed to fetch quota summary ({response.status_code}): {response.text}")
+                return {
+                    "success": False,
+                    "error": f"API返回错误: {response.status_code}"
+                }
+
+        except Exception as e:
+            err_str = str(e)
+            is_net_err = any(k in err_str for k in ["TLS connect error", "SSLError", "OPENSSL_internal", "resolve host", "Connection refused", "CURLE_"])
+            if is_net_err and attempt < max_retries - 1:
+                log.warning(f"[ANTIGRAVITY QUOTA SUMMARY] 网络/TLS握手异常，正在进行第 {attempt + 1} 次重试...")
+                await asyncio.sleep(0.5)
+                continue
+
+            friendly_err = _format_network_error(e)
+            if is_net_err:
+                log.warning(f"[ANTIGRAVITY QUOTA SUMMARY] 获取额度分组失败: {friendly_err}")
+            else:
+                import traceback
+                log.error(f"[ANTIGRAVITY QUOTA SUMMARY] Failed to fetch quota summary: {e}")
+                log.error(f"[ANTIGRAVITY QUOTA SUMMARY] Traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "error": friendly_err
+            }
+

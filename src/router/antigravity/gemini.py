@@ -510,13 +510,13 @@ if __name__ == "__main__":
     def test_non_stream_request():
         """测试非流式请求"""
         print("\n" + "=" * 80)
-        print("【测试2】非流式请求 (POST /antigravity/v1/models/gemini-2.5-flash:generateContent)")
+        print("【测试2】非流式请求 (POST /antigravity/v1/models/gemini-3.6-flash-medium:generateContent)")
         print("=" * 80)
         print(
             f"请求体: {json.dumps(test_request_body, indent=2, ensure_ascii=False)}\n")
 
         response = client.post(
-            "/antigravity/v1/models/gemini-2.5-flash:generateContent",
+            "/antigravity/v1/models/gemini-3.6-flash-medium:generateContent",
             json=test_request_body,
             params={"key": test_api_key}
         )
@@ -544,7 +544,7 @@ if __name__ == "__main__":
         """测试流式请求"""
         print("\n" + "=" * 80)
         print(
-            "【测试3】流式请求 (POST /antigravity/v1/models/gemini-2.5-flash:streamGenerateContent)")
+            "【测试3】流式请求 (POST /antigravity/v1/models/gemini-3.6-flash-medium:streamGenerateContent)")
         print("=" * 80)
         print(
             f"请求体: {json.dumps(test_request_body, indent=2, ensure_ascii=False)}\n")
@@ -554,7 +554,7 @@ if __name__ == "__main__":
 
         with client.stream(
             "POST",
-            "/antigravity/v1/models/gemini-2.5-flash:streamGenerateContent",
+            "/antigravity/v1/models/gemini-3.6-flash-medium:streamGenerateContent",
             json=test_request_body,
             params={"key": test_api_key}
         ) as response:
@@ -602,7 +602,7 @@ if __name__ == "__main__":
     def test_fake_stream_request():
         """测试假流式请求"""
         print("\n" + "=" * 80)
-        print("【测试4】假流式请求 (POST /antigravity/v1/models/假流式/gemini-2.5-flash:streamGenerateContent)")
+        print("【测试4】假流式请求 (POST /antigravity/v1/models/假流式/gemini-3.6-flash-medium:streamGenerateContent)")
         print("=" * 80)
         print(
             f"请求体: {json.dumps(test_request_body, indent=2, ensure_ascii=False)}\n")
@@ -612,7 +612,7 @@ if __name__ == "__main__":
 
         with client.stream(
             "POST",
-            "/antigravity/v1/models/假流式/gemini-2.5-flash:streamGenerateContent",
+            "/antigravity/v1/models/假流式/gemini-3.6-flash-medium:streamGenerateContent",
             json=test_request_body,
             params={"key": test_api_key}
         ) as response:
@@ -661,7 +661,7 @@ if __name__ == "__main__":
     def test_anti_truncation_stream_request():
         """测试流式抗截断请求"""
         print("\n" + "=" * 80)
-        print("【测试5】流式抗截断请求 (POST /antigravity/v1/models/流式抗截断/gemini-2.5-flash:streamGenerateContent)")
+        print("【测试5】流式抗截断请求 (POST /antigravity/v1/models/流式抗截断/gemini-3.6-flash-medium:streamGenerateContent)")
         print("=" * 80)
         print(
             f"请求体: {json.dumps(test_request_body, indent=2, ensure_ascii=False)}\n")
@@ -671,7 +671,7 @@ if __name__ == "__main__":
 
         with client.stream(
             "POST",
-            "/antigravity/v1/models/流式抗截断/gemini-2.5-flash:streamGenerateContent",
+            "/antigravity/v1/models/流式抗截断/gemini-3.6-flash-medium:streamGenerateContent",
             json=test_request_body,
             params={"key": test_api_key}
         ) as response:

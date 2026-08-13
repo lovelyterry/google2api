@@ -470,6 +470,7 @@ def parse_quota_reset_timestamp(error_response: dict, mode: str = "geminicli") -
 
     Args:
         error_response: Google API返回的错误响应字典
+        mode: 请求模式 (geminicli / antigravity)
 
     Returns:
         Unix时间戳（秒），如果无法解析则返回None

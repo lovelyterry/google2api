@@ -445,7 +445,7 @@ if __name__ == "__main__":
 
     # 测试请求体 (Anthropic格式)
     test_request_body = {
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3.6-flash-medium",
         "max_tokens": 1024,
         "messages": [
             {"role": "user", "content": "Hello, tell me a joke in one sentence."}
@@ -557,7 +557,7 @@ if __name__ == "__main__":
         print("=" * 80)
 
         fake_stream_request_body = test_request_body.copy()
-        fake_stream_request_body["model"] = "假流式/gemini-2.5-flash"
+        fake_stream_request_body["model"] = "假流式/gemini-3.6-flash-medium"
         fake_stream_request_body["stream"] = True
 
         print(

@@ -35,6 +35,7 @@ ENV_MAPPINGS = {
     "RETRY_429_MAX_RETRIES": "retry_429_max_retries",
     "RETRY_429_ENABLED": "retry_429_enabled",
     "RETRY_429_INTERVAL": "retry_429_interval",
+    "REQUEST_MIN_INTERVAL": "request_min_interval",
     "ANTI_TRUNCATION_MAX_ATTEMPTS": "anti_truncation_max_attempts",
     "COMPATIBILITY_MODE": "compatibility_mode_enabled",
     "RETURN_THOUGHTS_TO_FRONTEND": "return_thoughts_to_frontend",
@@ -180,6 +181,24 @@ async def get_retry_429_interval() -> float:
             pass
 
     return float(await get_config_value("retry_429_interval", 1))
+
+
+async def get_request_min_interval() -> float:
+    """
+    获取请求最小时间间隔（秒）。若两次请求间隔小于此值，将自动延时补齐间隔。
+
+    环境变量: REQUEST_MIN_INTERVAL
+    数据库配置: request_min_interval
+    默认值: 1.0
+    """
+    env_value = os.getenv("REQUEST_MIN_INTERVAL")
+    if env_value:
+        try:
+            return float(env_value)
+        except ValueError:
+            pass
+
+    return float(await get_config_value("request_min_interval", 1.0))
 
 
 async def get_anti_truncation_max_attempts() -> int:

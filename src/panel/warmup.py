@@ -57,7 +57,7 @@ class QuotaWarmupService:
             from src.config import get_antigravity_api_url, get_code_assist_endpoint
             from src.utils import GEMINICLI_USER_AGENT
 
-            test_model = "gemini-2.5-flash"
+            test_model = "gemini-3.6-flash-medium"
             if mode == "antigravity":
                 api_base_url = await get_antigravity_api_url()
                 from src.api.antigravity import build_antigravity_headers

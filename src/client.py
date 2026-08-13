@@ -160,6 +160,38 @@ class HttpClientManager:
 http_client = HttpClientManager()
 
 
+class RequestIntervalLimiter:
+    """请求间隔控制，确保上游 API 调用的发起时间间隔不少于配置的最小间隔"""
+
+    def __init__(self):
+        self._last_request_time: float = 0.0
+        self._lock = asyncio.Lock()
+
+    async def wait(self):
+        try:
+            from src.config import get_request_min_interval
+            min_interval = await get_request_min_interval()
+        except Exception:
+            min_interval = 1.0
+
+        if min_interval <= 0:
+            return
+
+        async with self._lock:
+            now = time.time()
+            elapsed = now - self._last_request_time
+            if self._last_request_time > 0 and elapsed < min_interval:
+                wait_time = min_interval - elapsed
+                log.info(
+                    f"[REQUEST INTERVAL] 距离上次请求间隔 {elapsed:.2f}s (< {min_interval:.2f}s)，主动延时 {wait_time:.2f}s..."
+                )
+                await asyncio.sleep(wait_time)
+            self._last_request_time = time.time()
+
+
+request_interval_limiter = RequestIntervalLimiter()
+
+
 def _format_payload(data: Any, max_len: int = 4000) -> str:
     """格式化 Payload 为可读字符串日志（超出 4000 字符时智能截断）"""
     if data is None:
@@ -180,9 +212,11 @@ def _format_payload(data: Any, max_len: int = 4000) -> str:
 
 # 通用的异步 GET 方法
 async def get_async(
-    url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 30.0, **kwargs
+    url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 30.0, skip_interval: bool = True, **kwargs
 ) -> Any:
     """通用异步 GET 请求（记录调用与响应日志）"""
+    if not skip_interval:
+        await request_interval_limiter.wait()
     log.debug(f"[HTTP GET] 请求 URL: {url}")
     async with http_client.get_client(timeout=timeout, **kwargs) as client:
         response = await client.get(url, headers=headers)
@@ -200,9 +234,12 @@ async def post_async(
     json: Any = None,
     headers: Optional[Dict[str, str]] = None,
     timeout: float = 900.0,
+    skip_interval: bool = False,
     **kwargs,
 ) -> Any:
     """通用异步 POST 请求（记录调用与响应日志）"""
+    if not skip_interval:
+        await request_interval_limiter.wait()
     payload = json if json is not None else data
     log.debug(
         f"[HTTP POST] 请求 URL: {url}\nPayload:\n{_format_payload(payload)}")
@@ -246,9 +283,12 @@ async def stream_post_async(
     body: Dict[str, Any],
     native: bool = False,
     headers: Optional[Dict[str, str]] = None,
+    skip_interval: bool = False,
     **kwargs,
 ):
     """流式异步 POST 请求（记录调用与响应日志，支持 curl_cffi TLS 指纹伪装与流式响应迭代）"""
+    if not skip_interval:
+        await request_interval_limiter.wait()
     if _MOCK_STREAM_429:
         from fastapi import Response
         log.warning("[MOCK] stream_post_async: 返回模拟 429 错误")

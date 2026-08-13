@@ -761,7 +761,7 @@ if __name__ == "__main__":
 
     # 测试请求体
     test_body = {
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3.6-flash-medium",
         "request": {
             "contents": [
                 {
