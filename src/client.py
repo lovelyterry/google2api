@@ -347,11 +347,11 @@ async def stream_post_async(
                         async for line in r.aiter_lines():
                             yield line
     except (GeneratorExit, asyncio.CancelledError):
-        log.info(f"[HTTP STREAM] 客户端打断/关闭连接，终止流传输: {url}")
+        log.debug(f"[HTTP STREAM] 客户端打断/关闭连接，终止流传输: {url}")
         return
     except RuntimeError as e:
         if any(k in str(e) for k in ["GeneratorExit", "athrow", "aclose", "already running", "didn't stop"]):
-            log.info(f"[HTTP STREAM] 客户端中断导致生成器清理退出: {url}")
+            log.debug(f"[HTTP STREAM] 客户端中断导致生成器清理退出: {url}")
             return
         log.error(f"[HTTP STREAM ERROR] 流式传输 RuntimeError: {e}")
         from fastapi import Response

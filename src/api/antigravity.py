@@ -471,11 +471,11 @@ async def stream_request(
                 return
 
         except (GeneratorExit, asyncio.CancelledError):
-            log.info(f"[ANTIGRAVITY STREAM] 客户端打断/取消连接 (模型: {model_name})")
+            log.debug(f"[ANTIGRAVITY STREAM] 客户端打断/取消连接 (模型: {model_name})")
             return
         except RuntimeError as e:
             if any(k in str(e) for k in ["GeneratorExit", "athrow", "aclose", "already running", "didn't stop"]):
-                log.info(f"[ANTIGRAVITY STREAM] 客户端中断生成器退出 (模型: {model_name})")
+                log.debug(f"[ANTIGRAVITY STREAM] 客户端中断生成器退出 (模型: {model_name})")
                 return
             log.error(f"[ANTIGRAVITY STREAM] 请求引发 RuntimeError: {e}")
             await record_api_call_error(
