@@ -164,7 +164,7 @@ class RequestIntervalLimiter:
     """请求间隔控制，确保上游 API 调用的发起时间间隔不少于配置的最小间隔"""
 
     def __init__(self):
-        self._last_request_time: float = 0.0
+        self._next_allowed_time: float = 0.0
         self._lock = asyncio.Lock()
 
     async def wait(self):
@@ -178,15 +178,19 @@ class RequestIntervalLimiter:
             return
 
         async with self._lock:
-            now = time.time()
-            elapsed = now - self._last_request_time
-            if self._last_request_time > 0 and elapsed < min_interval:
-                wait_time = min_interval - elapsed
-                log.info(
-                    f"[REQUEST INTERVAL] 距离上次请求间隔 {elapsed:.2f}s (< {min_interval:.2f}s)，主动延时 {wait_time:.2f}s..."
-                )
-                await asyncio.sleep(wait_time)
-            self._last_request_time = time.time()
+            now = time.monotonic()
+            if self._next_allowed_time > now:
+                wait_time = self._next_allowed_time - now
+                self._next_allowed_time += min_interval
+            else:
+                wait_time = 0.0
+                self._next_allowed_time = now + min_interval
+
+        if wait_time > 0:
+            log.info(
+                f"[REQUEST INTERVAL] 触发请求频率限制 (最小间隔 {min_interval:.2f}s)，主动延时 {wait_time:.2f}s..."
+            )
+            await asyncio.sleep(wait_time)
 
 
 request_interval_limiter = RequestIntervalLimiter()

@@ -410,8 +410,7 @@ async def stream_request(
                         error_body = ""
 
                     # 解析并记录冷却时间（如果有）
-                    parse_and_log_cooldown(
-                        current_file, status_code, error_body)
+                    cooldown_until = await parse_and_log_cooldown(error_body or "", mode="antigravity")
 
                     # 判断是否触发禁用凭证
                     if status_code in DISABLE_ERROR_CODES:
@@ -429,9 +428,10 @@ async def stream_request(
                             credential_manager,
                             current_file,
                             status_code=status_code,
-                            error_message=error_body or f"HTTP {status_code}",
+                            cooldown_until=cooldown_until,
                             mode="antigravity",
-                            model_name=model_name
+                            model_name=model_name,
+                            error_message=error_body or f"HTTP {status_code}"
                         )
 
                     # 判断是否需要重试
@@ -666,7 +666,7 @@ async def non_stream_request(
             last_error_data = error_data
 
             # 解析并记录冷却时间（如果有）
-            parse_and_log_cooldown(current_file, status_code, error_body)
+            cooldown_until = await parse_and_log_cooldown(error_body or "", mode="antigravity")
 
             # 判断是否触发禁用凭证
             if status_code in DISABLE_ERROR_CODES:
@@ -684,9 +684,10 @@ async def non_stream_request(
                     credential_manager,
                     current_file,
                     status_code=status_code,
-                    error_message=error_body or f"HTTP {status_code}",
+                    cooldown_until=cooldown_until,
                     mode="antigravity",
-                    model_name=model_name
+                    model_name=model_name,
+                    error_message=error_body or f"HTTP {status_code}"
                 )
 
             # 判断是否需要重试
