@@ -470,6 +470,31 @@ async def stream_request(
             if not need_retry:
                 return
 
+        except (GeneratorExit, asyncio.CancelledError):
+            log.info(f"[ANTIGRAVITY STREAM] 客户端打断/取消连接 (模型: {model_name})")
+            return
+        except RuntimeError as e:
+            if any(k in str(e) for k in ["GeneratorExit", "athrow", "aclose", "already running", "didn't stop"]):
+                log.info(f"[ANTIGRAVITY STREAM] 客户端中断生成器退出 (模型: {model_name})")
+                return
+            log.error(f"[ANTIGRAVITY STREAM] 请求引发 RuntimeError: {e}")
+            await record_api_call_error(
+                credential_manager,
+                current_file,
+                status_code=500,
+                error_message=str(e),
+                mode="antigravity",
+                model_name=model_name
+            )
+            if attempt < max_retries:
+                need_retry = True
+            else:
+                yield Response(
+                    content=json.dumps({"error": f"Stream request failed: {str(e)}"}),
+                    status_code=500,
+                    media_type="application/json"
+                )
+                return
         except Exception as e:
             log.error(f"[ANTIGRAVITY STREAM] 请求引发异常: {e}")
             await record_api_call_error(

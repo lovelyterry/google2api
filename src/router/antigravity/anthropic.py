@@ -334,6 +334,20 @@ async def messages(
             ):
                 if anthropic_chunk:
                     yield anthropic_chunk
+        except (GeneratorExit, asyncio.CancelledError):
+            log.info(f"[ANTIGRAVITY ROUTER] 客户端打断/取消连接 (模型: {real_model})")
+            return
+        except RuntimeError as e:
+            if any(k in str(e) for k in ["GeneratorExit", "athrow", "aclose", "already running", "didn't stop"]):
+                log.info(f"[ANTIGRAVITY ROUTER] 客户端中断导致生成器退出 (模型: {real_model})")
+                return
+            log.error(
+                f"[ANTIGRAVITY STREAM GENERATOR ERROR] 发生 RuntimeError: {e}\n{traceback.format_exc()}"
+            )
+            err_evt = {"type": "error", "error": {
+                "type": "api_error", "message": f"Stream generator error: {str(e)}"}}
+            yield f"data: {json.dumps(err_evt)}\n\n".encode('utf-8')
+            yield b"data: [DONE]\n\n"
         except Exception as e:
             log.error(
                 f"[ANTIGRAVITY STREAM GENERATOR ERROR] 发生未捕获异常: {e}\n{traceback.format_exc()}"
