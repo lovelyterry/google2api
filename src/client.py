@@ -161,39 +161,47 @@ http_client = HttpClientManager()
 
 
 class RequestIntervalLimiter:
-    """请求间隔控制，确保上游 API 调用的发起时间间隔不少于配置的最小间隔"""
+    """全局并发控制与请求间隔限制器：同一时刻只使用/允许一个上游请求发起与响应（保证 Context Cache 不被打碎），且请求发起间隔不少于配置值"""
 
-    def __init__(self):
+    def __init__(self, max_concurrency: int = 1):
+        self._semaphore = asyncio.Semaphore(max_concurrency)
         self._next_allowed_time: float = 0.0
         self._lock = asyncio.Lock()
 
-    async def wait(self):
-        try:
-            from src.config import get_request_min_interval
-            min_interval = await get_request_min_interval()
-        except Exception:
-            min_interval = 1.0
+    @asynccontextmanager
+    async def limit(self, headers: Optional[Dict[str, str]] = None, skip_interval: bool = False) -> AsyncGenerator[None, None]:
+        # 全局排队：若当前已有其他请求在处理，新请求在本地进入队列等待
+        if self._semaphore.locked():
+            log.info("[RATE LIMITER] 存在正在执行的上游请求，当前请求进入全局队列等待...")
 
-        if min_interval <= 0:
-            return
+        async with self._semaphore:
+            if not skip_interval:
+                try:
+                    from src.config import get_request_min_interval
+                    min_interval = await get_request_min_interval()
+                except Exception:
+                    min_interval = 1.0
 
-        async with self._lock:
-            now = time.monotonic()
-            if self._next_allowed_time > now:
-                wait_time = self._next_allowed_time - now
-                self._next_allowed_time += min_interval
-            else:
-                wait_time = 0.0
-                self._next_allowed_time = now + min_interval
+                if min_interval > 0:
+                    async with self._lock:
+                        now = time.monotonic()
+                        if self._next_allowed_time > now:
+                            wait_time = self._next_allowed_time - now
+                            self._next_allowed_time += min_interval
+                        else:
+                            wait_time = 0.0
+                            self._next_allowed_time = now + min_interval
 
-        if wait_time > 0:
-            log.info(
-                f"[REQUEST INTERVAL] 触发请求频率限制 (最小间隔 {min_interval:.2f}s)，主动延时 {wait_time:.2f}s..."
-            )
-            await asyncio.sleep(wait_time)
+                    if wait_time > 0:
+                        log.info(
+                            f"[REQUEST INTERVAL] 触发请求频率限制 (最小间隔 {min_interval:.2f}s)，主动延时 {wait_time:.2f}s..."
+                        )
+                        await asyncio.sleep(wait_time)
+
+            yield
 
 
-request_interval_limiter = RequestIntervalLimiter()
+request_interval_limiter = RequestIntervalLimiter(max_concurrency=1)
 
 
 def _format_payload(data: Any, max_len: int = 4000) -> str:
@@ -219,16 +227,15 @@ async def get_async(
     url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 30.0, skip_interval: bool = True, **kwargs
 ) -> Any:
     """通用异步 GET 请求（记录调用与响应日志）"""
-    if not skip_interval:
-        await request_interval_limiter.wait()
-    log.debug(f"[HTTP GET] 请求 URL: {url}")
-    async with http_client.get_client(timeout=timeout, **kwargs) as client:
-        response = await client.get(url, headers=headers)
-        resp_text = getattr(response, "text", "")
-        status_code = getattr(response, "status_code", 0)
-        log.debug(
-            f"[HTTP GET] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
-        return response
+    async with request_interval_limiter.limit(headers=headers, skip_interval=skip_interval):
+        log.debug(f"[HTTP GET] 请求 URL: {url}")
+        async with http_client.get_client(timeout=timeout, **kwargs) as client:
+            response = await client.get(url, headers=headers)
+            resp_text = getattr(response, "text", "")
+            status_code = getattr(response, "status_code", 0)
+            log.debug(
+                f"[HTTP GET] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
+            return response
 
 
 # 通用的异步 POST 方法
@@ -242,25 +249,24 @@ async def post_async(
     **kwargs,
 ) -> Any:
     """通用异步 POST 请求（记录调用与响应日志）"""
-    if not skip_interval:
-        await request_interval_limiter.wait()
-    payload = json if json is not None else data
-    log.debug(
-        f"[HTTP POST] 请求 URL: {url}\nPayload:\n{_format_payload(payload)}")
-
-    async with http_client.get_client(timeout=timeout, **kwargs) as client:
-        response = await client.post(url, data=data, json=json, headers=headers)
-        resp_text = getattr(response, "text", "")
-        if not resp_text and hasattr(response, "content"):
-            try:
-                resp_text = response.content.decode("utf-8", errors="replace")
-            except Exception:
-                resp_text = "<Binary Content>"
-
-        status_code = getattr(response, "status_code", 0)
+    async with request_interval_limiter.limit(headers=headers, skip_interval=skip_interval):
+        payload = json if json is not None else data
         log.debug(
-            f"[HTTP POST] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
-        return response
+            f"[HTTP POST] 请求 URL: {url}\nPayload:\n{_format_payload(payload)}")
+
+        async with http_client.get_client(timeout=timeout, **kwargs) as client:
+            response = await client.post(url, data=data, json=json, headers=headers)
+            resp_text = getattr(response, "text", "")
+            if not resp_text and hasattr(response, "content"):
+                try:
+                    resp_text = response.content.decode("utf-8", errors="replace")
+                except Exception:
+                    resp_text = "<Binary Content>"
+
+            status_code = getattr(response, "status_code", 0)
+            log.debug(
+                f"[HTTP POST] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
+            return response
 
 
 def _filter_response_headers(headers: Any) -> Dict[str, str]:
@@ -291,20 +297,19 @@ async def stream_post_async(
     **kwargs,
 ):
     """流式异步 POST 请求（记录调用与响应日志，支持 curl_cffi TLS 指纹伪装与流式响应迭代）"""
-    if not skip_interval:
-        await request_interval_limiter.wait()
-    if _MOCK_STREAM_429:
-        from fastapi import Response
-        log.warning("[MOCK] stream_post_async: 返回模拟 429 错误")
-        yield Response(
-            content=json_lib.dumps(
-                {"error": {"code": 429, "message": "mock rate limit", "status": "RESOURCE_EXHAUSTED"}}),
-            status_code=429,
-        )
-        return
+    async with request_interval_limiter.limit(headers=headers, skip_interval=skip_interval):
+        if _MOCK_STREAM_429:
+            from fastapi import Response
+            log.warning("[MOCK] stream_post_async: 返回模拟 429 错误")
+            yield Response(
+                content=json_lib.dumps(
+                    {"error": {"code": 429, "message": "mock rate limit", "status": "RESOURCE_EXHAUSTED"}}),
+                status_code=429,
+            )
+            return
 
-    log.debug(
-        f"[HTTP STREAM POST] 请求 URL: {url}\nPayload:\n{_format_payload(body)}")
+        log.debug(
+            f"[HTTP STREAM POST] 请求 URL: {url}\nPayload:\n{_format_payload(body)}")
 
     try:
         async with http_client.get_streaming_client(**kwargs) as client:

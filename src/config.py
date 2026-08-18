@@ -189,7 +189,7 @@ async def get_request_min_interval() -> float:
 
     环境变量: REQUEST_MIN_INTERVAL
     数据库配置: request_min_interval
-    默认值: 1.0
+    默认值: 0.5
     """
     env_value = os.getenv("REQUEST_MIN_INTERVAL")
     if env_value:
@@ -198,7 +198,7 @@ async def get_request_min_interval() -> float:
         except ValueError:
             pass
 
-    return float(await get_config_value("request_min_interval", 1.0))
+    return float(await get_config_value("request_min_interval", 0.5))
 
 
 async def get_anti_truncation_max_attempts() -> int:
