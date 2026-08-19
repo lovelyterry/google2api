@@ -55,14 +55,7 @@ def get_resource_path(relative_path: str) -> str:
 
 
 # Model name lists for different features
-BASE_MODELS = [
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-3-flash-preview",
-    "gemini-3.1-pro-preview",
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash",
-]
+BASE_MODELS = []
 
 
 # ====================== Model Helper Functions ======================
@@ -79,11 +72,8 @@ def is_anti_truncation_model(model_name: str) -> bool:
 
 def get_base_model_from_feature_model(model_name: str) -> str:
     """Get base model name from feature model name."""
-    # Remove feature prefixes
-    for prefix in ["假流式/", "流式抗截断/"]:
-        if model_name.startswith(prefix):
-            return model_name[len(prefix):]
     return model_name
+
 
 
 def get_available_models(router_type: str = "openai") -> List[str]:

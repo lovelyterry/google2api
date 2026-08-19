@@ -1305,6 +1305,30 @@ const app = createApp({
 
         const addModelMapping = saveModelMapping;
 
+        const updateModelMapping = async (orig, newTarget) => {
+            if (!orig || !newTarget) return showStatus('原模型和新目标模型不能为空', 'error');
+            try {
+                const res = await fetch('./model-mappings', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        requested_model: orig.trim(),
+                        target_model: newTarget.trim(),
+                        router_type: 'antigravity'
+                    })
+                });
+                if (res.ok) {
+                    showStatus(`✅ 成功修改 "${orig}" 映射目标为 "${newTarget}"！`, 'success');
+                    await loadModelMappings();
+                } else {
+                    const errData = await res.json().catch(() => ({}));
+                    showStatus(`修改失败: ${errData.detail || '接口错误'}`, 'error');
+                }
+            } catch (e) {
+                showStatus(`修改失败: ${e.message}`, 'error');
+            }
+        };
+
         const deleteModelMapping = async (orig) => {
             try {
                 const res = await fetch('./model-mappings', {
@@ -1963,6 +1987,7 @@ const app = createApp({
             handleLoginKeydown,
             addModelMapping,
             deleteModelMapping,
+            updateModelMapping,
             clearModelMappings,
             clearDynamicMappings,
             loadConfig,

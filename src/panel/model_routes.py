@@ -31,7 +31,7 @@ async def set_custom_mapping(
     payload: Dict[str, Any] = Body(...),
     token: str = Depends(verify_panel_token)
 ):
-    """设置或覆盖自定义模型映射规则"""
+    """设置、覆盖或修改自定义模型映射规则"""
     try:
         requested_model = payload.get(
             "requested_model") or payload.get("original_model")
@@ -50,7 +50,7 @@ async def set_custom_mapping(
         )
         from .sse import sse_manager
         await sse_manager.broadcast("models_updated")
-        return JSONResponse(content={"success": True, "message": "映射规则更新成功"})
+        return JSONResponse(content={"success": True, "message": "映射规则更新/修改成功"})
     except HTTPException:
         raise
     except Exception as e:

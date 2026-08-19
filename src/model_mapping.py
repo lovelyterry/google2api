@@ -99,8 +99,8 @@ class ModelMappingManager:
         记录一次模型映射
 
         Args:
-            requested_model: 前端请求的模型名称 (如 "假流式/gemini-2.5-flash")
-            target_model: 实际发往后端的模型名称 (如 "gemini-2.5-flash")
+            requested_model: 前端请求的模型名称 (如 "假流式/gemini-3.6-flash-high")
+            target_model: 实际发往后端的模型名称 (如 "gemini-3.6-flash-high")
             router_type: 路由类型 (如 "antigravity", "geminicli", "vertex")
         """
         if not requested_model or not target_model:

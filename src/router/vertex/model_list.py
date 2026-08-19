@@ -21,14 +21,7 @@ if str(project_root) not in sys.path:
 
 # 本地模块 - 工具和认证
 
-VERTEX_MODELS = [
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-3-flash-preview",
-    "gemini-3.1-pro-preview",
-    "gemini-3.1-flash-lite-preview",
-    "gemini-3.5-flash",
-]
+VERTEX_MODELS = []
 
 # 本地模块 - 基础路由工具
 

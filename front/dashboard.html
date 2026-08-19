@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/front/dashboard.css?v=6.0.4">
+    <link rel="stylesheet" href="/front/dashboard.css?v=6.0.5">
     <!-- 优先加载本地 Vue 3 JS 库（支持完全离线部署），失败时自动回退至 CDN -->
     <script src="/front/vue.global.js?v=2.0.0"></script>
     <script>
@@ -1136,8 +1136,16 @@
                                             <tr v-for="(target, orig) in models.mappings" :key="orig">
                                                 <td><span class="model-tag-requested">📥 {{ orig }}</span></td>
                                                 <td style="text-align: center;"><span class="model-arrow-badge">➔</span></td>
-                                                <td><span class="model-tag-target">🎯 {{ target }}</span></td>
-                                                <td style="text-align: right;"><button class="btn-xs btn-danger-outline" @click="deleteModelMapping(orig)">删除</button></td>
+                                                <td>
+                                                    <select v-model="models.mappings[orig]" class="config-input-styled mapping-select" style="width: 100%; height: 32px; font-size: 12.5px;">
+                                                        <option v-for="opt in models.availableOptions" :key="'edit-' + orig + '-' + opt" :value="opt">{{ opt }}</option>
+                                                        <option v-if="!models.availableOptions.includes(target)" :value="target">{{ target }}</option>
+                                                    </select>
+                                                </td>
+                                                <td style="text-align: right; white-space: nowrap;">
+                                                    <button class="btn-xs btn-primary" @click="updateModelMapping(orig, models.mappings[orig])">保存</button>
+                                                    <button class="btn-xs btn-danger-outline" @click="deleteModelMapping(orig)">删除</button>
+                                                </td>
                                             </tr>
                                             <tr v-if="Object.keys(models.mappings).length === 0">
                                                 <td colspan="4" style="text-align: center; padding: 24px 16px; opacity: 0.65;">
@@ -1590,7 +1598,7 @@
 
     </div>
 
-    <script src="/front/dashboard.js?v=22.0.0"></script>
+    <script src="/front/dashboard.js?v=23.0.0"></script>
 </body>
 
 </html>

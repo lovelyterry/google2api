@@ -665,23 +665,6 @@ def _normalize_antigravity_request(
                             log.debug(f"[ANTIGRAVITY] 已在最后一个 assistant 消息开头插入思考块（含跳过验证签名）")
                         break
 
-    if "claude" in model.lower():
-        # 2. Claude 模型关键词映射
-        # 使用关键词匹配而不是精确匹配，更灵活地处理各种变体
-        original_model = model
-        if "opus" in model.lower():
-            model = "claude-opus-4-6-thinking"
-        elif "sonnet" in model.lower():
-            model = "claude-sonnet-4-6"
-        elif "haiku" in model.lower():
-            model = "gemini-2.5-flash"
-        elif "claude" in model.lower():
-            # Claude 模型兜底：如果包含 claude 但不是 opus/sonnet/haiku
-            model = "claude-sonnet-4-6"
-
-        if original_model != model:
-            log.debug(f"[ANTIGRAVITY] 映射模型: {original_model} -> {model}")
-
     return model
 
 
@@ -750,7 +733,7 @@ async def normalize_antigravity_request(
         # 对于 Gemini 模型：统一转换为 functionDeclarations 并确保只使用 parameters 字段（移除 parametersJsonSchema 以防报错）
         result["tools"] = _ensure_empty_tool_schema_for_claude(result.get("tools"), model, "antigravity")
 
-    if "gemini-2.5-flash-lite" in model.lower():
+    if "gemini-3.6-flash-high-lite" in model.lower():
         result["safetySettings"] = LITE_SAFETY_SETTINGS
     else:
         result["safetySettings"] = DEFAULT_SAFETY_SETTINGS
