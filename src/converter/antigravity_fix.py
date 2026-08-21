@@ -605,8 +605,16 @@ def _normalize_antigravity_request(
 
     # 针对 Gemini 模型：根据思考设置映射至真实的 Antigravity 后端模型 ID
     if "gemini" in model.lower():
-        if "gemini-3" in model.lower():
-            if "tiered" in model.lower():
+        original_model = model
+
+        # 兼容旧的客户端别名：Antigravity 后端的 Gemini 3.1 Pro High
+        # 实际使用 gemini-pro-agent 作为模型 ID。
+        if model.lower() == "gemini-3.1-pro-high":
+            model = "gemini-pro-agent"
+            log.debug(f"[ANTIGRAVITY] 映射模型: {original_model} -> {model}")
+
+        if "gemini-3" in original_model.lower():
+            if "tiered" in original_model.lower():
                 # gemini-3.7-flash-tiered / tiered 模型原生支持动态分级思考 thinkingConfig
                 if "thinkingConfig" in generation_config:
                     thinking_config = generation_config["thinkingConfig"]
@@ -639,9 +647,16 @@ def _normalize_antigravity_request(
                 else:
                     set_current_thinking_info("Tier-Off")
             else:
-                # 既然旧版 Antigravity 后端是通过模型名来确定思考深度的，
-                # 对于非 tiered 的固定级别 Gemini 3/3.5 模型必须移除 thinkingConfig 以防止 API 返回参数冲突错误。
-                generation_config.pop("thinkingConfig", None)
+                # Antigravity uses the Gemini 3.x model route/name to select thinking depth.
+                # Do not send thinkingLevel/thinkingBudget because they can conflict with that route.
+                # Keep includeThoughts so reasoning is still returned to the frontend when enabled.
+                thinking_config = generation_config.setdefault("thinkingConfig", {})
+                thinking_config.pop("thinkingBudget", None)
+                thinking_config.pop("thinkingLevel", None)
+                if return_thoughts is not None:
+                    thinking_config["includeThoughts"] = return_thoughts
+                elif "includeThoughts" not in thinking_config:
+                    thinking_config["includeThoughts"] = True
                 set_current_thinking_info("固定级别")
         else:
             # 对于 Gemini 2.5 系列
