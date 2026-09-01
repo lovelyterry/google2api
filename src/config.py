@@ -48,6 +48,7 @@ ENV_MAPPINGS = {
     "PASSWORD": "password",
     "QUOTA_WARMUP_ENABLED": "quota_warmup_enabled",
     "QUOTA_WARMUP_IDLE_HOURS": "quota_warmup_idle_hours",
+    "ADAPTIVE_THINKING_BUDGET": "adaptive_thinking_budget",
 }
 
 
@@ -189,7 +190,7 @@ async def get_request_min_interval() -> float:
 
     环境变量: REQUEST_MIN_INTERVAL
     数据库配置: request_min_interval
-    默认值: 1.0
+    默认值: 0.2
     """
     env_value = os.getenv("REQUEST_MIN_INTERVAL")
     if env_value:
@@ -198,7 +199,7 @@ async def get_request_min_interval() -> float:
         except ValueError:
             pass
 
-    return float(await get_config_value("request_min_interval", 1.0))
+    return float(await get_config_value("request_min_interval", 0.2))
 
 
 async def get_anti_truncation_max_attempts() -> int:
@@ -515,3 +516,26 @@ async def get_quota_warmup_idle_hours() -> float:
         except ValueError:
             pass
     return float(await get_config_value("quota_warmup_idle_hours", 4.5))
+
+
+async def get_adaptive_thinking_budget() -> int:
+    """Get adaptive thinking default budget setting (default: 48000)."""
+    env_value = os.getenv("ADAPTIVE_THINKING_BUDGET")
+    if env_value:
+        try:
+            return int(env_value)
+        except ValueError:
+            pass
+    return int(await get_config_value("adaptive_thinking_budget", 48000))
+
+
+def get_adaptive_thinking_budget_sync() -> int:
+    """Get adaptive thinking default budget from memory cache (sync)."""
+    env_value = os.getenv("ADAPTIVE_THINKING_BUDGET")
+    if env_value:
+        try:
+            return int(env_value)
+        except ValueError:
+            pass
+    return int(_get_cached_config("adaptive_thinking_budget", 48000))
+

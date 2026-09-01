@@ -16,6 +16,7 @@ from src.converter.utils import merge_system_messages
 
 from src.converter.thoughtSignature_fix import (
     decode_tool_id_and_signature,
+    encode_tool_id_with_signature,
     is_internal_placeholder_text,
     is_skip_thought_signature_placeholder,
     SKIP_THOUGHT_SIGNATURE_VALIDATOR,
@@ -212,6 +213,7 @@ def _anthropic_usage_from_metadata(usage_metadata: Any, model: str = "", user_in
     count_token_usage(usage_metadata, model)
 
     prompt_token_count = usage_metadata.get("promptTokenCount")
+    candidates_token_count = usage_metadata.get("candidatesTokenCount")
     cached_content_token_count = usage_metadata.get("cachedContentTokenCount")
 
     prompt_tokens_total = int(prompt_token_count or 0)
@@ -492,7 +494,7 @@ def convert_messages_to_contents(
                         )
                 elif item_type == "tool_use":
                     encoded_id = item.get("id") or ""
-                    original_id, _ = decode_tool_id_and_signature(encoded_id)
+                    original_id, sig = decode_tool_id_and_signature(encoded_id)
 
                     fc_part: Dict[str, Any] = {
                         "functionCall": {
@@ -502,7 +504,7 @@ def convert_messages_to_contents(
                         }
                     }
 
-                    fc_part["thoughtSignature"] = SKIP_THOUGHT_SIGNATURE_VALIDATOR
+                    fc_part["thoughtSignature"] = sig or SKIP_THOUGHT_SIGNATURE_VALIDATOR
 
                     parts.append(fc_part)
                 elif item_type == "tool_result":
@@ -549,7 +551,9 @@ def convert_messages_to_contents(
 
 def reorganize_tool_messages(contents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    重新组织消息，满足 tool_use/tool_result 约束。
+    重新组织消息，满足 Gemini API 对 tool_use/tool_result 严格成对的交替约束。
+    保证同一 assistant 轮次的并发 functionCall 聚合在一条 model 消息中，
+    且其对应的所有 functionResponse 聚合在紧随其后的 user 消息中。
     """
     tool_results: Dict[str, Dict[str, Any]] = {}
 
@@ -560,35 +564,32 @@ def reorganize_tool_messages(contents: List[Dict[str, Any]]) -> List[Dict[str, A
                 if tool_id:
                     tool_results[str(tool_id)] = part
 
-    flattened: List[Dict[str, Any]] = []
-    for msg in contents:
-        role = msg.get("role")
-        for part in msg.get("parts", []) or []:
-            flattened.append({"role": role, "parts": [part]})
-
     new_contents: List[Dict[str, Any]] = []
-    i = 0
-    while i < len(flattened):
-        msg = flattened[i]
-        part = msg["parts"][0]
+    for msg in contents:
+        parts = msg.get("parts", []) or []
 
-        if isinstance(part, dict) and "functionResponse" in part:
-            i += 1
+        # 检查是否全部是孤立的 functionResponse 消息（后续由所属的 functionCall 轮次紧随注入）
+        has_fr = any(isinstance(p, dict) and "functionResponse" in p for p in parts)
+        has_non_fr = any(not (isinstance(p, dict) and "functionResponse" in p) for p in parts)
+        if has_fr and not has_non_fr:
             continue
 
-        if isinstance(part, dict) and "functionCall" in part:
-            tool_id = (part.get("functionCall") or {}).get("id")
-            new_contents.append({"role": "model", "parts": [part]})
+        fc_parts = [p for p in parts if isinstance(p, dict) and "functionCall" in p]
+        if fc_parts:
+            # 保持原始 model 消息（包含思考、文本和所有 functionCall）
+            new_contents.append(msg)
 
-            if tool_id is not None and str(tool_id) in tool_results:
-                new_contents.append(
-                    {"role": "user", "parts": [tool_results[str(tool_id)]]})
+            # 聚合该轮所有 functionCall 对应的 functionResponse
+            matched_responses = []
+            for p in fc_parts:
+                tid = (p.get("functionCall") or {}).get("id")
+                if tid is not None and str(tid) in tool_results:
+                    matched_responses.append(tool_results[str(tid)])
 
-            i += 1
-            continue
-
-        new_contents.append(msg)
-        i += 1
+            if matched_responses:
+                new_contents.append({"role": "user", "parts": matched_responses})
+        else:
+            new_contents.append(msg)
 
     return new_contents
 
@@ -672,7 +673,7 @@ def build_generation_config(payload: Dict[str, Any]) -> Dict[str, Any]:
     if max_tokens is not None:
         config["maxOutputTokens"] = max_tokens
 
-    # 处理 extended thinking 参数 (plan mode)
+    # 处理 extended thinking 参数 (plan mode / Claude 3.7 adaptive thinking)
     thinking = payload.get("thinking")
     is_plan_mode = False
     if thinking and isinstance(thinking, dict):
@@ -680,27 +681,34 @@ def build_generation_config(payload: Dict[str, Any]) -> Dict[str, Any]:
         budget_tokens = thinking.get("budget_tokens")
 
         # 如果启用了 extended thinking，设置 thinkingConfig
-        if thinking_type == "enabled":
+        if thinking_type in ("enabled", "adaptive"):
             is_plan_mode = True
             thinking_config: Dict[str, Any] = {}
 
-            # 设置思考预算，默认使用较大的值以支持计划模式
+            # 设置思考预算，默认读取系统自适应配置
             if budget_tokens is not None:
                 thinking_config["thinkingBudget"] = budget_tokens
             else:
-                # 默认给一个较大的思考预算以支持完整的计划生成
-                thinking_config["thinkingBudget"] = 48000
+                from src.config import get_adaptive_thinking_budget_sync
+                thinking_config["thinkingBudget"] = get_adaptive_thinking_budget_sync()
 
             # 始终包含思考内容，这样才能看到计划
             thinking_config["includeThoughts"] = True
 
             config["thinkingConfig"] = thinking_config
-            log.info(
-                f"[ANTHROPIC2GEMINI] Extended thinking enabled with budget: {thinking_config['thinkingBudget']}")
+
+            # 关键防截断优化：Gemini 的 maxOutputTokens 是「思考 Token + 回答正文」的总和
+            # 自动扩容 maxOutputTokens，防止客户端较小的 max_tokens (如 4096) 导致思考提前被截断
+            current_max = config.get("maxOutputTokens", 8192)
+            required_max = thinking_config["thinkingBudget"] + (max_tokens if max_tokens else 8192)
+            config["maxOutputTokens"] = min(65536, max(current_max, required_max))
+
+            log.debug(
+                f"[ANTHROPIC2GEMINI] Extended thinking enabled ({thinking_type}) with budget: {thinking_config['thinkingBudget']}, maxOutputTokens expanded to: {config['maxOutputTokens']}")
         elif thinking_type == "disabled":
             # 明确禁用思考模式，物理移除 thinkingConfig 避免 API 拒绝
             config.pop("thinkingConfig", None)
-            log.info("[ANTHROPIC2GEMINI] Extended thinking explicitly disabled")
+            log.debug("[ANTHROPIC2GEMINI] Extended thinking explicitly disabled")
 
     stop_sequences = payload.get("stop_sequences")
     if isinstance(stop_sequences, list) and stop_sequences:
@@ -710,7 +718,7 @@ def build_generation_config(payload: Dict[str, Any]) -> Dict[str, Any]:
         # Plan mode 时清空默认 stop sequences，避免过早停止
         # 默认的 stop sequences 可能会导致模型在生成计划时过早停止
         config["stopSequences"] = []
-        log.info(
+        log.debug(
             "[ANTHROPIC2GEMINI] Plan mode: cleared default stop sequences to prevent premature stopping")
 
     # 如果不是 plan mode 且没有自定义 stop_sequences，保持默认值
@@ -789,6 +797,21 @@ async def anthropic_to_gemini_request(payload: Dict[str, Any]) -> Dict[str, Any]
 
     if tools:
         gemini_request["tools"] = tools
+        # 针对文件编辑/代码替换工具场景，自动补充严格逐字字符/空格缩进匹配的指引
+        edit_guideline = (
+            "When performing file edits or text replacements (e.g. str_replace, Edit, replace_file_content), "
+            "make sure the text to be replaced (old_str/old_string) matches the original file text exactly character-by-character, "
+            "including all indentation (spaces/tabs), whitespace, and line breaks."
+        )
+        if "systemInstruction" in gemini_request:
+            si = gemini_request["systemInstruction"]
+            if isinstance(si, dict) and "parts" in si and isinstance(si["parts"], list):
+                si["parts"].append({"text": edit_guideline})
+        else:
+            gemini_request["systemInstruction"] = {
+                "role": "system",
+                "parts": [{"text": edit_guideline}]
+            }
 
     # 添加 toolConfig（如果有 tool_choice）
     if tool_config:
@@ -824,10 +847,14 @@ def gemini_to_anthropic_response(
     # 转换内容块
     content = []
     has_tool_use = False
+    last_thought_signature = None
 
     for part in parts:
         if not isinstance(part, dict):
             continue
+
+        if part.get("thoughtSignature"):
+            last_thought_signature = part.get("thoughtSignature")
 
         # 处理 thinking 块
         if part.get("thought") is True:
@@ -864,10 +891,12 @@ def gemini_to_anthropic_response(
             has_tool_use = True
             fc = part.get("functionCall", {}) or {}
             original_id = fc.get("id") or f"toolu_{uuid.uuid4().hex}"
+            sig = part.get("thoughtSignature") or last_thought_signature
+            tool_id = encode_tool_id_with_signature(original_id, sig)
             content.append(
                 {
                     "type": "tool_use",
-                    "id": original_id,
+                    "id": tool_id,
                     "name": fc.get("name") or "",
                     "input": _remove_nulls_for_tool_input(fc.get("args", {}) or {}),
                 }
@@ -951,6 +980,7 @@ async def gemini_stream_to_anthropic_stream(
     current_block_type: Optional[str] = None
     current_block_index = -1
     current_thinking_signature: Optional[str] = None
+    last_thinking_signature: Optional[str] = None
     has_tool_use = False
     input_tokens = 0
     output_tokens = 0
@@ -1113,6 +1143,8 @@ async def gemini_stream_to_anthropic_stream(
                         continue
                     thinking_text = part.get("text", "")
                     thoughtsignature = part.get("thoughtSignature")
+                    if thoughtsignature:
+                        last_thinking_signature = thoughtsignature
 
                     # 检查是否需要关闭上一个块并开启新的 thinking 块
                     if current_block_type != "thinking":
@@ -1220,7 +1252,8 @@ async def gemini_stream_to_anthropic_stream(
                     has_tool_use = True
                     fc = part.get("functionCall", {}) or {}
                     original_id = fc.get("id") or f"toolu_{uuid.uuid4().hex}"
-                    tool_id = original_id
+                    sig = part.get("thoughtSignature") or last_thinking_signature
+                    tool_id = encode_tool_id_with_signature(original_id, sig)
                     tool_name = fc.get("name") or ""
                     tool_args = _remove_nulls_for_tool_input(
                         fc.get("args", {}) or {})
@@ -1312,6 +1345,9 @@ async def gemini_stream_to_anthropic_stream(
 
         yield _sse_event("message_stop", {"type": "message_stop"})
 
+    except (asyncio.CancelledError, GeneratorExit):
+        log.debug("[ANTHROPIC] 客户端断开长连接，流式生成器正常退出")
+        return
     except Exception as e:
         log.error(f"[ANTHROPIC] 流式转换失败: {e}")
         # 发送错误事件

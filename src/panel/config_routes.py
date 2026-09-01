@@ -46,6 +46,7 @@ async def get_config(token: str = Depends(verify_panel_token)):
         current_config["retry_429_max_retries"] = await config.get_retry_429_max_retries()
         current_config["retry_429_enabled"] = await config.get_retry_429_enabled()
         current_config["retry_429_interval"] = await config.get_retry_429_interval()
+        current_config["request_min_interval"] = await config.get_request_min_interval()
         # 抗截断配置
         current_config["anti_truncation_max_attempts"] = await config.get_anti_truncation_max_attempts()
 
@@ -63,6 +64,9 @@ async def get_config(token: str = Depends(verify_panel_token)):
         # 配额保鲜预热配置
         current_config["quota_warmup_enabled"] = await config.get_quota_warmup_enabled()
         current_config["quota_warmup_idle_hours"] = await config.get_quota_warmup_idle_hours()
+
+        # 自适应思考默认预算配置 (用于 Claude Code / Extended Thinking)
+        current_config["adaptive_thinking_budget"] = await config.get_adaptive_thinking_budget()
 
         # 服务器配置
         current_config["host"] = await config.get_server_host()

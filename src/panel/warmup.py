@@ -158,6 +158,13 @@ class QuotaWarmupService:
                             f"发现闲置满额账号 {fn} ({mode})，闲置时间 {elapsed/3600:.2f}h >= {idle_hours}h，开始保鲜打点...")
                         await self._probe_single_credential(fn, mode=mode, storage_adapter=storage_adapter)
                         await asyncio.sleep(2.0)
+
+            # 静默后台预热与更新 Antigravity 可用模型列表缓存
+            try:
+                from src.api.antigravity import fetch_available_models
+                await fetch_available_models(force_refresh=True)
+            except Exception:
+                pass
         except Exception as e:
             log.error(f"[QuotaWarmup] 配额保鲜预热检查失败: {e}")
 

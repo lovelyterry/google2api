@@ -596,38 +596,81 @@ def _normalize_antigravity_request(
     # 仅通过 "think" 是否出现在模型名中判断，命中则使用默认思考预算。
     thinking = is_thinking_model(model)
 
+    from src.token_usage import set_current_thinking_info, format_token
+
     # 针对 Gemini 模型：根据思考设置映射至真实的 Antigravity 后端模型 ID
     if "gemini" in model.lower():
+        if "gemini-3" in model.lower():
+            if "tiered" in model.lower():
+                # gemini-3.7-flash-tiered / tiered 模型原生支持动态分级思考 thinkingConfig
+                if "thinkingConfig" in generation_config:
+                    thinking_config = generation_config["thinkingConfig"]
+                    if return_thoughts is not None and "includeThoughts" not in thinking_config:
+                        thinking_config["includeThoughts"] = return_thoughts
+                elif thinking:
+                    generation_config["thinkingConfig"] = {
+                        "thinkingBudget": 2048,
+                        "includeThoughts": return_thoughts if return_thoughts is not None else True
+                    }
 
-        # 既然 Antigravity 后端是通过模型名来确定思考深度的，
-        # 对于 Gemini 3/3.5 模型必须移除 thinkingConfig 以防止 API 返回参数冲突错误。
-        if "gemini-3" in model:
-            generation_config.pop("thinkingConfig", None)
+                tc = generation_config.get("thinkingConfig")
+                if tc:
+                    budget = tc.get("thinkingBudget")
+                    level = tc.get("thinkingLevel")
+                    if level:
+                        tier_name = f"Tier-{level.capitalize()}"
+                    elif budget is not None:
+                        if budget >= 32000:
+                            tier_name = f"Tier-High({format_token(budget)})"
+                        elif budget >= 8000:
+                            tier_name = f"Tier-Medium({format_token(budget)})"
+                        elif budget > 0:
+                            tier_name = f"Tier-Low({format_token(budget)})"
+                        else:
+                            tier_name = "Tier-Off"
+                    else:
+                        tier_name = "Tier-Adaptive"
+                    set_current_thinking_info(tier_name)
+                else:
+                    set_current_thinking_info("Tier-Off")
+            else:
+                # 既然旧版 Antigravity 后端是通过模型名来确定思考深度的，
+                # 对于非 tiered 的固定级别 Gemini 3/3.5 模型必须移除 thinkingConfig 以防止 API 返回参数冲突错误。
+                generation_config.pop("thinkingConfig", None)
+                set_current_thinking_info("固定级别")
         else:
             # 对于 Gemini 2.5 系列
-            if thinking:
+            if thinking or "thinkingConfig" in generation_config:
                 if "thinkingConfig" not in generation_config:
                     generation_config["thinkingConfig"] = {}
                 thinking_config = generation_config["thinkingConfig"]
-                thinking_config["thinkingBudget"] = 1024
+                if "thinkingBudget" not in thinking_config:
+                    thinking_config["thinkingBudget"] = 1024
                 thinking_config.pop("thinkingLevel", None)
-                thinking_config["includeThoughts"] = return_thoughts
+                if return_thoughts is not None:
+                    thinking_config["includeThoughts"] = return_thoughts
+                set_current_thinking_info(f"思考:预算{format_token(thinking_config.get('thinkingBudget', 1024))}")
             else:
                 generation_config.pop("thinkingConfig", None)
+                set_current_thinking_info("思考:关闭")
     else:
         # 针对非 Gemini 模型（如 Claude）
-        if thinking:
+        if thinking or "thinkingConfig" in generation_config:
             # 直接设置 thinkingConfig，默认思考预算
             if "thinkingConfig" not in generation_config:
                 generation_config["thinkingConfig"] = {}
 
             thinking_config = generation_config["thinkingConfig"]
-            thinking_config["thinkingBudget"] = 1024
+            if "thinkingBudget" not in thinking_config:
+                thinking_config["thinkingBudget"] = 1024
             thinking_config.pop("thinkingLevel", None)
-            thinking_config["includeThoughts"] = return_thoughts
+            if return_thoughts is not None:
+                thinking_config["includeThoughts"] = return_thoughts
+            set_current_thinking_info(f"思考:预算{format_token(thinking_config.get('thinkingBudget', 1024))}")
         else:
             # 显式处于非思考模式时，剔除残留的 thinkingConfig，放置被 upstream 拒绝
             generation_config.pop("thinkingConfig", None)
+            set_current_thinking_info("思考:关闭")
 
         # 检查最后一个 assistant 消息是否以 thinking 块开始
         contents = result.get("contents", [])

@@ -16,6 +16,7 @@ import struct
 import sys
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+from contextvars import ContextVar
 
 import aiofiles
 from src.log import log
@@ -602,6 +603,19 @@ def format_token(count: int) -> str:
     return str(count)
 
 
+_current_thinking_info_var: ContextVar[Optional[str]] = ContextVar("current_thinking_info", default=None)
+
+
+def set_current_thinking_info(info: Optional[str]) -> None:
+    """设置当前请求的思考配置描述标签"""
+    _current_thinking_info_var.set(info)
+
+
+def get_current_thinking_info() -> Optional[str]:
+    """获取当前请求的思考配置描述标签"""
+    return _current_thinking_info_var.get()
+
+
 # ==============================================================================
 # 3. Token 日志与结果解析 (Logger & Usage Parser)
 # ==============================================================================
@@ -644,7 +658,11 @@ def count_token_usage(
         f"总计={format_token(total_tokens):>6}",
     ]
 
-    log_msg = f"模型={model_str}{user_str} | {', '.join(parts)}"
+    # 思考策略/分级标注 (例如 [思考:预算48k] / [思考:等级Low])
+    thinking_info = get_current_thinking_info()
+    thinking_desc = f" [{thinking_info}]" if thinking_info else ""
+
+    log_msg = f"模型={model_str}{thinking_desc}{user_str} | {', '.join(parts)}"
 
     now_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
     if not is_final:
@@ -658,7 +676,8 @@ def count_token_usage(
 
         # 仅在 is_final=True 时落库写盘
         try:
-            asyncio.create_task(
+            loop = asyncio.get_running_loop()
+            loop.create_task(
                 token_tracker.record_usage(
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
@@ -668,5 +687,8 @@ def count_token_usage(
                     user_info=user_info,
                 )
             )
+        except RuntimeError:
+            # 无运行中的事件循环时（如同步测试环境），忽略异步落库
+            pass
         except Exception as e:
             log.warning(f"[count_token_usage] 异步记录 Token 仪表盘数据失败: {e}")

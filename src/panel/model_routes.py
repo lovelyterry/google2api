@@ -15,10 +15,22 @@ router = APIRouter(prefix="/model-mappings", tags=["model-mappings"])
 
 @router.get("")
 @router.get("/")
-async def get_model_mappings(token: str = Depends(verify_panel_token)):
-    """获取所有动态模型映射与自定义映射规则"""
+async def get_model_mappings(
+    refresh: bool = False,
+    token: str = Depends(verify_panel_token)
+):
+    """获取所有动态模型映射与自定义映射规则，并直接获取 Google Antigravity 服务端实际可用模型列表"""
     try:
         data = model_mapping_manager.get_all_mappings()
+        try:
+            from src.api.antigravity import fetch_available_models
+            base_models = await fetch_available_models(force_refresh=refresh)
+            data["available_models"] = [
+                m["id"] for m in base_models if isinstance(m, dict) and "id" in m
+            ]
+        except Exception as e:
+            log.warning(f"获取 Antigravity 可用模型失败: {e}")
+            data["available_models"] = []
         return JSONResponse(content={"success": True, "data": data})
     except Exception as e:
         log.error(f"获取模型映射失败: {e}")

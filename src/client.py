@@ -178,7 +178,7 @@ async def request_worker():
                 from src.config import get_request_min_interval
                 min_interval = await get_request_min_interval()
             except Exception:
-                min_interval = 1.0
+                min_interval = 0.2
             if min_interval > 0:
                 await asyncio.sleep(min_interval)
 
@@ -203,7 +203,7 @@ class RequestIntervalLimiter:
             from src.config import get_request_min_interval
             min_interval = await get_request_min_interval()
         except Exception:
-            min_interval = 1.0
+            min_interval = 0.2
 
         if min_interval <= 0:
             return

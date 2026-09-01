@@ -1170,54 +1170,18 @@ const app = createApp({
             mappings: {},
             dynamicMappings: [],
             fallbackModel: '',
-            availableOptions: [
-                'gemini-2.5-flash',
-                'gemini-2.5-pro',
-                'gemini-2.5-flash-lite',
-                'gemini-2.5-flash-thinking',
-                'gemini-3.5-flash',
-                'gemini-3.5-flash-low',
-                'gemini-3.5-flash-extra-low',
-                'gemini-3.1-pro-low',
-                'gemini-3.1-flash-lite',
-                'gemini-3-flash',
-                'gemini-3-flash-agent',
-                'gemini-pro-agent',
-                'claude-sonnet-4-6',
-                'claude-opus-4-6-thinking'
-            ],
+            availableOptions: [],
             newOriginal: '',
             newTarget: '',
-            loading: false
+            loading: false,
+            refreshing: false
         });
 
-        const loadAvailableModelOptions = async () => {
-            try {
-                const res = await fetch('./antigravity/v1/models', { headers: getAuthHeaders() });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.data && Array.isArray(data.data)) {
-                        const set = new Set(models.availableOptions);
-                        data.data.forEach(item => {
-                            if (item && item.id) {
-                                let id = item.id;
-                                if (id.startsWith('假流式/')) id = id.replace('假流式/', '');
-                                if (id.startsWith('流式抗截断/')) id = id.replace('流式抗截断/', '');
-                                set.add(id);
-                            }
-                        });
-                        models.availableOptions = Array.from(set);
-                    }
-                }
-            } catch (e) {
-                console.error('动态拉取模型可用列表失败', e);
-            }
-        };
-
-        const loadModelMappings = async () => {
+        const loadModelMappings = async (refresh = false) => {
             models.loading = true;
             try {
-                const res = await fetch('./model-mappings', { headers: getAuthHeaders() });
+                const url = './model-mappings' + (refresh ? '?refresh=true' : '');
+                const res = await fetch(url, { headers: getAuthHeaders() });
                 const data = await res.json();
                 if (res.ok && data.data) {
                     const mapObj = {};
@@ -1231,12 +1195,25 @@ const app = createApp({
                     models.dynamicMappings = data.data.dynamic_mappings || [];
                     const fbMap = data.data.fallback_mappings || data.data.fallback_map || {};
                     models.fallbackModel = fbMap.antigravity || fbMap.default || '';
+                    models.availableOptions = data.data.available_models || [];
                 }
-                await loadAvailableModelOptions();
             } catch (e) {
                 showStatus(`加载模型映射失败: ${e.message}`, 'error');
             } finally {
                 models.loading = false;
+            }
+        };
+
+        const refreshModelList = async () => {
+            models.refreshing = true;
+            try {
+                showStatus('正在向 Google 服务端强制刷新可用模型列表...', 'info');
+                await loadModelMappings(true);
+                showStatus(`✅ 模型列表刷新成功！当前可用模型数: ${models.availableOptions.length}`, 'success');
+            } catch (e) {
+                showStatus(`刷新失败: ${e.message}`, 'error');
+            } finally {
+                models.refreshing = false;
             }
         };
 
@@ -1981,6 +1958,7 @@ const app = createApp({
             handleFileDrop,
             doUploadFiles,
             loadModelMappings,
+            refreshModelList,
             saveFallbackModel,
             saveModelMapping,
             handleNewOriginalKeydown,

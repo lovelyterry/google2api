@@ -716,14 +716,19 @@ class Storage:
         return (has_quota, quota_tier, reset_ts, rot_order)
 
     async def get_next_available_credential(
-        self, mode: str = "geminicli", model_name: Optional[str] = None
+        self, mode: str = "geminicli", model_name: Optional[str] = None, busy_checker: Optional[Callable[[str], int]] = None
     ) -> Optional[Tuple[str, Dict[str, Any]]]:
         self._ensure_initialized()
         state_dict = self._states[mode]
         current_time = time.time()
 
         sorted_files = sorted(
-            state_dict.keys(), key=lambda f: self._credential_schedule_key(state_dict, f))
+            state_dict.keys(),
+            key=lambda f: (
+                busy_checker(f) if busy_checker else 0,
+                self._credential_schedule_key(state_dict, f),
+            ),
+        )
 
         for fname in sorted_files:
             st = state_dict[fname]

@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import collections
 from contextvars import ContextVar
 import os
 import time
@@ -38,9 +39,25 @@ class CredentialManager:
         self._initialized = False
         self._storage_adapter = None
         self._last_selected_account: Dict[str, str] = {}
+        # 进行中并发流计数: {filename: in_flight_count}
+        self._in_flight: Dict[str, int] = collections.defaultdict(int)
 
-        # 并发控制（简化）
-        # 后端数据库自行处理并发，credential_manager 不再使用本地锁
+    def acquire_in_flight(self, filename: str) -> None:
+        """增加指定账号的进行中并发计数"""
+        if filename:
+            self._in_flight[os.path.basename(filename)] += 1
+
+    def release_in_flight(self, filename: str) -> None:
+        """减少指定账号的进行中并发计数"""
+        if filename:
+            base = os.path.basename(filename)
+            self._in_flight[base] = max(0, self._in_flight[base] - 1)
+
+    def get_in_flight(self, filename: str) -> int:
+        """获取指定账号当前正在进行中的流式/请求并发数"""
+        if not filename:
+            return 0
+        return self._in_flight.get(os.path.basename(filename), 0)
 
     async def _ensure_initialized(self):
         """确保管理器已初始化（内部使用）"""
@@ -87,20 +104,18 @@ class CredentialManager:
         self, mode: str = "geminicli", model_name: Optional[str] = None, force_rotate: bool = False
     ) -> Optional[Tuple[str, Dict[str, Any]]]:
         """
-        获取有效的凭证 (账号粘性与零冗余调度版)
-        只要当前激活账号正常（未禁用、未处于当前模型冷却期、Token有效），
-        API 请求直接复用当前账号，零算法重新调度，零 SSE 广播。
-
-        仅在当前账号出现异常（冷却/禁用/Token刷新失败）或显式要求 force_rotate 时，
-        才调用调度算法重新选出下一个最优账号并广播 SSE。
+        获取有效的凭证 (账号并发感知与智能隔离调度版)
+        1. 若当前激活账号空闲（in_flight == 0）、未禁用、未冷却且 Token 有效，直接复用当前账号；
+        2. 若当前激活账号已有请求正在占用（in_flight > 0，如 Plan Mode 子代理并发），
+           自动触发并发隔离调度，优先为新子代理分配空闲账号，彻底避免单账号并发踩踏 429。
         """
         await self._ensure_initialized()
         current_time = time.time()
 
-        # 1. 如果没有强制要求重新调度，优先检测复用当前激活账号
+        # 1. 如果没有强制要求重新调度，且当前激活账号空闲 (in_flight == 0)，优先复用当前激活账号
         if not force_rotate:
             active_filename = self._last_selected_account.get(mode)
-            if active_filename:
+            if active_filename and self.get_in_flight(active_filename) == 0:
                 # 检查该账号目前的状态 (是否禁用、模型冷却)
                 st = await self._storage_adapter.get_credential_state(active_filename, mode=mode)
                 is_disabled = st.get("disabled", False)
@@ -131,11 +146,11 @@ class CredentialManager:
                             self.set_current_account(user_acc)
                             return active_filename, cred_data
 
-        # 2. 当前激活账号不存在 / 禁用 / 处于冷却 / 报错重试 -> 执行调度算法选中新账号
+        # 2. 当前激活账号忙碌 / 不存在 / 禁用 / 处于冷却 / 报错重试 -> 执行调度算法选中新账号 (优先空闲账号)
         max_retries = 3
         for attempt in range(max_retries):
             result = await self._storage_adapter._backend.get_next_available_credential(
-                mode=mode, model_name=model_name
+                mode=mode, model_name=model_name, busy_checker=self.get_in_flight
             )
 
             if not result:
@@ -417,9 +432,9 @@ class CredentialManager:
 
                 await self.update_credential_state(credential_name, state_updates, mode=mode)
 
-                # 针对 429/503 等限流/服务不可用错误：若未能从响应体解析出具体 reset 时间，使用默认 1 分钟 (60 秒) 冷却
+                # 针对 429/503 等限流/服务不可用错误：若未能从响应体解析出具体 reset 时间，使用默认 15 秒快速恢复冷却
                 if (error_code in (429, 503)) and (cooldown_until is None or cooldown_until <= time.time()):
-                    cooldown_until = time.time() + 60
+                    cooldown_until = time.time() + 15
 
                 # 设置模型级冷却
                 if cooldown_until is not None:
@@ -649,6 +664,19 @@ class _CredentialManagerSingleton:
             self._instance.set_current_account(account)
         else:
             _current_account_var.set(account)
+
+    def acquire_in_flight(self, filename: str) -> None:
+        if self._instance:
+            self._instance.acquire_in_flight(filename)
+
+    def release_in_flight(self, filename: str) -> None:
+        if self._instance:
+            self._instance.release_in_flight(filename)
+
+    def get_in_flight(self, filename: str) -> int:
+        if self._instance:
+            return self._instance.get_in_flight(filename)
+        return 0
 
     def __getattr__(self, name):
         """代理所有方法调用到真实的 CredentialManager 实例"""

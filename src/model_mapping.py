@@ -132,12 +132,34 @@ class ModelMappingManager:
             return requested_model
 
         key = f"{router_type}:{requested_model}"
-        # 1. 优先使用专属自定义映射
+        # 1. 优先使用专属精确自定义映射
         if key in self._custom_map:
             return self._custom_map[key]
-        # 2. 兼容不带 router_type 的通用自定义映射
+        # 2. 兼容不带 router_type 的通用精确自定义映射
         if requested_model in self._custom_map:
             return self._custom_map[requested_model]
+
+        # 3. 通配符/模糊规则匹配 (如 claude-3-7*, gpt-4*, *sonnet* 等)
+        import fnmatch
+        for pattern_key, target in self._custom_map.items():
+            pattern = pattern_key
+            if ":" in pattern_key:
+                p_router, p_model = pattern_key.split(":", 1)
+                if p_router != router_type and p_router != "default":
+                    continue
+                pattern = p_model
+
+            if ("*" in pattern or "?" in pattern) and fnmatch.fnmatch(requested_model.lower(), pattern.lower()):
+                log.info(f"[MODEL MAP] 请求模型 [{requested_model}] 命中通配符规则 [{pattern}] -> {target}")
+                return target
+
+        # 4. 若配置了全局/路由兜底目标模型，对未单独配置映射的第三方模型（如 Claude Code、GPT 等）自动应用兜底
+        fallback = self._fallback_map.get(router_type) or self._fallback_map.get("default")
+        if fallback:
+            req_lower = requested_model.lower()
+            if req_lower.startswith(("claude", "gpt", "o1", "o3", "deepseek", "qwen", "anthropic")) or "claude" in req_lower:
+                log.info(f"[MODEL MAP] 第三方请求模型 [{requested_model}] 未匹配独立规则，自动兜底至 -> {fallback}")
+                return fallback
 
         return requested_model
 

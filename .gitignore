@@ -6,6 +6,10 @@
 *.toml
 !pyproject.toml
 creds/
+creds.7z
+*.7z
+*.zip
+*.tar.gz
 CLAUDE.md
 GEMINI.md
 .kiro
