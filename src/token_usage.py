@@ -664,17 +664,11 @@ def count_token_usage(
 
     log_msg = f"模型={model_str}{thinking_desc}{user_str} | {', '.join(parts)}"
 
-    now_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    if not is_final:
-        # 当流式未结束时：使用 \r 行首复位 + \033[K 清除残影（不换行，动态刷新）
-        sys.stdout.write(f"\r[{now_time}] [INFO] {log_msg}\033[K")
-        sys.stdout.flush()
-    else:
-        # 当流结束或非流式完成时：原位覆盖输出最终结果并加 \n 换行
-        sys.stdout.write(f"\r[{now_time}] [INFO] {log_msg}\033[K\n")
-        sys.stdout.flush()
+    # 统一使用 log.info 输出，确保终端可见换行且同时写入 log.txt
+    log.info(log_msg)
 
-        # 仅在 is_final=True 时落库写盘
+    # 仅在 is_final=True 时落库写盘
+    if is_final:
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(

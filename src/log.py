@@ -313,10 +313,10 @@ log = Logger()
 # 导出的公共接口
 __all__ = ["log", "set_log_level", "LOG_LEVELS"]
 
-# 模块加载时：读取配置缓存 → 清空日志文件 → 启动 writer 线程
+# 模块加载时：读取配置缓存 → 开启日志文件 (追加模式) → 启动 writer 线程
 _refresh_config()
 if _log_enabled:
-    _clear_log_file()
+    _open_log_file("a")
     _start_writer_thread()
 
 # 注册退出清理
