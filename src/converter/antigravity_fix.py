@@ -178,9 +178,14 @@ def _clean_parameters_json_schema(
                 result["items"] = _clean_parameters_json_schema(items[0], root_schema, visited)
                 _append_schema_hint(result, "tuple schema simplified")
             else:
-                result.pop("items", None)
+                result["items"] = {"type": "string"}
         elif isinstance(items, dict):
-            result["items"] = _clean_parameters_json_schema(items, root_schema, visited)
+            cleaned_items = _clean_parameters_json_schema(items, root_schema, visited)
+            if not isinstance(cleaned_items, dict) or ("type" not in cleaned_items and "properties" not in cleaned_items):
+                cleaned_items = {"type": "string"}
+            result["items"] = cleaned_items
+        else:
+            result["items"] = {"type": "string"}
 
     validation_keys = {
         "default", "minLength", "maxLength", "minimum", "maximum",
