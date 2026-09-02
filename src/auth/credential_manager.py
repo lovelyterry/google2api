@@ -149,7 +149,7 @@ class CredentialManager:
         # 2. 当前激活账号忙碌 / 不存在 / 禁用 / 处于冷却 / 报错重试 -> 执行调度算法选中新账号 (优先空闲账号)
         max_retries = 3
         for attempt in range(max_retries):
-            result = await self._storage_adapter._backend.get_next_available_credential(
+            result = await self._storage_adapter.get_next_available_credential(
                 mode=mode, model_name=model_name, busy_checker=self.get_in_flight
             )
 
@@ -331,7 +331,7 @@ class CredentialManager:
         """
         await self._ensure_initialized()
         try:
-            return await self._storage_adapter._backend.get_credentials_summary()
+            return await self._storage_adapter.get_credentials_summary()
         except Exception as e:
             log.error(f"Error getting credentials summary: {e}")
             return []
@@ -414,7 +414,7 @@ class CredentialManager:
                 # 条件写入：仅当凭证有错误状态或模型冷却时才写 DB，零内存缓存
                 # fire-and-forget，不阻塞请求链路
                 asyncio.create_task(
-                    self._storage_adapter._backend.record_success(
+                    self._storage_adapter.record_success(
                         credential_name, model_name=model_name, mode=mode
                     )
                 )
@@ -439,8 +439,8 @@ class CredentialManager:
                 # 设置模型级冷却
                 if cooldown_until is not None:
                     target_model = model_name or "default"
-                    if hasattr(self._storage_adapter._backend, 'set_model_cooldown'):
-                        await self._storage_adapter._backend.set_model_cooldown(
+                    if hasattr(self._storage_adapter, 'set_model_cooldown'):
+                        await self._storage_adapter.set_model_cooldown(
                             credential_name, target_model, cooldown_until, mode=mode
                         )
                         log.info(

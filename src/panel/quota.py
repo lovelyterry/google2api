@@ -23,8 +23,7 @@ class QuotaRefreshService:
             if not credential_data:
                 return False
 
-            from src.auth import Credentials
-            from src.utils import ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET
+            from src.auth import Credentials, ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET
             credential_data.setdefault("client_id", ANTIGRAVITY_CLIENT_ID)
             credential_data.setdefault(
                 "client_secret", ANTIGRAVITY_CLIENT_SECRET)

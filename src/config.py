@@ -77,10 +77,6 @@ async def reload_config():
         from src.storage import get_storage
         storage_adapter = await get_storage()
 
-        # 如果后端支持 reload_config_cache，调用它
-        if hasattr(storage_adapter._backend, 'reload_config_cache'):
-            await storage_adapter._backend.reload_config_cache()
-
         # 重新加载配置缓存
         _config_cache = await storage_adapter.get_all_config()
         _config_initialized = True

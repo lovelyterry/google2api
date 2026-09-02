@@ -81,14 +81,12 @@ class ModelMappingManager:
                 json.dump(config_data, f, ensure_ascii=False, indent=2)
             os.replace(temp_path, config_path)
 
-            # 同步更新底层 JSONManager 的内存配置缓存，避免保存常规设置时冲掉模型映射
+            # 同步更新底层 Storage 的内存配置缓存，避免保存常规设置时冲掉模型映射
             try:
-                from src.storage import _storage_adapter
-                if _storage_adapter and getattr(_storage_adapter, "_backend", None):
-                    backend = _storage_adapter._backend
-                    if hasattr(backend, "_config_cache") and isinstance(backend._config_cache, dict):
-                        backend._config_cache["custom_map"] = self._custom_map
-                        backend._config_cache["fallback_map"] = self._fallback_map
+                from src.storage import _storage_instance
+                if _storage_instance and hasattr(_storage_instance, "_config_cache") and isinstance(_storage_instance._config_cache, dict):
+                    _storage_instance._config_cache["custom_map"] = self._custom_map
+                    _storage_instance._config_cache["fallback_map"] = self._fallback_map
             except Exception:
                 pass
         except Exception as e:

@@ -21,7 +21,7 @@ from fastapi import Response
 from src.config import get_code_assist_endpoint, get_auto_ban_error_codes
 from src.log import log
 
-from src.auth import credential_manager
+from src.auth import credential_manager, get_geminicli_user_agent
 from src.client import stream_post_async, post_async
 
 # 导入共同的基础功能
@@ -32,7 +32,6 @@ from src.api.utils import (
     record_api_call_error,
     parse_and_log_cooldown,
 )
-from src.utils import get_geminicli_user_agent
 
 # ==================== 全局凭证管理器 ====================
 
@@ -226,7 +225,8 @@ async def stream_request(
                 url=target_url,
                 body=final_payload,
                 native=native,
-                headers=auth_headers
+                headers=auth_headers,
+                session_key=f"geminicli:{current_file}",
             ):
                 # 判断是否是Response对象
                 if isinstance(chunk, Response):
@@ -542,7 +542,8 @@ async def non_stream_request(
             response = await post_async(
                 url=target_url,
                 json=final_payload,
-                headers=auth_headers
+                headers=auth_headers,
+                session_key=f"geminicli:{current_file}",
             )
 
             status_code = response.status_code

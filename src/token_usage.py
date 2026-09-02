@@ -30,13 +30,15 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 # ==============================================================================
 
 class TokenTracker:
-    """Token 消耗统计与持久化管理类"""
+    """Token 消耗统计与持久化管理类（支持防抖异步批量刷盘与退出保护）"""
 
     def __init__(self):
         self._stats_dir: Optional[str] = None
         self._stats_file: Optional[str] = None
         self._lock = asyncio.Lock()
         self._initialized = False
+        self._dirty = False
+        self._save_task: Optional[asyncio.Task] = None
 
         self._data: Dict[str, Any] = {
             "daily": {},
@@ -81,8 +83,8 @@ class TokenTracker:
             except Exception as e:
                 log.error(f"[TokenTracker] 初始化失败: {e}")
 
-    async def _save(self) -> None:
-        """保存统计数据到磁盘文件"""
+    async def _save_direct(self) -> None:
+        """直接将数据写盘"""
         if not self._stats_file:
             return
         temp_file = self._stats_file + ".tmp"
@@ -91,6 +93,7 @@ class TokenTracker:
             async with aiofiles.open(temp_file, "w", encoding="utf-8") as f:
                 await f.write(content)
             os.replace(temp_file, self._stats_file)
+            self._dirty = False
         except Exception as e:
             log.error(f"[TokenTracker] 保存统计数据失败: {e}")
             if os.path.exists(temp_file):
@@ -98,6 +101,26 @@ class TokenTracker:
                     os.remove(temp_file)
                 except Exception:
                     pass
+
+    async def _delayed_save_worker(self, delay: float = 3.0) -> None:
+        """防抖刷盘工作协程"""
+        await asyncio.sleep(delay)
+        async with self._lock:
+            if self._dirty:
+                await self._save_direct()
+            self._save_task = None
+
+    def _schedule_save(self) -> None:
+        """标记脏数据并调度防抖延迟写盘"""
+        self._dirty = True
+        if self._save_task is None or self._save_task.done():
+            self._save_task = asyncio.create_task(self._delayed_save_worker(3.0))
+
+    async def flush(self) -> None:
+        """强制立即将内存脏数据刷盘"""
+        async with self._lock:
+            if self._dirty:
+                await self._save_direct()
 
     async def record_usage(
         self,
@@ -184,7 +207,7 @@ class TokenTracker:
             m_item["total_tokens"] += total_cnt
             m_item["request_count"] += 1
 
-            await self._save()
+            self._schedule_save()
 
         try:
             from src.panel.sse import sse_manager
@@ -370,7 +393,7 @@ class TokenTracker:
                 "accounts": {},
                 "models": {},
             }
-            await self._save()
+            await self._save_direct()
 
         try:
             from src.panel.sse import sse_manager

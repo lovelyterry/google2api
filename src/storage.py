@@ -36,7 +36,6 @@ class Storage:
     }
 
     def __init__(self):
-        self._backend = self
         self._credentials_dir: Optional[str] = None
         self._geminicli_dir: Optional[str] = None
         self._antigravity_dir: Optional[str] = None
@@ -79,9 +78,6 @@ class Storage:
                 self._config_file = os.path.join(
                     self._credentials_dir, "config.json")
 
-                # 加载现有 SQLite 数据库（如果存在）进行平滑自动迁移
-                await self._migrate_from_sqlite_if_exists()
-
                 # 加载状态文件到内存缓存
                 await self._load_states("geminicli")
                 await self._load_states("antigravity")
@@ -103,112 +99,6 @@ class Storage:
             except Exception as e:
                 log.error(f"Error initializing JSON storage: {e}")
                 raise
-
-    async def _migrate_from_sqlite_if_exists(self):
-        """如果存在 credentials.db，自动将其中的凭证与状态迁移至 JSON 文件"""
-        db_path = os.path.join(self._credentials_dir, "credentials.db")
-        if not os.path.exists(db_path):
-            return
-
-        try:
-            import sqlite3
-            log.info(
-                "Found legacy SQLite database credentials.db, starting automatic migration to JSON...")
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-
-            tables = [r[0] for r in cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
-
-            if "credentials" in tables:
-                cursor.execute(
-                    "SELECT filename, credential_data, disabled, error_codes, error_messages, last_success, user_email, model_cooldowns, preview, tier, rotation_order FROM credentials")
-                rows = cursor.fetchall()
-                geminicli_state = {}
-                for row in rows:
-                    fname = os.path.basename(row[0])
-                    try:
-                        cdata = json.loads(row[1])
-                        cpath = os.path.join(self._geminicli_dir, fname)
-                        with open(cpath, "w", encoding="utf-8") as f:
-                            json.dump(cdata, f, ensure_ascii=False, indent=2)
-                    except Exception as ex:
-                        log.warning(
-                            f"Failed to migrate credential file {fname}: {ex}")
-
-                    geminicli_state[fname] = {
-                        "disabled": bool(row[2]),
-                        "error_codes": json.loads(row[3]) if row[3] else [],
-                        "error_messages": json.loads(row[4]) if row[4] else [],
-                        "last_success": row[5] or time.time(),
-                        "user_email": row[6],
-                        "model_cooldowns": json.loads(row[7]) if row[7] else {},
-                        "preview": bool(row[8]) if row[8] is not None else True,
-                        "tier": row[9] or "pro",
-                        "rotation_order": row[10] or 0,
-                    }
-
-                with open(self._geminicli_state_file, "w", encoding="utf-8") as f:
-                    json.dump(geminicli_state, f, ensure_ascii=False, indent=2)
-
-            if "antigravity_credentials" in tables:
-                cursor.execute(
-                    "SELECT filename, credential_data, disabled, error_codes, error_messages, last_success, user_email, model_cooldowns, tier, enable_credit, rotation_order FROM antigravity_credentials")
-                rows = cursor.fetchall()
-                ag_state = {}
-                for row in rows:
-                    fname = os.path.basename(row[0])
-                    try:
-                        cdata = json.loads(row[1])
-                        cpath = os.path.join(self._antigravity_dir, fname)
-                        with open(cpath, "w", encoding="utf-8") as f:
-                            json.dump(cdata, f, ensure_ascii=False, indent=2)
-                    except Exception as ex:
-                        log.warning(
-                            f"Failed to migrate antigravity credential file {fname}: {ex}")
-
-                    ag_state[fname] = {
-                        "disabled": bool(row[2]),
-                        "error_codes": json.loads(row[3]) if row[3] else [],
-                        "error_messages": json.loads(row[4]) if row[4] else [],
-                        "last_success": row[5] or time.time(),
-                        "user_email": row[6],
-                        "model_cooldowns": json.loads(row[7]) if row[7] else {},
-                        "tier": row[8] or "pro",
-                        "enable_credit": bool(row[9]) if row[9] is not None else False,
-                        "rotation_order": row[10] or 0,
-                    }
-
-                with open(self._antigravity_state_file, "w", encoding="utf-8") as f:
-                    json.dump(ag_state, f, ensure_ascii=False, indent=2)
-
-            if "config" in tables:
-                cursor.execute("SELECT key, value FROM config")
-                rows = cursor.fetchall()
-                cfg_data = {}
-                for k, v in rows:
-                    try:
-                        cfg_data[k] = json.loads(v)
-                    except Exception:
-                        cfg_data[k] = v
-
-                with open(self._config_file, "w", encoding="utf-8") as f:
-                    json.dump(cfg_data, f, ensure_ascii=False, indent=2)
-
-            conn.close()
-
-            bak_path = db_path + ".migrated.bak"
-            if os.path.exists(bak_path):
-                try:
-                    os.remove(bak_path)
-                except Exception:
-                    pass
-            os.rename(db_path, bak_path)
-            log.info(
-                f"SQLite migration complete! Database backed up to {bak_path}")
-
-        except Exception as e:
-            log.error(f"Error during SQLite migration: {e}")
 
     async def _load_states(self, mode: str) -> None:
         state_file = self._geminicli_state_file if mode == "geminicli" else self._antigravity_state_file
@@ -1007,38 +897,6 @@ class Storage:
     async def get_backend_info(self) -> Dict[str, Any]:
         self._ensure_initialized()
         return self.get_database_info()
-
-    async def export_credential_to_json(self, filename: str, output_path: str = None) -> bool:
-        """将凭证导出为 JSON 文件"""
-        self._ensure_initialized()
-        credential_data = await self.get_credential(filename)
-        if credential_data is None:
-            return False
-
-        if output_path is None:
-            output_path = f"{filename}.json"
-
-        try:
-            async with aiofiles.open(output_path, "w", encoding="utf-8") as f:
-                await f.write(json.dumps(credential_data, indent=2, ensure_ascii=False))
-            return True
-        except Exception:
-            return False
-
-    async def import_credential_from_json(self, json_path: str, filename: str = None) -> bool:
-        """从 JSON 文件导入凭证"""
-        self._ensure_initialized()
-        try:
-            async with aiofiles.open(json_path, "r", encoding="utf-8") as f:
-                content = await f.read()
-
-            credential_data = json.loads(content)
-            if filename is None:
-                filename = os.path.basename(json_path)
-
-            return await self.store_credential(filename, credential_data)
-        except Exception:
-            return False
 
 
 # 全局存储单例

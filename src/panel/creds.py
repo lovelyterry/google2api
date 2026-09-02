@@ -21,13 +21,15 @@ from src.auth import (
     get_user_projects,
     select_default_project,
     enable_required_apis,
+    GEMINICLI_USER_AGENT,
+    ANTIGRAVITY_USER_AGENT,
 )
 from src.schemas import (
     CredFileActionRequest,
     CredFileBatchActionRequest
 )
 from src.storage import get_storage
-from src.utils import verify_panel_token, GEMINICLI_USER_AGENT, ANTIGRAVITY_USER_AGENT
+from src.utils import verify_panel_token
 from src.api.antigravity import fetch_quota_info
 from src.config import get_code_assist_endpoint, get_antigravity_api_url
 from .utils import validate_mode
@@ -174,8 +176,8 @@ async def upload_credentials_common(
                 credential_data = json.loads(content_str)
 
                 # 验证账号是否已存在
-                from src.auth import Credentials, get_user_email
-                from src.utils import (
+                from src.auth import (
+                    Credentials, get_user_email,
                     CLIENT_ID, CLIENT_SECRET,
                     ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET
                 )
@@ -1146,8 +1148,7 @@ async def get_credential_quota(
 
         if not project_id and mode == "antigravity":
             try:
-                from src.auth import fetch_project_id_and_tier
-                from src.utils import ANTIGRAVITY_USER_AGENT
+                from src.auth import fetch_project_id_and_tier, ANTIGRAVITY_USER_AGENT
                 from src.config import get_antigravity_api_url
                 api_base_url = await get_antigravity_api_url()
                 project_id, subscription_tier = await fetch_project_id_and_tier(
@@ -1518,7 +1519,8 @@ async def test_credential(
                 }
             },
             headers=headers,
-            timeout=30.0
+            timeout=30.0,
+            session_key=f"{mode}:{filename}",
         )
 
         # 返回实际的状态码和详细信息

@@ -20,6 +20,8 @@ try:
 except ImportError:
     CURL_CFFI_AVAILABLE = False
     CurlOpt = None
+    CurlAsyncSession = None
+    CurlResponse = None
     log.error("curl_cffi 未安装，请安装 curl_cffi 依赖！")
 
 
@@ -58,6 +60,9 @@ class IsolatedClientPool:
         self._lock = asyncio.Lock()
 
     async def get_session(self, session_key: Optional[str] = None, proxy: Optional[str] = None, impersonate: str = "chrome120") -> Any:
+        if not CURL_CFFI_AVAILABLE or CurlAsyncSession is None:
+            raise RuntimeError("curl_cffi 未安装或不可用，请运行 pip install curl_cffi 安装核心依赖！")
+
         # 如果未指定 session_key，使用默认临时 Key
         key = session_key or "default"
         async with self._lock:
@@ -90,6 +95,14 @@ class IsolatedClientPool:
                     await _close_session(session)
             for key in keys_to_remove:
                 del self._pool[key]
+
+
+    async def close_all(self):
+        """关闭连接池中的所有 Session 连接"""
+        async with self._lock:
+            for session, _ in self._pool.values():
+                await _close_session(session)
+            self._pool.clear()
 
 
 # 实例池管理
@@ -159,37 +172,6 @@ class HttpClientManager:
 # 全局 HTTP 客户端管理器实例
 http_client = HttpClientManager()
 
-# 全局请求队列
-request_queue = asyncio.Queue()
-
-async def request_worker():
-    """全局唯一的消费者，负责按频率发送请求"""
-    while True:
-        future, func, args, kwargs = await request_queue.get()
-        try:
-            result = await func(*args, **kwargs)
-            future.set_result(result)
-        except Exception as e:
-            future.set_exception(e)
-        finally:
-            request_queue.task_done()
-            # 频率限制：读取配置并等待
-            try:
-                from src.config import get_request_min_interval
-                min_interval = await get_request_min_interval()
-            except Exception:
-                min_interval = 0.2
-            if min_interval > 0:
-                await asyncio.sleep(min_interval)
-
-# 启动 Worker 的辅助函数
-_worker_task = None
-
-def ensure_worker_running():
-    global _worker_task
-    if _worker_task is None or _worker_task.done():
-        _worker_task = asyncio.create_task(request_worker())
-
 
 class RequestIntervalLimiter:
     """请求间隔控制，确保上游 API 调用的发起时间间隔不少于配置的最小间隔"""
@@ -250,27 +232,16 @@ async def get_async(
     url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 30.0, skip_interval: bool = True, **kwargs
 ) -> Any:
     """通用异步 GET 请求（记录调用与响应日志）"""
-    ensure_worker_running()
-
-    async def _actual_get():
-        if not skip_interval:
-            await request_interval_limiter.wait()
-        log.debug(f"[HTTP GET] 请求 URL: {url}")
-        async with http_client.get_client(timeout=timeout, **kwargs) as client:
-            response = await client.get(url, headers=headers)
-            resp_text = getattr(response, "text", "")
-            status_code = getattr(response, "status_code", 0)
-            log.debug(
-                f"[HTTP GET] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
-            return response
-
-    if skip_interval:
-        return await _actual_get()
-
-    loop = asyncio.get_running_loop()
-    future = loop.create_future()
-    await request_queue.put((future, _actual_get, (), {}))
-    return await future
+    if not skip_interval:
+        await request_interval_limiter.wait()
+    log.debug(f"[HTTP GET] 请求 URL: {url}")
+    async with http_client.get_client(timeout=timeout, **kwargs) as client:
+        response = await client.get(url, headers=headers)
+        resp_text = getattr(response, "text", "")
+        status_code = getattr(response, "status_code", 0)
+        log.debug(
+            f"[HTTP GET] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
+        return response
 
 
 # 通用的异步 POST 方法
@@ -284,36 +255,25 @@ async def post_async(
     **kwargs,
 ) -> Any:
     """通用异步 POST 请求（记录调用与响应日志）"""
-    ensure_worker_running()
+    if not skip_interval:
+        await request_interval_limiter.wait()
+    payload = json if json is not None else data
+    log.debug(
+        f"[HTTP POST] 请求 URL: {url}\nPayload:\n{_format_payload(payload)}")
 
-    async def _actual_post():
-        if not skip_interval:
-            await request_interval_limiter.wait()
-        payload = json if json is not None else data
+    async with http_client.get_client(timeout=timeout, **kwargs) as client:
+        response = await client.post(url, data=data, json=json, headers=headers)
+        resp_text = getattr(response, "text", "")
+        if not resp_text and hasattr(response, "content"):
+            try:
+                resp_text = response.content.decode("utf-8", errors="replace")
+            except Exception:
+                resp_text = "<Binary Content>"
+
+        status_code = getattr(response, "status_code", 0)
         log.debug(
-            f"[HTTP POST] 请求 URL: {url}\nPayload:\n{_format_payload(payload)}")
-
-        async with http_client.get_client(timeout=timeout, **kwargs) as client:
-            response = await client.post(url, data=data, json=json, headers=headers)
-            resp_text = getattr(response, "text", "")
-            if not resp_text and hasattr(response, "content"):
-                try:
-                    resp_text = response.content.decode("utf-8", errors="replace")
-                except Exception:
-                    resp_text = "<Binary Content>"
-
-            status_code = getattr(response, "status_code", 0)
-            log.debug(
-                f"[HTTP POST] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
-            return response
-
-    if skip_interval:
-        return await _actual_post()
-
-    loop = asyncio.get_running_loop()
-    future = loop.create_future()
-    await request_queue.put((future, _actual_post, (), {}))
-    return await future
+            f"[HTTP POST] 响应 URL: {url} | Status: {status_code}\nResponse Body:\n{_format_payload(resp_text)}")
+        return response
 
 
 def _filter_response_headers(headers: Any) -> Dict[str, str]:

@@ -118,6 +118,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.error(f"定时服务启动失败: {e}")
 
+    # 定时清理 HTTP 客户端空闲连接任务
+    async def _cleanup_client_pool_bg():
+        while True:
+            try:
+                await asyncio.sleep(300)
+                from src.client import client_pool
+                await client_pool.cleanup_idle()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                pass
+
+    cleanup_pool_task = asyncio.create_task(_cleanup_client_pool_bg())
+
     # 异步预热并初始化 API 动态模型白名单列表
     async def _init_models_bg():
         try:
@@ -133,12 +147,34 @@ async def lifespan(app: FastAPI):
     # 清理资源
     log.info("开始关闭 google2api 主服务")
 
+    cleanup_pool_task.cancel()
+    try:
+        await cleanup_pool_task
+    except asyncio.CancelledError:
+        pass
+
     try:
         await quota_refresh_service.stop()
         from src.panel.warmup import quota_warmup_service
         await quota_warmup_service.stop()
     except Exception as e:
         log.error(f"关闭定时服务时出错: {e}")
+
+    # 确保 Token 统计脏数据刷盘
+    try:
+        from src.token_usage import token_tracker
+        await token_tracker.flush()
+        log.info("Token 统计数据已刷盘")
+    except Exception as e:
+        log.error(f"刷盘 Token 统计数据时出错: {e}")
+
+    # 关闭 HTTP 客户端池连接
+    try:
+        from src.client import client_pool
+        await client_pool.close_all()
+        log.info("HTTP 客户端连接池已关闭")
+    except Exception as e:
+        log.error(f"关闭 HTTP 客户端连接池时出错: {e}")
 
     # 然后关闭凭证管理器
     if global_credential_manager:
@@ -277,7 +313,7 @@ def main():
         log.info("=" * 60)
         log.info("启动 google2api (单进程模式)")
         log.info("=" * 60)
-        log.info(f"控制面板: http://127.0.0.1:{port}")
+        log.info(f"控制面板: http://{host}:{port}")
         log.info("=" * 60)
 
         config = Config()

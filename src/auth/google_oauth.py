@@ -90,6 +90,7 @@ class Credentials:
                 token_url,
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
+                session_key=f"oauth:{self.client_id[:8]}",
             )
             log.info(
                 f"[Google OAuth] Token 刷新响应状态码: {response.status_code}, 内容: {response.text}")

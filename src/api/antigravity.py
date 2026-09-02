@@ -21,10 +21,9 @@ from src.config import (
 )
 from src.log import log
 
-from src.auth import credential_manager
+from src.auth import credential_manager, ANTIGRAVITY_USER_AGENT
 from src.client import stream_post_async, post_async, get_async
 from src.schemas import Model, model_to_dict
-from src.utils import ANTIGRAVITY_USER_AGENT, BASE_MODELS
 
 # 导入共同的基础功能
 from src.api.utils import (
@@ -159,7 +158,6 @@ def build_antigravity_headers(access_token: str, extra_headers: Optional[Dict[st
         "Content-Type": "application/json",
         "Accept": "*/*",
         "Accept-Encoding": "gzip",
-        "Connection": "close",
     }
 
     for key, value in _sanitize_antigravity_headers(extra_headers).items():
@@ -407,7 +405,8 @@ async def stream_request(
                     url=target_url,
                     body=final_payload,
                     native=native,
-                    headers=auth_headers
+                    headers=auth_headers,
+                    session_key=f"antigravity:{current_file}",
                 ):
                     # 判断是否是Response对象
                     if isinstance(chunk, Response):
@@ -673,7 +672,8 @@ async def non_stream_request(
                 response = await post_async(
                     url=target_url,
                     json=final_payload,
-                    headers=auth_headers
+                    headers=auth_headers,
+                    session_key=f"antigravity:{current_file}",
                 )
 
                 status_code = response.status_code
@@ -813,21 +813,17 @@ async def non_stream_request(
         credential_manager.release_in_flight(current_file)
 
 
-async def get_models_list(
-    mode: str = "antigravity"
-) -> Tuple[int, Dict[str, Any]]:
-    """
-    获取可用模型列表
-    """
-    log.info(f"Using standard local model list for mode: {mode}")
-    models_data = [model_to_dict(Model(id=model_id))
-                   for model_id in BASE_MODELS]
-    return 200, {"object": "list", "data": models_data}
-
-
 _MODELS_CACHE: List[Dict[str, Any]] = []
 _MODELS_CACHE_TIME: float = 0.0
 _MODELS_CACHE_TTL: float = 120.0  # 缓存 120 秒防频繁调用
+_MODELS_FETCH_LOCK: Optional[asyncio.Lock] = None
+
+
+def _get_models_fetch_lock() -> asyncio.Lock:
+    global _MODELS_FETCH_LOCK
+    if _MODELS_FETCH_LOCK is None:
+        _MODELS_FETCH_LOCK = asyncio.Lock()
+    return _MODELS_FETCH_LOCK
 
 
 async def fetch_available_models(force_refresh: bool = False) -> List[Dict[str, Any]]:
@@ -842,67 +838,73 @@ async def fetch_available_models(force_refresh: bool = False) -> List[Dict[str, 
     if not force_refresh and _MODELS_CACHE and (now - _MODELS_CACHE_TIME < _MODELS_CACHE_TTL):
         return _MODELS_CACHE
 
-    cred_result = await credential_manager.get_valid_credential(mode="antigravity")
-    if not cred_result:
-        log.error(
-            "[ANTIGRAVITY] No valid credentials available for fetching models")
-        return _MODELS_CACHE if _MODELS_CACHE else []
+    async with _get_models_fetch_lock():
+        now = time.time()
+        if not force_refresh and _MODELS_CACHE and (now - _MODELS_CACHE_TIME < _MODELS_CACHE_TTL):
+            return _MODELS_CACHE
 
-    current_file, credential_data = cred_result
-    access_token = credential_data.get(
-        "access_token") or credential_data.get("token")
-
-    if not access_token:
-        log.error(
-            f"[ANTIGRAVITY] No access token in credential: {current_file}")
-        return _MODELS_CACHE if _MODELS_CACHE else []
-
-    headers = build_antigravity_headers(access_token)
-
-    try:
-        antigravity_url = await get_antigravity_api_url()
-
-        response = await post_async(
-            url=f"{antigravity_url}/v1internal:fetchAvailableModels",
-            json={},
-            headers=headers
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            log.debug(
-                f"[ANTIGRAVITY] Raw models response: {json.dumps(data, ensure_ascii=False)}")
-
-            model_list = []
-            current_timestamp = int(datetime.now(timezone.utc).timestamp())
-
-            if 'models' in data and isinstance(data['models'], dict):
-                raw_model_ids = list(data['models'].keys())
-
-                for model_id in raw_model_ids:
-                    model = Model(
-                        id=model_id,
-                        object='model',
-                        created=current_timestamp,
-                        owned_by='google'
-                    )
-                    model_list.append(model_to_dict(model))
-
-            log.info(
-                f"[ANTIGRAVITY] Fetched {len(model_list)} available models")
-            _MODELS_CACHE = model_list
-            _MODELS_CACHE_TIME = now
-            return model_list
-        else:
+        cred_result = await credential_manager.get_valid_credential(mode="antigravity")
+        if not cred_result:
             log.error(
-                f"[ANTIGRAVITY] Failed to fetch models ({response.status_code}): {response.text}")
+                "[ANTIGRAVITY] No valid credentials available for fetching models")
             return _MODELS_CACHE if _MODELS_CACHE else []
 
-    except Exception as e:
-        import traceback
-        log.error(f"[ANTIGRAVITY] Failed to fetch models: {e}")
-        log.error(f"[ANTIGRAVITY] Traceback: {traceback.format_exc()}")
-        return _MODELS_CACHE if _MODELS_CACHE else []
+        current_file, credential_data = cred_result
+        access_token = credential_data.get(
+            "access_token") or credential_data.get("token")
+
+        if not access_token:
+            log.error(
+                f"[ANTIGRAVITY] No access token in credential: {current_file}")
+            return _MODELS_CACHE if _MODELS_CACHE else []
+
+        headers = build_antigravity_headers(access_token)
+
+        try:
+            antigravity_url = await get_antigravity_api_url()
+
+            response = await post_async(
+                url=f"{antigravity_url}/v1internal:fetchAvailableModels",
+                json={},
+                headers=headers,
+                session_key=f"antigravity:{current_file}",
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                log.debug(
+                    f"[ANTIGRAVITY] Raw models response: {json.dumps(data, ensure_ascii=False)}")
+
+                model_list = []
+                current_timestamp = int(datetime.now(timezone.utc).timestamp())
+
+                if 'models' in data and isinstance(data['models'], dict):
+                    raw_model_ids = list(data['models'].keys())
+
+                    for model_id in raw_model_ids:
+                        model = Model(
+                            id=model_id,
+                            object='model',
+                            created=current_timestamp,
+                            owned_by='google'
+                        )
+                        model_list.append(model_to_dict(model))
+
+                log.info(
+                    f"[ANTIGRAVITY] Fetched {len(model_list)} available models")
+                _MODELS_CACHE = model_list
+                _MODELS_CACHE_TIME = now
+                return model_list
+            else:
+                log.error(
+                    f"[ANTIGRAVITY] Failed to fetch models ({response.status_code}): {response.text}")
+                return _MODELS_CACHE if _MODELS_CACHE else []
+
+        except Exception as e:
+            import traceback
+            log.error(f"[ANTIGRAVITY] Failed to fetch models: {e}")
+            log.error(f"[ANTIGRAVITY] Traceback: {traceback.format_exc()}")
+            return _MODELS_CACHE if _MODELS_CACHE else []
 
 
 def _parse_reset_time_to_beijing(reset_time_raw: str) -> str:
@@ -961,7 +963,8 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
                 url=f"{antigravity_url}/v1internal:fetchAvailableModels",
                 json={},
                 headers=headers,
-                timeout=30.0
+                timeout=30.0,
+                session_key=f"antigravity:quota:{access_token[:16]}",
             )
 
             if response.status_code == 200:
@@ -1041,7 +1044,8 @@ async def fetch_quota_summary(access_token: str, project_id: Optional[str] = Non
                 url=f"{antigravity_url}/v1internal:retrieveUserQuotaSummary",
                 json=payload,
                 headers=headers,
-                timeout=30.0
+                timeout=30.0,
+                session_key=f"antigravity:quota:{access_token[:16]}",
             )
 
             if response.status_code == 200:

@@ -7,28 +7,19 @@ from fastapi.responses import StreamingResponse
 
 from src.schemas import Model, ModelList
 from src.auth import (
-    ANTIGRAVITY_CLIENT_ID,
-    ANTIGRAVITY_CLIENT_SECRET,
-    ANTIGRAVITY_SCOPES,
-    ANTIGRAVITY_USER_AGENT,
-    CALLBACK_HOST,
-    CLIENT_ID,
-    CLIENT_SECRET,
-    GEMINICLI_USER_AGENT,
-    SCOPES,
-    TOKEN_URL,
     authenticate_bearer,
     authenticate_flexible,
     authenticate_gemini_flexible,
-    get_geminicli_user_agent,
     security,
     verify_panel_token,
+    CLIENT_ID,
+    CLIENT_SECRET,
+    ANTIGRAVITY_CLIENT_ID,
+    ANTIGRAVITY_CLIENT_SECRET,
+    GEMINICLI_USER_AGENT,
+    ANTIGRAVITY_USER_AGENT,
+    get_geminicli_user_agent,
 )
-
-# Antigravity CLI 客户端仿真常量
-ANTIGRAVITY_CLI_VERSION = "1.1.9"
-ANTIGRAVITY_CLI_PLATFORM = "windows/amd64"
-ANTIGRAVITY_USER_AGENT = f"antigravity/cli/{ANTIGRAVITY_CLI_VERSION} {ANTIGRAVITY_CLI_PLATFORM}"
 
 
 def get_resource_path(relative_path: str) -> str:
@@ -48,6 +39,7 @@ def get_resource_path(relative_path: str) -> str:
     candidates = [
         os.path.join(main_dir, relative_path),
         os.path.join(os.path.dirname(main_dir), relative_path),
+        os.getcwd(),
         os.path.join(os.getcwd(), relative_path),
     ]
 
@@ -58,64 +50,11 @@ def get_resource_path(relative_path: str) -> str:
     return relative_path
 
 
-# Model name lists for different features
-BASE_MODELS = []
-
-
 # ====================== Model Helper Functions ======================
 
 def get_base_model_from_feature_model(model_name: str) -> str:
     """Get base model name from feature model name."""
     return model_name
-
-
-def get_available_models(router_type: str = "openai") -> List[str]:
-    """
-    Get available models with feature prefixes and suffixes.
-
-    Args:
-        router_type: "openai" or "gemini"
-
-    Returns:
-        List of model names
-    """
-    models = []
-
-    for base_model in BASE_MODELS:
-        # 基础模型
-        models.append(base_model)
-
-        # 定义思考后缀（根据模型系列不同）
-        thinking_suffixes = []
-
-        # Gemini 2.5 系列: 使用思考预算后缀
-        if "gemini-2.5" in base_model:
-            thinking_suffixes = ["-max", "-high",
-                                 "-medium", "-low", "-minimal"]
-        # Gemini 3 系列: 使用思考等级后缀
-        elif "gemini-3" in base_model:
-            if "flash" in base_model:
-                # 3-flash-preview: 支持 high/medium/low/minimal
-                thinking_suffixes = ["-high", "-medium", "-low", "-minimal"]
-            elif "pro" in base_model:
-                # 3-pro-preview: 支持 high/low
-                thinking_suffixes = ["-high", "-low"]
-
-        search_suffix = "-search"
-
-        # 1. 单独的 thinking 后缀
-        for thinking_suffix in thinking_suffixes:
-            models.append(f"{base_model}{thinking_suffix}")
-
-        # 2. 单独的 search 后缀
-        models.append(f"{base_model}{search_suffix}")
-
-        # 3. thinking + search 组合后缀
-        for thinking_suffix in thinking_suffixes:
-            combined_suffix = f"{thinking_suffix}{search_suffix}"
-            models.append(f"{base_model}{combined_suffix}")
-
-    return models
 
 
 # ====================== Model List Helper Functions ======================

@@ -31,8 +31,7 @@ class QuotaWarmupService:
             if not credential_data:
                 return False
 
-            from src.auth import Credentials
-            from src.utils import ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET
+            from src.auth import Credentials, ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET, GEMINICLI_USER_AGENT
             if mode == "antigravity":
                 credential_data.setdefault("client_id", ANTIGRAVITY_CLIENT_ID)
                 credential_data.setdefault(
@@ -55,7 +54,6 @@ class QuotaWarmupService:
 
             from src.client import post_async
             from src.config import get_antigravity_api_url, get_code_assist_endpoint
-            from src.utils import GEMINICLI_USER_AGENT
 
             test_model = "gemini-3.6-flash-medium"
             if mode == "antigravity":
@@ -81,7 +79,8 @@ class QuotaWarmupService:
                     }
                 },
                 headers=headers,
-                timeout=15.0
+                timeout=15.0,
+                session_key=f"{mode}:{filename}",
             )
 
             current_time = time.time()
