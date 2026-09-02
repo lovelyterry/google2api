@@ -85,14 +85,14 @@ class Credentials:
         try:
             oauth_base_url = await get_oauth_proxy_url()
             token_url = f"{oauth_base_url.rstrip('/')}/token"
-            log.info(f"[Google OAuth] 正在发送 Token 刷新请求 -> URL: {token_url}")
+            log.debug(f"[Google OAuth] 正在发送 Token 刷新请求 -> URL: {token_url}")
             response = await post_async(
                 token_url,
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 session_key=f"oauth:{self.client_id[:8]}",
             )
-            log.info(
+            log.debug(
                 f"[Google OAuth] Token 刷新响应状态码: {response.status_code}, 内容: {response.text}")
             response.raise_for_status()
 
