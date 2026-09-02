@@ -103,9 +103,9 @@ async def clear_all_model_cooldowns_for_credential(
     filename: str,
     mode: str,
 ) -> None:
-    """清空指定凭证的所有模型冷却（后端支持时执行）。"""
+    """清空指定凭证的所有模型冷却。"""
     try:
-        cleared = await storage_adapter._backend.clear_all_model_cooldowns(filename, mode=mode)
+        cleared = await storage_adapter.clear_all_model_cooldowns(filename, mode=mode)
         if not cleared:
             log.warning(f"清空模型CD失败或凭证不存在: {filename} (mode={mode})")
     except Exception as e:
@@ -303,10 +303,10 @@ async def get_creds_status_common(
 
     storage_adapter = await get_storage()
     backend_info = await storage_adapter.get_backend_info()
-    backend_type = backend_info.get("backend_type", "unknown")
+    backend_type = backend_info.get("backend_type", "json")
 
     # 使用高性能的分页摘要查询
-    result = await storage_adapter._backend.get_credentials_summary(
+    result = await storage_adapter.get_credentials_summary(
         offset=offset,
         limit=limit,
         status_filter=status_filter,

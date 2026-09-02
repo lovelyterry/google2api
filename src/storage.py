@@ -590,20 +590,20 @@ class Storage:
         st = state_dict.get(fname, {})
         rem_fraction, reset_ts = self._extract_weekly_quota_info(st)
 
-        # 1. 是否有剩余周额度：rem_fraction > 0 为 0 (优先使用有额度的)，0% 额度为 1 (沉底)
+        # 1. 是否有可用额度：剩余比例 > 0 为 0 (优先使用有额度的)，0% 额度为 1 (沉底)
         has_quota = 0 if rem_fraction > 0 else 1
 
-        # 2. 周限额剩余比例阶梯分组 (以 5% 为一阶梯):
-        # 数值越小排在越前面 -> 优先使用周限额最多的账号
-        quota_tier = -round(rem_fraction * 20) / 20
+        # 2. 【核心优化】重置时间戳 reset_ts 升序优先：
+        # 越快被重置（倒计时越短）的账号排在越前面，抢在重置前尽可能把可用额度消耗完，杜绝过期浪费！
+        # 若无重置时间信息，则视为无穷大（float('inf')）排在已知重置时间账号之后
 
-        # 3. 周重置时间戳 reset_ts：
-        # 同一阶梯内，重置时间戳越小（越早重置）排在越前面 -> 重置日期临近优先
+        # 3. 同一重置时间梯队内，优先使用剩余额度更多的账号
+        quota_tier = -round(rem_fraction * 20) / 20
 
         # 4. 原始 rotation_order 作为平局兜底
         rot_order = st.get("rotation_order", 0)
 
-        return (has_quota, quota_tier, reset_ts, rot_order)
+        return (has_quota, reset_ts, quota_tier, rot_order)
 
     async def get_next_available_credential(
         self, mode: str = "geminicli", model_name: Optional[str] = None, busy_checker: Optional[Callable[[str], int]] = None

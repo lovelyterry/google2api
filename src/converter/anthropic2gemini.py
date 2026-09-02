@@ -5,6 +5,7 @@ Anthropic 到 Gemini 格式转换器
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
@@ -836,24 +837,30 @@ async def anthropic_to_gemini_request(payload: Dict[str, Any]) -> Dict[str, Any]
 
     if tools:
         gemini_request["tools"] = tools
-        # 针对文件编辑/代码替换工具场景，自动补充严格逐字字符/空格缩进匹配的强制性指引
-        edit_guideline = (
-            "CRITICAL INSTRUCTION FOR FILE EDITING / STRING REPLACEMENT TOOLS:\n"
-            "When generating parameters for code replacement tools (e.g. Edit, str_replace, replace_file_content):\n"
-            "1. 'old_string' / 'old_str' MUST be an EXACT, literal, character-by-character copy from the recent tool output.\n"
-            "2. Never reformat, re-indent, change single/double quotes, or alter whitespace/line breaks in 'old_string'.\n"
-            "3. Include 2-4 surrounding unique lines before and after the change to serve as unambiguous anchor points.\n"
-            "4. Keep edits concise and targeted."
+        # 仅针对包含文件编辑/代码替换类工具场景补充严格逐字字符/空格缩进匹配的指引，避免污染常规工具与分类器评估请求
+        raw_tools = payload.get("tools") or []
+        has_edit_tool = any(
+            isinstance(t, dict) and any(k in str(t.get("name", "")).lower() for k in ("edit", "str_replace", "replace", "patch"))
+            for t in raw_tools
         )
-        if "systemInstruction" in gemini_request:
-            si = gemini_request["systemInstruction"]
-            if isinstance(si, dict) and "parts" in si and isinstance(si["parts"], list):
-                si["parts"].append({"text": edit_guideline})
-        else:
-            gemini_request["systemInstruction"] = {
-                "role": "system",
-                "parts": [{"text": edit_guideline}]
-            }
+        if has_edit_tool:
+            edit_guideline = (
+                "CRITICAL INSTRUCTION FOR FILE EDITING / STRING REPLACEMENT TOOLS:\n"
+                "When generating parameters for code replacement tools (e.g. Edit, str_replace, replace_file_content):\n"
+                "1. 'old_string' / 'old_str' MUST be an EXACT, literal, character-by-character copy from the recent tool output.\n"
+                "2. Never reformat, re-indent, change single/double quotes, or alter whitespace/line breaks in 'old_string'.\n"
+                "3. Include 2-4 surrounding unique lines before and after the change to serve as unambiguous anchor points.\n"
+                "4. Keep edits concise and targeted."
+            )
+            if "systemInstruction" in gemini_request:
+                si = gemini_request["systemInstruction"]
+                if isinstance(si, dict) and "parts" in si and isinstance(si["parts"], list):
+                    si["parts"].append({"text": edit_guideline})
+            else:
+                gemini_request["systemInstruction"] = {
+                    "role": "system",
+                    "parts": [{"text": edit_guideline}]
+                }
 
     # 添加 toolConfig（如果有 tool_choice）
     if tool_config:
@@ -867,13 +874,33 @@ async def anthropic_to_gemini_request(payload: Dict[str, Any]) -> Dict[str, Any]
 
 
 def gemini_to_anthropic_response(
-    response_data: dict, model: str = "", user_info: Optional[str] = None
+    response_data: dict, model: str = "", status_code: Optional[int] = None, user_info: Optional[str] = None
 ) -> dict:
     """
     将 Gemini 格式的响应转换为 Anthropic /messages 格式
     """
     if not isinstance(response_data, dict):
         return {}
+
+    # 兼容第3个参数传入 user_info 的情况 (如果是字符串类型)
+    if isinstance(status_code, str) and user_info is None:
+        user_info = status_code
+        status_code = None
+
+    # 如果是错误响应，返回符合 Anthropic 规范的标准错误结构
+    if "error" in response_data or (status_code and status_code >= 400):
+        err = response_data.get("error", {})
+        err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        if not err_msg or err_msg == "{}":
+            err_msg = f"API request failed with status code {status_code or 500}"
+        err_type = "rate_limit_error" if (status_code == 429 or any(k in err_msg.lower() for k in ("quota", "resource", "rate limit", "429"))) else "api_error"
+        return {
+            "type": "error",
+            "error": {
+                "type": err_type,
+                "message": err_msg,
+            }
+        }
 
     # 提取候选结果
     candidate = response_data.get("candidates", [{}])[0] or {}

@@ -112,6 +112,7 @@ async def messages(
         anthropic_response = gemini_to_anthropic_response(
             gemini_response,
             real_model,
+            status_code=status_code,
         )
 
         return JSONResponse(content=anthropic_response, status_code=status_code)

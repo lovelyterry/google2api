@@ -690,7 +690,7 @@ def count_token_usage(
     now_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
     formatted_entry = f"[{now_time}] [INFO] {log_msg}"
 
-    from src.log import is_log_enabled
+    from src.log import is_log_enabled, _write_to_file
     if is_log_enabled():
         if not is_final:
             # 当流式进行中：使用 \r 行首复位 + 清除行残影（单行原地跳动刷新）
@@ -702,7 +702,6 @@ def count_token_usage(
             sys.stdout.flush()
 
             try:
-                from src.log import _write_to_file
                 _write_to_file(formatted_entry)
             except Exception:
                 pass
