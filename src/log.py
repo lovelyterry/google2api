@@ -310,8 +310,13 @@ class Logger:
 # 导出全局日志实例
 log = Logger()
 
+def is_log_enabled() -> bool:
+    """获取日志全局启用状态"""
+    return _log_enabled
+
+
 # 导出的公共接口
-__all__ = ["log", "set_log_level", "LOG_LEVELS"]
+__all__ = ["log", "set_log_level", "is_log_enabled", "LOG_LEVELS"]
 
 # 模块加载时：读取配置缓存 → 清空日志文件 → 启动 writer 线程
 _refresh_config()

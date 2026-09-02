@@ -664,8 +664,25 @@ def count_token_usage(
 
     log_msg = f"模型={model_str}{thinking_desc}{user_str} | {', '.join(parts)}"
 
-    # 统一使用 log.info 输出，确保终端可见换行且同时写入 log.txt
-    log.info(log_msg)
+    now_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    formatted_entry = f"[{now_time}] [INFO] {log_msg}"
+
+    from src.log import is_log_enabled
+    if is_log_enabled():
+        if not is_final:
+            # 当流式进行中：使用 \r 行首复位 + 清除行残影（单行原地跳动刷新）
+            sys.stdout.write(f"\r{formatted_entry}\033[K")
+            sys.stdout.flush()
+        else:
+            # 当流式结束或非流式响应：原位覆盖输出最终结果并加 \n 换行，同时写入 log.txt
+            sys.stdout.write(f"\r{formatted_entry}\033[K\n")
+            sys.stdout.flush()
+
+            try:
+                from src.log import _write_to_file
+                _write_to_file(formatted_entry)
+            except Exception:
+                pass
 
     # 仅在 is_final=True 时落库写盘
     if is_final:

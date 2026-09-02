@@ -1419,22 +1419,6 @@
                                 <div class="config-section-card" style="margin-bottom: 0;">
                                     <div class="config-section-title">
                                         <div class="config-section-title-left">
-                                            <span>🛠️</span>
-                                            <span>兼容性转换模式</span>
-                                        </div>
-                                    </div>
-                                    <div class="form-group mb-3">
-                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
-                                            <input type="checkbox" id="compatibilityModeEnabled" v-model="config.form.compatibility_mode_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
-                                            <label for="compatibilityModeEnabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用系统消息兼容转译</label>
-                                        </div>
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">将 system 角色消息转为 user 角色，停用 system_instructions 以提高老版本 API 兼容性</small>
-                                    </div>
-                                </div>
-
-                                <div class="config-section-card" style="margin-bottom: 0;">
-                                    <div class="config-section-title">
-                                        <div class="config-section-title-left">
                                             <span>🧠</span>
                                             <span>思维链与自适应深度思考</span>
                                         </div>
@@ -1455,22 +1439,6 @@
                                             <option :value="64000">64,000 Tokens (Tier-Max 满额极限思考)</option>
                                         </select>
                                         <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">当客户端（如 Claude Code）未传固定数值时，提供给模型的最大自适应推理预算天花板</small>
-                                    </div>
-                                </div>
-
-                                <div class="config-section-card" style="margin-bottom: 0;">
-                                    <div class="config-section-title">
-                                        <div class="config-section-title-left">
-                                            <span>⚡</span>
-                                            <span>流式转非流式优化</span>
-                                        </div>
-                                    </div>
-                                    <div class="form-group mb-3">
-                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
-                                            <input type="checkbox" id="antigravityStream2nostream" v-model="config.form.antigravity_stream_2_nostream" class="config-checkbox" style="width: 16px; height: 16px;" />
-                                            <label for="antigravityStream2nostream" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用非流式底层流式化</label>
-                                        </div>
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">非流式请求底层统一走流式 API 传输并实时收集拼接为完整响应</small>
                                     </div>
                                 </div>
 

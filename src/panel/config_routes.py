@@ -47,17 +47,11 @@ async def get_config(token: str = Depends(verify_panel_token)):
         current_config["retry_429_enabled"] = await config.get_retry_429_enabled()
         current_config["retry_429_interval"] = await config.get_retry_429_interval()
         current_config["request_min_interval"] = await config.get_request_min_interval()
-        # 抗截断配置
-        current_config["anti_truncation_max_attempts"] = await config.get_anti_truncation_max_attempts()
-
-        # 兼容性配置
-        current_config["compatibility_mode_enabled"] = await config.get_compatibility_mode_enabled()
 
         # 思维链返回配置
         current_config["return_thoughts_to_frontend"] = await config.get_return_thoughts_to_frontend()
 
-        # Antigravity流式转非流式配置
-        current_config["antigravity_stream2nostream"] = await config.get_antigravity_stream2nostream()
+        # Antigravity配置
         current_config["antigravity_switch_credential_enabled"] = await config.get_antigravity_switch_credential_enabled()
         current_config["antigravity_telemetry_enabled"] = await config.get_antigravity_telemetry_enabled()
 
@@ -128,28 +122,9 @@ async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_pa
             except (ValueError, TypeError):
                 raise HTTPException(status_code=400, detail="429重试间隔必须是有效的数字")
 
-        if "anti_truncation_max_attempts" in new_config:
-            if (
-                not isinstance(new_config["anti_truncation_max_attempts"], int)
-                or new_config["anti_truncation_max_attempts"] < 1
-                or new_config["anti_truncation_max_attempts"] > 10
-            ):
-                raise HTTPException(
-                    status_code=400, detail="抗截断最大重试次数必须是1-10之间的整数"
-                )
-
-        if "compatibility_mode_enabled" in new_config:
-            if not isinstance(new_config["compatibility_mode_enabled"], bool):
-                raise HTTPException(status_code=400, detail="兼容性模式开关必须是布尔值")
-
         if "return_thoughts_to_frontend" in new_config:
             if not isinstance(new_config["return_thoughts_to_frontend"], bool):
                 raise HTTPException(status_code=400, detail="思维链返回开关必须是布尔值")
-
-        if "antigravity_stream2nostream" in new_config:
-            if not isinstance(new_config["antigravity_stream2nostream"], bool):
-                raise HTTPException(
-                    status_code=400, detail="Antigravity流式转非流式开关必须是布尔值")
 
         if "antigravity_switch_credential_enabled" in new_config:
             if not isinstance(new_config["antigravity_switch_credential_enabled"], bool):

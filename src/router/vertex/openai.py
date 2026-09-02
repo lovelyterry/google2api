@@ -10,14 +10,14 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from src.log import log
-from src.utils import authenticate_bearer, get_base_model_from_feature_model
-from src.schemas import OpenAIChatCompletionRequest, model_to_dict
-from src.router.hi_check import is_health_check_request, create_health_check_response
-from src.router.stream_passthrough import (
+from src.utils import (
+    authenticate_bearer,
+    get_base_model_from_feature_model,
     build_streaming_response_or_error,
     prepend_async_item,
     read_first_async_item,
 )
+from src.schemas import OpenAIChatCompletionRequest, model_to_dict
 
 router = APIRouter()
 
@@ -32,9 +32,6 @@ async def chat_completions(
 
     normalized_dict = model_to_dict(openai_request)
 
-    if is_health_check_request(normalized_dict, format="openai"):
-        return JSONResponse(content=create_health_check_response(format="openai"))
-
     base_model = get_base_model_from_feature_model(openai_request.model)
     from src.model_mapping import model_mapping_manager
     real_model = model_mapping_manager.resolve_model(
@@ -48,8 +45,8 @@ async def chat_completions(
     gemini_dict = await convert_openai_to_gemini_request(normalized_dict)
     gemini_dict["model"] = real_model
 
-    from src.converter.gemini_fix import normalize_gemini_request
-    gemini_dict = await normalize_gemini_request(gemini_dict, mode="vertex")
+    from src.converter.antigravity import normalize_antigravity_request
+    gemini_dict = await normalize_antigravity_request(gemini_dict)
 
     api_request = {
         "model": gemini_dict.pop("model"),

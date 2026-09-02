@@ -12,14 +12,13 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import Response
 from src.log import log
-from src.converter.utils import merge_system_messages
-
-from src.converter.thoughtSignature_fix import (
+from src.converter.utils import (
     decode_tool_id_and_signature,
     encode_tool_id_with_signature,
     is_internal_placeholder_text,
     is_skip_thought_signature_placeholder,
     SKIP_THOUGHT_SIGNATURE_VALIDATOR,
+    merge_system_messages,
 )
 
 DEFAULT_TEMPERATURE = 0.4
@@ -269,6 +268,46 @@ def _remove_nulls_for_tool_input(value: Any) -> Any:
         return cleaned_list
 
     return value
+
+
+def sanitize_edit_tool_input(tool_name: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    针对代码编辑/文件修改类工具（如 Edit, str_replace, replace_file_content 等）
+    对入参（尤其是 old_string / old_str）进行底层归一化清洗：
+    1. 统一 Windows/Unix 换行符（将 \\r\\n 统一转换为 \\n）
+    2. 保留原有入参键名，同时提供标准化别名（old_string 与 old_str 双向兼容）
+    """
+    if not isinstance(tool_args, dict) or not tool_args:
+        return tool_args
+
+    name_lower = str(tool_name).lower()
+    is_edit_tool = any(k in name_lower for k in ("edit", "str_replace", "replace", "patch"))
+
+    if not is_edit_tool:
+        return tool_args
+
+    cleaned = dict(tool_args)
+
+    # 别名双向容错对齐（保留原字段同时补充对应别名，避免破坏不同客户端定义的 schema）
+    if "old_str" in cleaned and "old_string" not in cleaned:
+        cleaned["old_string"] = cleaned["old_str"]
+    elif "old_string" in cleaned and "old_str" not in cleaned:
+        cleaned["old_str"] = cleaned["old_string"]
+
+    if "new_str" in cleaned and "new_string" not in cleaned:
+        cleaned["new_string"] = cleaned["new_str"]
+    elif "new_string" in cleaned and "new_str" not in cleaned:
+        cleaned["new_str"] = cleaned["new_string"]
+
+    # 针对 old_string / old_str 做换行符与格式归一化
+    for key in ("old_string", "old_str", "new_string", "new_str"):
+        if key in cleaned and isinstance(cleaned[key], str):
+            val = cleaned[key]
+            # 统一将 CRLF / CR 转换为标准 LF
+            val = val.replace("\r\n", "\n").replace("\r", "\n")
+            cleaned[key] = val
+
+    return cleaned
 
 # ============================================================================
 # 2. JSON Schema 清理
@@ -797,11 +836,14 @@ async def anthropic_to_gemini_request(payload: Dict[str, Any]) -> Dict[str, Any]
 
     if tools:
         gemini_request["tools"] = tools
-        # 针对文件编辑/代码替换工具场景，自动补充严格逐字字符/空格缩进匹配的指引
+        # 针对文件编辑/代码替换工具场景，自动补充严格逐字字符/空格缩进匹配的强制性指引
         edit_guideline = (
-            "When performing file edits or text replacements (e.g. str_replace, Edit, replace_file_content), "
-            "make sure the text to be replaced (old_str/old_string) matches the original file text exactly character-by-character, "
-            "including all indentation (spaces/tabs), whitespace, and line breaks."
+            "CRITICAL INSTRUCTION FOR FILE EDITING / STRING REPLACEMENT TOOLS:\n"
+            "When generating parameters for code replacement tools (e.g. Edit, str_replace, replace_file_content):\n"
+            "1. 'old_string' / 'old_str' MUST be an EXACT, literal, character-by-character copy from the recent tool output.\n"
+            "2. Never reformat, re-indent, change single/double quotes, or alter whitespace/line breaks in 'old_string'.\n"
+            "3. Include 2-4 surrounding unique lines before and after the change to serve as unambiguous anchor points.\n"
+            "4. Keep edits concise and targeted."
         )
         if "systemInstruction" in gemini_request:
             si = gemini_request["systemInstruction"]
@@ -893,12 +935,15 @@ def gemini_to_anthropic_response(
             original_id = fc.get("id") or f"toolu_{uuid.uuid4().hex}"
             sig = part.get("thoughtSignature") or last_thought_signature
             tool_id = encode_tool_id_with_signature(original_id, sig)
+            tool_name = fc.get("name") or ""
+            raw_args = fc.get("args", {}) or {}
+            cleaned_args = sanitize_edit_tool_input(tool_name, _remove_nulls_for_tool_input(raw_args))
             content.append(
                 {
                     "type": "tool_use",
                     "id": tool_id,
-                    "name": fc.get("name") or "",
-                    "input": _remove_nulls_for_tool_input(fc.get("args", {}) or {}),
+                    "name": tool_name,
+                    "input": cleaned_args,
                 }
             )
             continue
@@ -1255,8 +1300,8 @@ async def gemini_stream_to_anthropic_stream(
                     sig = part.get("thoughtSignature") or last_thinking_signature
                     tool_id = encode_tool_id_with_signature(original_id, sig)
                     tool_name = fc.get("name") or ""
-                    tool_args = _remove_nulls_for_tool_input(
-                        fc.get("args", {}) or {})
+                    raw_args = fc.get("args", {}) or {}
+                    tool_args = sanitize_edit_tool_input(tool_name, _remove_nulls_for_tool_input(raw_args))
 
                     if _anthropic_debug_enabled():
                         log.debug(

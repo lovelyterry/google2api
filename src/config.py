@@ -36,10 +36,7 @@ ENV_MAPPINGS = {
     "RETRY_429_ENABLED": "retry_429_enabled",
     "RETRY_429_INTERVAL": "retry_429_interval",
     "REQUEST_MIN_INTERVAL": "request_min_interval",
-    "ANTI_TRUNCATION_MAX_ATTEMPTS": "anti_truncation_max_attempts",
-    "COMPATIBILITY_MODE": "compatibility_mode_enabled",
     "RETURN_THOUGHTS_TO_FRONTEND": "return_thoughts_to_frontend",
-    "ANTIGRAVITY_STREAM2NOSTREAM": "antigravity_stream2nostream",
     "ANTIGRAVITY_SWITCH_CREDENTIAL": "antigravity_switch_credential_enabled",
     "HOST": "host",
     "PORT": "port",
@@ -202,24 +199,6 @@ async def get_request_min_interval() -> float:
     return float(await get_config_value("request_min_interval", 0.2))
 
 
-async def get_anti_truncation_max_attempts() -> int:
-    """
-    Get maximum attempts for anti-truncation continuation.
-
-    Environment variable: ANTI_TRUNCATION_MAX_ATTEMPTS
-    Database config key: anti_truncation_max_attempts
-    Default: 3
-    """
-    env_value = os.getenv("ANTI_TRUNCATION_MAX_ATTEMPTS")
-    if env_value:
-        try:
-            return int(env_value)
-        except ValueError:
-            pass
-
-    return int(await get_config_value("anti_truncation_max_attempts", 3))
-
-
 # Server Configuration
 async def get_server_host() -> str:
     """
@@ -321,24 +300,6 @@ async def get_code_assist_endpoint() -> str:
     )
 
 
-async def get_compatibility_mode_enabled() -> bool:
-    """
-    Get compatibility mode setting.
-
-    兼容性模式：启用后所有system消息全部转换成user，停用system_instructions。
-    该选项可能会降低模型理解能力，但是能避免流式空回的情况。
-
-    Environment variable: COMPATIBILITY_MODE
-    Database config key: compatibility_mode_enabled
-    Default: False
-    """
-    env_value = os.getenv("COMPATIBILITY_MODE")
-    if env_value:
-        return env_value.lower() in ("true", "1", "yes", "on")
-
-    return bool(await get_config_value("compatibility_mode_enabled", False))
-
-
 async def get_return_thoughts_to_frontend() -> bool:
     """
     Get return thoughts to frontend setting.
@@ -355,24 +316,6 @@ async def get_return_thoughts_to_frontend() -> bool:
         return env_value.lower() in ("true", "1", "yes", "on")
 
     return bool(await get_config_value("return_thoughts_to_frontend", True))
-
-
-async def get_antigravity_stream2nostream() -> bool:
-    """
-    Get use stream for non-stream setting.
-
-    控制antigravity非流式请求是否使用流式API并收集为完整响应。
-    启用后，非流式请求将在后端使用流式API，然后收集所有块后再返回完整响应。
-
-    Environment variable: ANTIGRAVITY_STREAM2NOSTREAM
-    Database config key: antigravity_stream2nostream
-    Default: True
-    """
-    env_value = os.getenv("ANTIGRAVITY_STREAM2NOSTREAM")
-    if env_value:
-        return env_value.lower() in ("true", "1", "yes", "on")
-
-    return bool(await get_config_value("antigravity_stream2nostream", True))
 
 
 async def get_antigravity_switch_credential_enabled() -> bool:

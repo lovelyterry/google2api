@@ -42,6 +42,13 @@ async def serve_favicon_ico():
     raise HTTPException(status_code=404, detail="Favicon not found")
 
 
+@router.get("/health")
+@router.get("/ping")
+async def health_check():
+    """标准服务健康检查端点"""
+    return JSONResponse(content={"status": "ok", "message": "Service is healthy"})
+
+
 @router.get("/oauth-callback", response_class=HTMLResponse)
 @router.get("/callback", response_class=HTMLResponse)
 async def handle_root_oauth_callback(request: Request):

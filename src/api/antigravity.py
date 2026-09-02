@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional, Callable, Tuple
 from fastapi import Response
 from src.config import (
     get_antigravity_api_url,
-    get_antigravity_stream2nostream,
     get_auto_ban_error_codes,
     get_antigravity_telemetry_enabled,
 )
@@ -34,7 +33,6 @@ from src.api.utils import (
     record_api_call_success,
     record_api_call_error,
     parse_and_log_cooldown,
-    collect_streaming_response,
 )
 
 # ==================== 全局凭证管理器 ====================
@@ -577,7 +575,7 @@ async def stream_request(
 async def non_stream_request(
     body: Dict[str, Any],
     headers: Optional[Dict[str, str]] = None,
-) -> Tuple[int, Dict[str, Any]]:
+) -> Response:
     """
     非流式请求函数
 
@@ -586,29 +584,9 @@ async def non_stream_request(
         headers: 额外的请求头
 
     Returns:
-        Tuple[status_code, response_data]
+        Response: FastAPI Response 对象
     """
     model_name = body.get("model", "")
-
-    # 检查是否配置了将流式转换为非流式
-    stream2nostream = await get_antigravity_stream2nostream()
-    if stream2nostream:
-        log.info(
-            f"[ANTIGRAVITY NON-STREAM] 配置了 stream2nostream，改用 stream_request 模拟非流式请求 (模型: {model_name})")
-
-        # 收集流式响应
-        stream_gen = stream_request(
-            body=body,
-            native=False,
-            headers=headers
-        )
-
-        status_code, combined_json, error_response = await collect_streaming_response(stream_gen)
-
-        if error_response is not None:
-            return status_code, error_response
-
-        return status_code, combined_json
 
     # 原有的直接非流式请求逻辑
     cred_result = await credential_manager.get_valid_credential(
@@ -617,7 +595,11 @@ async def non_stream_request(
 
     if not cred_result:
         log.error("[ANTIGRAVITY NON-STREAM] 当前无可用凭证")
-        return 500, {"error": "当前无可用凭证"}
+        return Response(
+            content=json.dumps({"error": "当前无可用凭证"}),
+            status_code=500,
+            media_type="application/json"
+        )
 
     current_file, credential_data = cred_result
     access_token = credential_data.get(
@@ -627,7 +609,11 @@ async def non_stream_request(
     if not access_token:
         log.error(
             f"[ANTIGRAVITY NON-STREAM] No access token in credential: {current_file}")
-        return 500, {"error": "凭证中没有访问令牌"}
+        return Response(
+            content=json.dumps({"error": "凭证中没有访问令牌"}),
+            status_code=500,
+            media_type="application/json"
+        )
 
     antigravity_url = await get_antigravity_api_url()
     target_url = f"{antigravity_url}/v1internal:generateContent"
@@ -643,8 +629,7 @@ async def non_stream_request(
     retry_interval = retry_config["retry_interval"]
 
     DISABLE_ERROR_CODES = await get_auto_ban_error_codes()  # 禁用凭证的错误码
-    last_error_data = None  # 记录最后一次错误数据
-    last_status_code = 500  # 记录最后一次状态码
+    last_error_response = None  # 记录最后一次错误响应
     next_cred_task = None  # 预热的下一个凭证任务
 
     # 内部函数：快速更新凭证
@@ -692,7 +677,6 @@ async def non_stream_request(
                 )
 
                 status_code = response.status_code
-                last_status_code = status_code
 
                 if status_code == 200:
                     await record_api_call_success(credential_manager, current_file, mode="antigravity", model_name=model_name)
@@ -701,21 +685,30 @@ async def non_stream_request(
                             access_token, project_id, request_id, model_name
                         )
                     )
-                    try:
-                        return status_code, response.json()
-                    except Exception as e:
-                        log.error(
-                            f"[ANTIGRAVITY NON-STREAM] 解析 JSON 响应失败: {e}")
-                        return 500, {"error": f"Invalid JSON response: {str(e)}"}
+                    # 创建响应头,移除压缩相关的header避免重复解压
+                    response_headers = dict(response.headers)
+                    response_headers.pop('content-encoding', None)
+                    response_headers.pop('content-length', None)
+
+                    return Response(
+                        content=response.content,
+                        status_code=200,
+                        headers=response_headers,
+                        media_type="application/json"
+                    )
 
                 # 错误处理
                 error_body = response.text
-                try:
-                    error_data = response.json()
-                except Exception:
-                    error_data = {"error": error_body or f"HTTP {status_code}"}
+                error_headers = dict(response.headers)
+                error_headers.pop('content-encoding', None)
+                error_headers.pop('content-length', None)
 
-                last_error_data = error_data
+                last_error_response = Response(
+                    content=response.content,
+                    status_code=status_code,
+                    headers=error_headers,
+                    media_type="application/json"
+                )
 
                 # 解析并记录冷却时间（如果有）
                 cooldown_until = await parse_and_log_cooldown(error_body or "", mode="antigravity")
@@ -767,11 +760,11 @@ async def non_stream_request(
                     if not refreshed:
                         log.error(
                             "[ANTIGRAVITY NON-STREAM] 重试时无法获取有效凭证，放弃重试")
-                        return status_code, error_data
+                        return last_error_response
                     continue
 
                 # 不满足重试条件，直接返回错误
-                return status_code, error_data
+                return last_error_response
 
             except Exception as e:
                 log.error(f"[ANTIGRAVITY NON-STREAM] 请求引发异常: {e}")
@@ -784,8 +777,11 @@ async def non_stream_request(
                     model_name=model_name
                 )
 
-                last_error_data = {"error": f"Request failed: {str(e)}"}
-                last_status_code = 500
+                last_error_response = Response(
+                    content=json.dumps({"error": f"Request failed: {str(e)}"}),
+                    status_code=500,
+                    media_type="application/json"
+                )
 
                 if attempt < max_retries:
                     log.warning(
@@ -802,13 +798,17 @@ async def non_stream_request(
                     if not refreshed:
                         log.error(
                             "[ANTIGRAVITY NON-STREAM] 重试时无法获取有效凭证，放弃重试")
-                        return 500, last_error_data
+                        return last_error_response
                     continue
 
-                return 500, last_error_data
+                return last_error_response
 
         log.error(f"[ANTIGRAVITY NON-STREAM] 达到最大重试次数 ({max_retries})")
-        return last_status_code, last_error_data or {"error": f"达到最大重试次数 ({max_retries})"}
+        return last_error_response or Response(
+            content=json.dumps({"error": f"达到最大重试次数 ({max_retries})"}),
+            status_code=500,
+            media_type="application/json"
+        )
     finally:
         credential_manager.release_in_flight(current_file)
 

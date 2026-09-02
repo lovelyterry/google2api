@@ -1,7 +1,11 @@
 import os
 import sys
-from typing import List, Optional
+from typing import Any, AsyncIterator, List, Optional
 
+from fastapi import Response
+from fastapi.responses import StreamingResponse
+
+from src.schemas import Model, ModelList
 from src.auth import (
     ANTIGRAVITY_CLIENT_ID,
     ANTIGRAVITY_CLIENT_SECRET,
@@ -60,43 +64,26 @@ BASE_MODELS = []
 
 # ====================== Model Helper Functions ======================
 
-def is_fake_streaming_model(model_name: str) -> bool:
-    """Check if model name indicates fake streaming should be used."""
-    return model_name.startswith("假流式/")
-
-
-def is_anti_truncation_model(model_name: str) -> bool:
-    """Check if model name indicates anti-truncation should be used."""
-    return model_name.startswith("流式抗截断/")
-
-
 def get_base_model_from_feature_model(model_name: str) -> str:
     """Get base model name from feature model name."""
     return model_name
 
 
-
 def get_available_models(router_type: str = "openai") -> List[str]:
     """
-    Get available models with feature prefixes.
+    Get available models with feature prefixes and suffixes.
 
     Args:
         router_type: "openai" or "gemini"
 
     Returns:
-        List of model names with feature prefixes
+        List of model names
     """
     models = []
 
     for base_model in BASE_MODELS:
         # 基础模型
         models.append(base_model)
-
-        # 假流式模型 (前缀格式)
-        models.append(f"假流式/{base_model}")
-
-        # 流式抗截断模型 (仅在流式传输时有效，前缀格式)
-        models.append(f"流式抗截断/{base_model}")
 
         # 定义思考后缀（根据模型系列不同）
         thinking_suffixes = []
@@ -119,19 +106,119 @@ def get_available_models(router_type: str = "openai") -> List[str]:
         # 1. 单独的 thinking 后缀
         for thinking_suffix in thinking_suffixes:
             models.append(f"{base_model}{thinking_suffix}")
-            models.append(f"假流式/{base_model}{thinking_suffix}")
-            models.append(f"流式抗截断/{base_model}{thinking_suffix}")
 
         # 2. 单独的 search 后缀
         models.append(f"{base_model}{search_suffix}")
-        models.append(f"假流式/{base_model}{search_suffix}")
-        models.append(f"流式抗截断/{base_model}{search_suffix}")
 
         # 3. thinking + search 组合后缀
         for thinking_suffix in thinking_suffixes:
             combined_suffix = f"{thinking_suffix}{search_suffix}"
             models.append(f"{base_model}{combined_suffix}")
-            models.append(f"假流式/{base_model}{combined_suffix}")
-            models.append(f"流式抗截断/{base_model}{combined_suffix}")
 
     return models
+
+
+# ====================== Model List Helper Functions ======================
+
+def create_openai_model_list(
+    model_ids: List[str],
+    owned_by: str = "google"
+) -> ModelList:
+    """
+    创建OpenAI格式的模型列表
+
+    Args:
+        model_ids: 模型ID列表
+        owned_by: 模型所有者
+
+    Returns:
+        ModelList对象
+    """
+    from datetime import datetime, timezone
+    current_timestamp = int(datetime.now(timezone.utc).timestamp())
+
+    models = [
+        Model(
+            id=model_id,
+            object='model',
+            created=current_timestamp,
+            owned_by=owned_by
+        )
+        for model_id in model_ids
+    ]
+
+    return ModelList(data=models)
+
+
+def create_gemini_model_list(
+    model_ids: List[str],
+    base_name_extractor=None
+) -> dict:
+    """
+    创建Gemini格式的模型列表
+
+    Args:
+        model_ids: 模型ID列表
+        base_name_extractor: 可选的基础模型名提取函数
+
+    Returns:
+        包含模型列表的字典
+    """
+    gemini_models = []
+
+    for model_id in model_ids:
+        base_model = model_id
+        if base_name_extractor:
+            try:
+                base_model = base_name_extractor(model_id)
+            except Exception:
+                pass
+
+        model_info = {
+            "name": f"models/{model_id}",
+            "baseModelId": base_model,
+            "version": "001",
+            "displayName": model_id,
+            "description": f"Gemini {base_model} model",
+            "supportedGenerationMethods": ["generateContent", "streamGenerateContent"],
+        }
+        gemini_models.append(model_info)
+
+    return {"models": gemini_models}
+
+
+# ====================== Streaming Passthrough Helpers ======================
+
+async def prepend_async_item(first_item: Any, iterator: AsyncIterator[Any]):
+    """Yield a prefetched item before continuing the original iterator."""
+    yield first_item
+    async for item in iterator:
+        yield item
+
+
+async def read_first_async_item(iterator: AsyncIterator[Any]) -> Any:
+    """Python 3.9-compatible async equivalent of built-in anext()."""
+    return await iterator.__anext__()
+
+
+async def build_streaming_response_or_error(
+    iterator: AsyncIterator[Any],
+    media_type: str = "text/event-stream",
+):
+    """
+    Prefetch the first async item so router code can return an upstream error
+    response directly before FastAPI commits a 200 streaming response.
+    """
+    try:
+        first_item = await read_first_async_item(iterator)
+    except StopAsyncIteration:
+        return Response(status_code=204)
+
+    if isinstance(first_item, Response):
+        return first_item
+
+    return StreamingResponse(
+        prepend_async_item(first_item, iterator),
+        media_type=media_type,
+    )
+

@@ -5,11 +5,12 @@ Antigravity 模型列表路由 - 处理模型列表请求
 
 from src.log import log
 from src.schemas import model_to_dict
-from src.router.base_router import create_gemini_model_list, create_openai_model_list
 from src.api.antigravity import fetch_available_models
 from src.utils import (
     get_base_model_from_feature_model,
-    authenticate_flexible
+    authenticate_flexible,
+    create_gemini_model_list,
+    create_openai_model_list,
 )
 from fastapi.responses import JSONResponse
 from fastapi import APIRouter, Depends
@@ -42,19 +43,12 @@ async def get_antigravity_models_with_features():
     base_model_ids = [model['id']
                       for model in base_models_data if 'id' in model]
 
-    # 添加功能前缀
+    # 模型列表
     models = []
     for base_model in base_model_ids:
-        # 基础模型
         models.append(base_model)
 
-        # 假流式模型 (前缀格式)
-        models.append(f"假流式/{base_model}")
-
-        # 流式抗截断模型 (仅在流式传输时有效，前缀格式)
-        models.append(f"流式抗截断/{base_model}")
-
-    log.debug(f"[ANTIGRAVITY MODEL LIST] 生成了 {len(models)} 个模型（包含功能前缀）")
+    log.debug(f"[ANTIGRAVITY MODEL LIST] 获取了 {len(models)} 个模型")
     return models
 
 
@@ -66,7 +60,6 @@ async def list_gemini_models(token: str = Depends(authenticate_flexible)):
     返回 Gemini 格式的模型列表
 
     从 src.api.antigravity.fetch_available_models 动态获取模型列表
-    并添加假流式和流式抗截断前缀
     """
     models = await get_antigravity_models_with_features()
     log.debug("[ANTIGRAVITY MODEL LIST] 返回 Gemini 格式")
@@ -82,7 +75,6 @@ async def list_openai_models(token: str = Depends(authenticate_flexible)):
     返回 OpenAI 格式的模型列表
 
     从 src.api.antigravity.fetch_available_models 动态获取模型列表
-    并添加假流式和流式抗截断前缀
     """
     models = await get_antigravity_models_with_features()
     log.debug("[ANTIGRAVITY MODEL LIST] 返回 OpenAI 格式")

@@ -7,10 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from fastapi.responses import JSONResponse
 
 from src.log import log
-from src.utils import authenticate_gemini_flexible, get_base_model_from_feature_model
+from src.utils import (
+    authenticate_gemini_flexible,
+    get_base_model_from_feature_model,
+    build_streaming_response_or_error,
+)
 from src.schemas import GeminiRequest, model_to_dict
-from src.router.hi_check import is_health_check_request, create_health_check_response
-from src.router.stream_passthrough import build_streaming_response_or_error
 
 
 router = APIRouter()
@@ -28,9 +30,6 @@ async def generate_content(
 
     normalized_dict = model_to_dict(gemini_request)
 
-    if is_health_check_request(normalized_dict, format="gemini"):
-        return JSONResponse(content=create_health_check_response(format="gemini"))
-
     base_model = get_base_model_from_feature_model(model)
     from src.model_mapping import model_mapping_manager
     real_model = model_mapping_manager.resolve_model(
@@ -38,8 +37,8 @@ async def generate_content(
 
     normalized_dict["model"] = real_model
 
-    from src.converter.gemini_fix import normalize_gemini_request
-    normalized_dict = await normalize_gemini_request(normalized_dict, mode="vertex")
+    from src.converter.antigravity import normalize_antigravity_request
+    normalized_dict = await normalize_antigravity_request(normalized_dict)
 
     api_request = {
         "model": normalized_dict.pop("model"),
@@ -80,11 +79,11 @@ async def stream_generate_content(
     normalized_dict["model"] = real_model
 
     async def stream_generator():
-        from src.converter.gemini_fix import normalize_gemini_request
+        from src.converter.antigravity import normalize_antigravity_request
         from src.api.vertex import stream_request
         from fastapi import Response
 
-        normalized_req = await normalize_gemini_request(normalized_dict.copy(), mode="vertex")
+        normalized_req = await normalize_antigravity_request(normalized_dict.copy())
 
         api_request = {
             "model": normalized_req.pop("model"),

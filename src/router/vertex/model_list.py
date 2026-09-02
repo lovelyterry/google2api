@@ -5,8 +5,7 @@ Gemini CLI 模型列表路由 - 处理模型列表请求
 
 from src.log import log
 from src.schemas import model_to_dict
-from src.router.base_router import create_gemini_model_list, create_openai_model_list
-from src.utils import authenticate_flexible
+from src.utils import authenticate_flexible, create_gemini_model_list, create_openai_model_list
 from fastapi.responses import JSONResponse
 from fastapi import APIRouter, Depends
 import sys

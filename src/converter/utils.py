@@ -1,29 +1,62 @@
-from typing import Any, Dict
+"""
+Converter Utilities - 统一的转换工具函数模块
+包含 thoughtSignature 处理、系统消息合并、内容/思维链提取等公共基础功能
+"""
+from typing import Any, Dict, List, Mapping, Optional, Tuple
+from src.log import log
 
-from src.converter.thoughtSignature_fix import (
-    is_internal_placeholder_text,
-    is_skip_thought_signature_placeholder,
-)
+# ==============================================================================
+# 1. Thought Signature 处理
+# ==============================================================================
 
+# 在工具调用ID中嵌入thoughtSignature的分隔符
+THOUGHT_SIGNATURE_SEPARATOR = "__thought__"
+SKIP_THOUGHT_SIGNATURE_VALIDATOR = "skip_thought_signature_validator"
+SKIP_THOUGHT_SIGNATURE_PLACEHOLDER_TEXT = "..."
+
+
+def is_internal_placeholder_text(text: Any) -> bool:
+    if not isinstance(text, str):
+        return False
+    return text.strip() in (SKIP_THOUGHT_SIGNATURE_PLACEHOLDER_TEXT, "…")
+
+
+def is_skip_thought_signature_placeholder(part: Mapping[str, Any]) -> bool:
+    """Return True for the internal placeholder that should not reach clients."""
+    if not isinstance(part, Mapping):
+        return False
+    if part.get("thoughtSignature") != SKIP_THOUGHT_SIGNATURE_VALIDATOR:
+        return False
+    if "functionCall" in part or "function_call" in part or "functionResponse" in part:
+        return False
+    return is_internal_placeholder_text(part.get("text"))
+
+
+def encode_tool_id_with_signature(tool_id: str, signature: Optional[str]) -> str:
+    """
+    将 thoughtSignature 编码到工具调用ID中，以便往返保留。
+    """
+    if not signature:
+        return tool_id
+    return f"{tool_id}{THOUGHT_SIGNATURE_SEPARATOR}{signature}"
+
+
+def decode_tool_id_and_signature(encoded_id: str) -> Tuple[str, Optional[str]]:
+    """
+    从编码的ID中提取原始工具ID和thoughtSignature。
+    """
+    if not encoded_id or THOUGHT_SIGNATURE_SEPARATOR not in encoded_id:
+        return encoded_id, None
+    parts = encoded_id.split(THOUGHT_SIGNATURE_SEPARATOR, 1)
+    return parts[0], parts[1] if len(parts) == 2 else None
+
+
+# ==============================================================================
+# 2. 内容提取与消息处理
+# ==============================================================================
 
 def extract_content_and_reasoning(parts: list) -> tuple:
-    """从Gemini响应部件中提取内容和推理内容
-
-    Args:
-        parts: Gemini 响应中的 parts 列表
-
-    Returns:
-        (content, reasoning_content, images): 文本内容、推理内容和图片数据的元组
-        - content: 文本内容字符串
-        - reasoning_content: 推理内容字符串
-        - images: 图片数据列表,每个元素格式为:
-          {
-              "type": "image_url",
-              "image_url": {
-                  "url": "data:{mime_type};base64,{base64_data}"
-              }
-          }
-    """
+    """从Gemini响应部件中提取内容和推理内容"""
     content = ""
     reasoning_content = ""
     images = []
@@ -59,93 +92,17 @@ def extract_content_and_reasoning(parts: list) -> tuple:
 
 async def merge_system_messages(request_body: Dict[str, Any]) -> Dict[str, Any]:
     """
-    根据兼容性模式处理请求体中的system消息
-
-    - 兼容性模式关闭（False）：将连续的system消息合并为systemInstruction
-    - 兼容性模式开启（True）：将所有system消息转换为user消息
-
-    Args:
-        request_body: OpenAI或Claude格式的请求体，包含messages字段
-
-    Returns:
-        处理后的请求体
-
-    Example (兼容性模式关闭):
-        输入:
-        {
-            "messages": [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "system", "content": "You are an expert in Python."},
-                {"role": "user", "content": "Hello"}
-            ]
-        }
-
-        输出:
-        {
-            "systemInstruction": {
-                "parts": [
-                    {"text": "You are a helpful assistant."},
-                    {"text": "You are an expert in Python."}
-                ]
-            },
-            "messages": [
-                {"role": "user", "content": "Hello"}
-            ]
-        }
-
-    Example (兼容性模式开启):
-        输入:
-        {
-            "messages": [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "Hello"}
-            ]
-        }
-
-        输出:
-        {
-            "messages": [
-                {"role": "user", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "Hello"}
-            ]
-        }
-
-    Example (Anthropic格式，兼容性模式关闭):
-        输入:
-        {
-            "system": "You are a helpful assistant.",
-            "messages": [
-                {"role": "user", "content": "Hello"}
-            ]
-        }
-
-        输出:
-        {
-            "systemInstruction": {
-                "parts": [
-                    {"text": "You are a helpful assistant."}
-                ]
-            },
-            "messages": [
-                {"role": "user", "content": "Hello"}
-            ]
-        }
+    处理请求体中的 system 消息并将其规范提取为 systemInstruction
     """
-    from src.config import get_compatibility_mode_enabled
+    system_parts = []
 
-    compatibility_mode = await get_compatibility_mode_enabled()
-
-    # 处理 Anthropic 格式的顶层 system 参数
-    # Anthropic API 规范: system 是顶层参数，不在 messages 中
+    # 1. 提取顶层 system 字段
     system_content = request_body.get("system")
     if system_content:
-        system_parts = []
-
         if isinstance(system_content, str):
             if system_content.strip():
                 system_parts.append({"text": system_content})
         elif isinstance(system_content, list):
-            # system 可以是包含多个块的列表
             for item in system_content:
                 if isinstance(item, dict):
                     if item.get("type") == "text" and item.get("text", "").strip():
@@ -153,95 +110,36 @@ async def merge_system_messages(request_body: Dict[str, Any]) -> Dict[str, Any]:
                 elif isinstance(item, str) and item.strip():
                     system_parts.append({"text": item})
 
-        if system_parts:
-            if compatibility_mode:
-                # 兼容性模式：将 system 转换为 user 消息插入到 messages 开头
-                user_system_message = {
-                    "role": "user",
-                    "content": system_content if isinstance(system_content, str) else
-                    "\n".join(part["text"] for part in system_parts)
-                }
-                messages = request_body.get("messages", [])
-                request_body = request_body.copy()
-                request_body["messages"] = [user_system_message] + messages
-            else:
-                # 非兼容性模式：添加为 systemInstruction
-                request_body = request_body.copy()
-                request_body["systemInstruction"] = {"parts": system_parts}
-
+    # 2. 提取 messages 中的 system 角色消息
     messages = request_body.get("messages", [])
-    if not messages:
+    non_system_messages = []
+
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("role") == "system":
+            content = msg.get("content", "")
+            if isinstance(content, str) and content.strip():
+                system_parts.append({"text": content})
+            elif isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        text = item.get("text", "")
+                        if text.strip():
+                            system_parts.append({"text": text})
+                    elif isinstance(item, str) and item.strip():
+                        system_parts.append({"text": item})
+        else:
+            non_system_messages.append(msg)
+
+    if not system_parts:
         return request_body
 
-    compatibility_mode = await get_compatibility_mode_enabled()
+    result = request_body.copy()
+    result.pop("system", None)
+    result["systemInstruction"] = {
+        "role": "system",
+        "parts": system_parts
+    }
+    result["messages"] = non_system_messages
 
-    if compatibility_mode:
-        # 兼容性模式开启：将所有system消息转换为user消息
-        converted_messages = []
-        for message in messages:
-            if message.get("role") == "system":
-                # 创建新的消息对象，将role改为user
-                converted_message = message.copy()
-                converted_message["role"] = "user"
-                converted_messages.append(converted_message)
-            else:
-                converted_messages.append(message)
+    return result
 
-        result = request_body.copy()
-        result["messages"] = converted_messages
-        return result
-    else:
-        # 兼容性模式关闭：提取连续的system消息合并为systemInstruction
-        system_parts = []
-
-        # 如果已经从顶层 system 参数创建了 systemInstruction，获取现有的 parts
-        if "systemInstruction" in request_body:
-            existing_instruction = request_body.get("systemInstruction", {})
-            if isinstance(existing_instruction, dict):
-                system_parts = existing_instruction.get("parts", []).copy()
-
-        remaining_messages = []
-        collecting_system = True
-
-        for message in messages:
-            role = message.get("role", "")
-            content = message.get("content", "")
-
-            if role == "system" and collecting_system:
-                # 提取system消息的文本内容
-                if isinstance(content, str):
-                    if content.strip():
-                        system_parts.append({"text": content})
-                elif isinstance(content, list):
-                    # 处理列表格式的content
-                    for item in content:
-                        if isinstance(item, dict):
-                            if item.get("type") == "text" and item.get("text", "").strip():
-                                system_parts.append({"text": item["text"]})
-                        elif isinstance(item, str) and item.strip():
-                            system_parts.append({"text": item})
-            else:
-                # 遇到非system消息，停止收集
-                collecting_system = False
-                if role == "system":
-                    # 将后续的system消息转换为user消息
-                    converted_message = message.copy()
-                    converted_message["role"] = "user"
-                    remaining_messages.append(converted_message)
-                else:
-                    remaining_messages.append(message)
-
-        # 如果没有找到任何system消息（包括顶层参数和messages中的），返回原始请求体
-        if not system_parts:
-            return request_body
-
-        # 构建新的请求体
-        result = request_body.copy()
-
-        # 添加或更新systemInstruction
-        result["systemInstruction"] = {"parts": system_parts}
-
-        # 更新messages列表（移除已处理的system消息）
-        result["messages"] = remaining_messages
-
-        return result

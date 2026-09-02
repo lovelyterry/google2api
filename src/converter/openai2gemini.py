@@ -11,13 +11,13 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pypinyin import Style, lazy_pinyin
 
-from src.converter.thoughtSignature_fix import (
+from src.converter.utils import (
     decode_tool_id_and_signature,
     is_internal_placeholder_text,
     is_skip_thought_signature_placeholder,
     SKIP_THOUGHT_SIGNATURE_VALIDATOR,
+    merge_system_messages,
 )
-from src.converter.utils import merge_system_messages
 
 from src.log import log
 
@@ -1390,7 +1390,7 @@ async def convert_openai_to_gemini_request(openai_request: Dict[str, Any]) -> Di
 
             # 如果有文本内容,先添加文本
             # 注意: content 可能是 str、list（OpenAI content block 格式 [{"type":"text","text":"..."}]）、dict 或 None
-            # 必须解包为纯字符串，否则 text 字段会变成 list，触发 gemini_fix 的 str(dict) 产生嵌套字符串
+            # 必须解包为纯字符串，否则 text 字段会变成 list，触发 antigravity 转换器的 str(dict) 产生嵌套字符串
             if content:
                 if isinstance(content, list):
                     for _part in content:

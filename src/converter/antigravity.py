@@ -1,6 +1,6 @@
 """
 Antigravity Format Utilities - 独立的 Antigravity 请求处理和转换工具
-从 gemini_fix.py 中拆分出来，专供 src/router/antigravity 使用
+专供 Antigravity / GeminiCLI / Vertex 通道使用
 ────────────────────────────────────────────────────────────────
 """
 import json
@@ -8,7 +8,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from src.log import log
-from src.converter.thoughtSignature_fix import SKIP_THOUGHT_SIGNATURE_VALIDATOR
+from src.converter.utils import SKIP_THOUGHT_SIGNATURE_VALIDATOR
 
 # ==================== Gemini API 配置 ====================
 
@@ -471,118 +471,6 @@ def _ensure_tool_call_ids(contents: Any, model_name: str) -> Any:
     return contents
 
 
-SUPPORTED_ASPECT_RATIOS = [
-    (1, 1), (2, 3), (3, 2), (3, 4), (4, 3),
-    (4, 5), (5, 4), (9, 16), (16, 9), (21, 9),
-]
-
-
-def _parse_size_to_image_config(size_str: str) -> Dict[str, str]:
-    """
-    解析用户传入的 size 参数为 Gemini imageConfig 参数
-
-    支持格式: "1024x1536", "1024*1536", "1024X1536"
-
-    Returns:
-        包含 aspectRatio 和/或 imageSize 的字典
-    """
-    import re
-
-    config = {}
-    size_str = size_str.strip()
-
-    match = re.match(r"^(\d+)\s*[xX*×]\s*(\d+)$", size_str)
-    if not match:
-        return config
-
-    width, height = int(match.group(1)), int(match.group(2))
-
-    if width <= 0 or height <= 0:
-        return config
-
-    # 计算最接近的支持宽高比
-    target_ratio = width / height
-    best_ratio = None
-    best_diff = float("inf")
-    for w, h in SUPPORTED_ASPECT_RATIOS:
-        diff = abs(target_ratio - w / h)
-        if diff < best_diff:
-            best_diff = diff
-            best_ratio = f"{w}:{h}"
-    if best_ratio:
-        config["aspectRatio"] = best_ratio
-
-    # 根据最大边长确定 imageSize（使用最接近的档位）
-    max_dim = max(width, height)
-    if max_dim <= 1280:
-        config["imageSize"] = "1K"
-    elif max_dim <= 2560:
-        config["imageSize"] = "2K"
-    else:
-        config["imageSize"] = "4K"
-
-    return config
-
-
-def prepare_image_generation_request(
-    request_body: Dict[str, Any],
-    model: str
-) -> Dict[str, Any]:
-    """
-    图像生成模型请求体后处理
-
-    支持三种方式指定图片参数（优先级从高到低）:
-    1. size 参数: 如 "1024x1536"，自动计算 aspectRatio 和 imageSize
-    2. 模型名后缀: 如 -4k, -2k, -16x9, -1x1
-    3. 默认值: 不设置额外参数
-
-    Args:
-        request_body: 原始请求体
-        model: 模型名称
-
-    Returns:
-        处理后的请求体
-    """
-    request_body = request_body.copy()
-    model_lower = model.lower()
-
-    # 优先使用 size 参数
-    size_str = request_body.pop("size", None)
-    if size_str:
-        image_config = _parse_size_to_image_config(size_str)
-        log.debug(f"[IMAGE] 从 size 参数 '{size_str}' 解析: {image_config}")
-    else:
-        # 从模型名后缀解析
-        image_size = "4K" if "-4k" in model_lower else "2K" if "-2k" in model_lower else None
-
-        aspect_ratio = None
-        for suffix, ratio in [
-            ("-21x9", "21:9"), ("-16x9", "16:9"), ("-9x16", "9:16"),
-            ("-4x3", "4:3"), ("-3x4", "3:4"), ("-1x1", "1:1")
-        ]:
-            if suffix in model_lower:
-                aspect_ratio = ratio
-                break
-
-        image_config = {}
-        if aspect_ratio:
-            image_config["aspectRatio"] = aspect_ratio
-        if image_size:
-            image_config["imageSize"] = image_size
-
-    request_body["model"] = "gemini-3.1-flash-image"  # 统一使用基础模型名
-    request_body["generationConfig"] = {
-        "candidateCount": 1,
-        "imageConfig": image_config
-    }
-
-    # 移除不需要的字段
-    for key in ("systemInstruction", "tools", "toolConfig"):
-        request_body.pop(key, None)
-
-    return request_body
-
-
 # ==================== 模型特性辅助函数 ====================
 
 def is_thinking_model(model_name: str) -> bool:
@@ -763,10 +651,6 @@ async def normalize_antigravity_request(
 
     # 获取配置值
     return_thoughts = await get_return_thoughts_to_frontend()
-
-    # 图片模型走独立的图片生成处理路径
-    if "image" in model.lower():
-        return prepare_image_generation_request(result, model)
 
     model = _normalize_antigravity_request(result, model, generation_config, return_thoughts)
     result["model"] = model
