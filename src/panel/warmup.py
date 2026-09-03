@@ -52,7 +52,7 @@ class QuotaWarmupService:
             if not access_token or not project_id:
                 return False
 
-            from src.client import post_async
+            from src.client import post_async, evict_session
             from src.config import get_antigravity_api_url, get_code_assist_endpoint
 
             test_model = "gemini-3.6-flash-medium"
@@ -106,6 +106,11 @@ class QuotaWarmupService:
                     f"[QuotaWarmup] 探针响应非 200 ({response.status_code}): {filename}")
                 return False
         except Exception as e:
+            try:
+                from src.client import evict_session
+                await evict_session(f"{mode}:{filename}")
+            except Exception:
+                pass
             log.warning(f"[QuotaWarmup] 发送保鲜探针异常 {filename}: {e}")
             return False
 

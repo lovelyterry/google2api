@@ -54,7 +54,7 @@ async def _close_session(session: Any):
 class IsolatedClientPool:
     """按账号/凭证标识隔离的 HTTP 客户端池，确保不同凭证的请求拥有独立的 TLS/TCP 上下文"""
 
-    def __init__(self, idle_timeout: float = 300.0):
+    def __init__(self, idle_timeout: float = 60.0):
         self._pool: Dict[str, Tuple[Any, float]] = {}
         self._idle_timeout = idle_timeout
         self._lock = asyncio.Lock()
@@ -68,9 +68,14 @@ class IsolatedClientPool:
         async with self._lock:
             now = time.time()
             if key in self._pool:
-                session, _ = self._pool[key]
-                self._pool[key] = (session, now)
-                return session
+                session, last_used = self._pool[key]
+                # 检查连接是否闲置超时，超时则主动销毁以防死连接
+                if now - last_used > self._idle_timeout:
+                    await _close_session(session)
+                    del self._pool[key]
+                else:
+                    self._pool[key] = (session, now)
+                    return session
 
             session_kwargs: Dict[str, Any] = {
                 "impersonate": impersonate,
@@ -84,6 +89,14 @@ class IsolatedClientPool:
             self._pool[key] = (session, now)
             return session
 
+    async def remove_session(self, session_key: Optional[str] = None):
+        """主动注销并关闭指定的 session 连接"""
+        key = session_key or "default"
+        async with self._lock:
+            if key in self._pool:
+                session, _ = self._pool.pop(key)
+                await _close_session(session)
+
     async def cleanup_idle(self):
         """定期清理长久未使用的空闲 Session 连接"""
         async with self._lock:
@@ -96,7 +109,6 @@ class IsolatedClientPool:
             for key in keys_to_remove:
                 del self._pool[key]
 
-
     async def close_all(self):
         """关闭连接池中的所有 Session 连接"""
         async with self._lock:
@@ -107,6 +119,11 @@ class IsolatedClientPool:
 
 # 实例池管理
 client_pool = IsolatedClientPool()
+
+
+async def evict_session(session_key: Optional[str]):
+    """主动注销并清理指定 session 缓存"""
+    await client_pool.remove_session(session_key)
 
 
 class HttpClientManager:
@@ -236,7 +253,7 @@ async def get_async(
         await request_interval_limiter.wait()
     log.debug(f"[HTTP GET] 请求 URL: {url}")
     async with http_client.get_client(timeout=timeout, **kwargs) as client:
-        response = await client.get(url, headers=headers)
+        response = await client.get(url, headers=headers, timeout=timeout)
         resp_text = getattr(response, "text", "")
         status_code = getattr(response, "status_code", 0)
         log.debug(
@@ -262,7 +279,7 @@ async def post_async(
         f"[HTTP POST] 请求 URL: {url}\nPayload:\n{_format_payload(payload)}")
 
     async with http_client.get_client(timeout=timeout, **kwargs) as client:
-        response = await client.post(url, data=data, json=json, headers=headers)
+        response = await client.post(url, data=data, json=json, headers=headers, timeout=timeout)
         resp_text = getattr(response, "text", "")
         if not resp_text and hasattr(response, "content"):
             try:

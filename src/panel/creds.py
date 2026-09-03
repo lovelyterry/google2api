@@ -1590,5 +1590,10 @@ async def test_credential(
     except HTTPException:
         raise
     except Exception as e:
+        try:
+            from src.client import evict_session
+            await evict_session(f"{mode}:{filename}")
+        except Exception:
+            pass
         log.error(f"测试凭证失败 {filename}: {e}")
         raise HTTPException(status_code=500, detail=f"测试失败: {str(e)}")

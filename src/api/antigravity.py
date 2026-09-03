@@ -22,7 +22,7 @@ from src.config import (
 from src.log import log
 
 from src.auth import credential_manager, ANTIGRAVITY_USER_AGENT
-from src.client import stream_post_async, post_async, get_async
+from src.client import stream_post_async, post_async, get_async, evict_session
 from src.schemas import Model, model_to_dict
 
 # 导入共同的基础功能
@@ -511,6 +511,8 @@ async def stream_request(
                     )
                     return
             except Exception as e:
+                if _is_network_error(e):
+                    await evict_session(f"antigravity:{current_file}")
                 log.error(f"[ANTIGRAVITY STREAM] 请求引发异常: {e}")
                 await record_api_call_error(
                     credential_manager,
@@ -767,6 +769,8 @@ async def non_stream_request(
                 return last_error_response
 
             except Exception as e:
+                if _is_network_error(e):
+                    await evict_session(f"antigravity:{current_file}")
                 log.error(f"[ANTIGRAVITY NON-STREAM] 请求引发异常: {e}")
                 await record_api_call_error(
                     credential_manager,
@@ -860,6 +864,7 @@ async def fetch_available_models(force_refresh: bool = False) -> List[Dict[str, 
 
         headers = build_antigravity_headers(access_token)
 
+        session_key = f"antigravity:{current_file}"
         try:
             antigravity_url = await get_antigravity_api_url()
 
@@ -867,7 +872,8 @@ async def fetch_available_models(force_refresh: bool = False) -> List[Dict[str, 
                 url=f"{antigravity_url}/v1internal:fetchAvailableModels",
                 json={},
                 headers=headers,
-                session_key=f"antigravity:{current_file}",
+                timeout=30.0,
+                session_key=session_key,
             )
 
             if response.status_code == 200:
@@ -901,9 +907,14 @@ async def fetch_available_models(force_refresh: bool = False) -> List[Dict[str, 
                 return _MODELS_CACHE if _MODELS_CACHE else []
 
         except Exception as e:
-            import traceback
-            log.error(f"[ANTIGRAVITY] Failed to fetch models: {e}")
-            log.error(f"[ANTIGRAVITY] Traceback: {traceback.format_exc()}")
+            if _is_network_error(e):
+                await evict_session(session_key)
+                friendly_err = _format_network_error(e)
+                log.warning(f"[ANTIGRAVITY] 获取可用模型遇到网络异常 (已重置连接): {friendly_err}")
+            else:
+                import traceback
+                log.error(f"[ANTIGRAVITY] Failed to fetch models: {e}")
+                log.error(f"[ANTIGRAVITY] Traceback: {traceback.format_exc()}")
             return _MODELS_CACHE if _MODELS_CACHE else []
 
 
@@ -928,17 +939,37 @@ def _parse_reset_time_to_beijing(reset_time_raw: str) -> str:
         return 'N/A'
 
 
+def _is_network_error(e: Exception) -> bool:
+    """判断是否属于网络/超时/TLS/DNS/代理连接异常"""
+    err_str = str(e).lower()
+    err_cls = type(e).__name__.lower()
+    keywords = [
+        "tls connect error", "sslerror", "openssl_internal", "ssl",
+        "could not resolve host", "resolve host", "connection refused",
+        "connection reset", "broken pipe", "failed to connect",
+        "network is unreachable", "timeout", "timed out", "timedout",
+        "curle_", "curl: (28)", "curl: (7)", "curl: (35)", "curl: (56)",
+        "curl: (52)", "curl: (6)", "0 bytes received", "failed to perform, curl:"
+    ]
+    if any(k in err_str for k in keywords):
+        return True
+    if any(cls_name in err_cls for cls_name in ["timeout", "curlerror", "requestexception", "connectionerror"]):
+        return True
+    return False
+
+
 def _format_network_error(e: Exception) -> str:
     """将网络/TLS/curl 底层异常转换为人性化的中文提示信息"""
     err_str = str(e)
-    if any(k in err_str for k in ["TLS connect error", "SSLError", "OPENSSL_internal", "SSL"]):
-        return "网络连接失败 (TLS/SSL握手异常，请检查网络代理或代理节点联通性)"
-    if "Could not resolve host" in err_str or "resolve host" in err_str:
+    err_str_lower = err_str.lower()
+    if any(k in err_str_lower for k in ["timeout", "timed out", "curle_operation_timedout", "curl: (28)", "0 bytes received"]):
+        return "网络请求超时 (代理节点响应过慢或底层连接静默中断)"
+    if any(k in err_str_lower for k in ["tls connect error", "sslerror", "openssl_internal", "ssl", "curl: (35)"]):
+        return "网络连接失败 (TLS/SSL握手异常，请检查代理节点联通性)"
+    if any(k in err_str_lower for k in ["could not resolve host", "resolve host", "curl: (6)"]):
         return "网络连接失败 (无法解析域名 DNS，请检查网络/代理设置)"
-    if "Connection refused" in err_str or "Failed to connect" in err_str:
+    if any(k in err_str_lower for k in ["connection refused", "failed to connect", "curl: (7)"]):
         return "网络连接失败 (目标地址或代理拒绝连接)"
-    if "Timeout" in err_str or "timed out" in err_str or "CURLE_OPERATION_TIMEDOUT" in err_str:
-        return "网络请求超时 (请检查代理节点响应速度或网络延迟)"
     return f"网络请求异常: {err_str}"
 
 
@@ -953,6 +984,7 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
         包含额度信息的字典
     """
     headers = build_antigravity_headers(access_token)
+    session_key = f"antigravity:quota:{access_token[:16]}"
     max_retries = 2
 
     for attempt in range(max_retries):
@@ -964,7 +996,7 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
                 json={},
                 headers=headers,
                 timeout=30.0,
-                session_key=f"antigravity:quota:{access_token[:16]}",
+                session_key=session_key,
             )
 
             if response.status_code == 200:
@@ -1002,14 +1034,18 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
                 }
 
         except Exception as e:
-            err_str = str(e)
-            is_net_err = any(k in err_str for k in ["TLS connect error", "SSLError", "OPENSSL_internal", "resolve host", "Connection refused", "CURLE_"])
+            is_net_err = _is_network_error(e)
+            friendly_err = _format_network_error(e)
+
+            # 遇到网络或超时异常，主动清理损坏的 Session
+            if is_net_err:
+                await evict_session(session_key)
+
             if is_net_err and attempt < max_retries - 1:
-                log.warning(f"[ANTIGRAVITY QUOTA] 网络/TLS握手异常，正在进行第 {attempt + 1} 次重试...")
+                log.warning(f"[ANTIGRAVITY QUOTA] 遇到网络抖动/超时 ({friendly_err})，已重置连接，正在进行第 {attempt + 1} 次重试...")
                 await asyncio.sleep(0.5)
                 continue
 
-            friendly_err = _format_network_error(e)
             if is_net_err:
                 log.warning(f"[ANTIGRAVITY QUOTA] 获取额度失败: {friendly_err}")
             else:
@@ -1035,6 +1071,7 @@ async def fetch_quota_summary(access_token: str, project_id: Optional[str] = Non
     """
     headers = build_antigravity_headers(access_token)
     payload = {"project": project_id} if project_id else {}
+    session_key = f"antigravity:quota:{access_token[:16]}"
     max_retries = 2
 
     for attempt in range(max_retries):
@@ -1045,7 +1082,7 @@ async def fetch_quota_summary(access_token: str, project_id: Optional[str] = Non
                 json=payload,
                 headers=headers,
                 timeout=30.0,
-                session_key=f"antigravity:quota:{access_token[:16]}",
+                session_key=session_key,
             )
 
             if response.status_code == 200:
@@ -1093,14 +1130,18 @@ async def fetch_quota_summary(access_token: str, project_id: Optional[str] = Non
                 }
 
         except Exception as e:
-            err_str = str(e)
-            is_net_err = any(k in err_str for k in ["TLS connect error", "SSLError", "OPENSSL_internal", "resolve host", "Connection refused", "CURLE_"])
+            is_net_err = _is_network_error(e)
+            friendly_err = _format_network_error(e)
+
+            # 遇到网络或超时异常，主动清理损坏的 Session
+            if is_net_err:
+                await evict_session(session_key)
+
             if is_net_err and attempt < max_retries - 1:
-                log.warning(f"[ANTIGRAVITY QUOTA SUMMARY] 网络/TLS握手异常，正在进行第 {attempt + 1} 次重试...")
+                log.warning(f"[ANTIGRAVITY QUOTA SUMMARY] 遇到网络抖动/超时 ({friendly_err})，已重置连接，正在进行第 {attempt + 1} 次重试...")
                 await asyncio.sleep(0.5)
                 continue
 
-            friendly_err = _format_network_error(e)
             if is_net_err:
                 log.warning(f"[ANTIGRAVITY QUOTA SUMMARY] 获取额度分组失败: {friendly_err}")
             else:
