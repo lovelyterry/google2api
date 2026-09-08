@@ -432,9 +432,31 @@ class CredentialManager:
 
                 await self.update_credential_state(credential_name, state_updates, mode=mode)
 
-                # 针对 429/503 等限流/服务不可用错误：若未能从响应体解析出具体 reset 时间，使用默认 15 秒快速恢复冷却
-                if (error_code in (429, 503)) and (cooldown_until is None or cooldown_until <= time.time()):
-                    cooldown_until = time.time() + 15
+                # 当外部未能从错误响应中解析出精确冷却时间时，
+                # 从该账号本地存储的 quota_groups 读取真实的重置时间戳
+                if (error_code in (429, 503)) and cooldown_until is None:
+                    quota_reset = await self._storage_adapter.get_quota_reset_for_credential(
+                        credential_name, mode=mode
+                    )
+                    if quota_reset is not None and quota_reset > time.time():
+                        cooldown_until = quota_reset
+                        log.info(
+                            f"[CredMgr] 从 quota_groups 读取到冷却时间: {credential_name}, "
+                            f"冷却至: {datetime.fromtimestamp(cooldown_until, timezone.utc).isoformat()}"
+                        )
+                    else:
+                        # quota_groups 无未来有效重置时间（可能已过期或未拉取），设置 60 秒临时冷却
+                        # 同时在后台异步触发一次该账号的配额刷新，以拉取最新的周限额与五小时限额
+                        cooldown_until = time.time() + 60
+                        log.debug(
+                            f"[CredMgr] quota_groups 无未来有效重置时间，设置 60s 临时冷却并触发后台额度刷新: {credential_name}"
+                        )
+                        if mode == "antigravity":
+                            try:
+                                from src.panel.quota import quota_manager
+                                asyncio.create_task(quota_manager.refresh_single(credential_name, mode=mode))
+                            except Exception as e:
+                                log.debug(f"[CredMgr] 异步触发额度刷新跳过: {e}")
 
                 # 设置模型级冷却
                 if cooldown_until is not None:
@@ -447,6 +469,17 @@ class CredentialManager:
                             f"[CredMgr] 设置模型级冷却: {credential_name}, model_name={target_model}, "
                             f"冷却至: {datetime.fromtimestamp(cooldown_until, timezone.utc).isoformat()}"
                         )
+
+                        # 冷却时间 > 当前时间 1 分钟以上时，同步写入 "default" 账号级全局冷却键
+                        # 防止通过不同 model_name 请求绕过该账号的冷却
+                        if target_model != "default" and (cooldown_until - time.time()) >= 60:
+                            await self._storage_adapter.set_model_cooldown(
+                                credential_name, "default", cooldown_until, mode=mode
+                            )
+                            log.info(
+                                f"[CredMgr] 同步设置账号级全局冷却 (default): {credential_name}, "
+                                f"冷却至: {datetime.fromtimestamp(cooldown_until, timezone.utc).isoformat()}"
+                            )
 
         except Exception as e:
             log.error(

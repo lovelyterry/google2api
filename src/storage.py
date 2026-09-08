@@ -586,6 +586,153 @@ class Storage:
 
         return best_rem, best_reset_ts
 
+    def _parse_reset_ts(self, raw: str) -> float:
+        """解析 resetTimeRaw 或 resetTime 字符串为 Unix 时间戳，失败返回 inf"""
+        if not raw:
+            return float("inf")
+        # 1. 尝试 ISO 格式
+        try:
+            s = str(raw).strip()
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except Exception:
+            pass
+
+        # 2. 兜底尝试解析北京时间格式 MM-DD HH:MM (例如 09-08 13:15)
+        try:
+            now_dt = datetime.now(timezone(timedelta(hours=8)))
+            parts = str(raw).strip().split()
+            if len(parts) == 2 and "-" in parts[0] and ":" in parts[1]:
+                month, day = map(int, parts[0].split("-"))
+                hour, minute = map(int, parts[1].split(":"))
+                year = now_dt.year
+                target_dt = datetime(year, month, day, hour, minute, tzinfo=timezone(timedelta(hours=8)))
+                if target_dt < now_dt - timedelta(days=300):
+                    target_dt = target_dt.replace(year=year + 1)
+                return target_dt.timestamp()
+        except Exception:
+            pass
+
+        return float("inf")
+
+    def get_quota_reset_from_state(self, st: Dict[str, Any]) -> Optional[float]:
+        """
+        从凭证的 quota_groups 中提取最合适的冷却截止时间戳。
+        根据周限额 (Weekly Limit) 与五小时限额 (Five Hour Limit) 的实际消耗情况进行动态决策：
+        1. 若周限额已耗尽（remainingFraction < 0.01），且重置时间在未来，则必须冷却至周限额重置时间。
+        2. 若周限额未耗尽，而五小时限额已耗尽，则冷却至五小时限额重置时间（最常见场景）。
+        3. 若两者本地数据都显示未完全耗尽，但收到 429，说明突发打满，优先取五小时限额的重置时间（短周期）。
+        4. 所有计算只采纳未来的重置时间戳（> current_time），杜绝过期时间引发逻辑失效。
+
+        Args:
+            st: 凭证状态字典（含 quota_groups 字段）
+
+        Returns:
+            Unix 时间戳（秒），None 表示没有未来有效的 quota 时间信息
+        """
+        quota_groups = st.get("quota_groups", [])
+        if not isinstance(quota_groups, list) or not quota_groups:
+            return None
+
+        current_time = time.time()
+        weekly_bucket = None
+        five_hour_bucket = None
+        all_future_resets: list[float] = []
+
+        for group in quota_groups:
+            if not isinstance(group, dict):
+                continue
+            buckets = group.get("buckets", [])
+            if not isinstance(buckets, list):
+                continue
+
+            for bucket in buckets:
+                if not isinstance(bucket, dict):
+                    continue
+
+                display_name = str(bucket.get("displayName", "")).lower()
+                description = str(bucket.get("description", "")).lower()
+                window = str(bucket.get("window", "")).lower()
+                bucket_id = str(bucket.get("bucketId", "")).lower()
+
+                # 识别周限额标识 (weekly / 7d / 周)
+                is_weekly = (
+                    "week" in display_name
+                    or "week" in description
+                    or "week" in window
+                    or "week" in bucket_id
+                    or "7d" in window
+                    or "7_day" in window
+                    or "周" in display_name
+                    or "周" in description
+                )
+                # 识别五小时限额标识 (five hour / 5h / 小时 / day / daily)
+                is_five_hour = (
+                    "hour" in display_name
+                    or "hour" in description
+                    or "hour" in window
+                    or "hour" in bucket_id
+                    or "five" in display_name
+                    or "five" in description
+                    or "5h" in window
+                    or "5_hour" in window
+                    or "小时" in display_name
+                    or "小时" in description
+                    or "day" in window
+                    or "daily" in window
+                )
+
+                raw = bucket.get("resetTimeRaw") or bucket.get("resetTime")
+                reset_ts = self._parse_reset_ts(raw) if raw else float("inf")
+                if reset_ts != float("inf") and reset_ts > current_time:
+                    all_future_resets.append(reset_ts)
+
+                # 解析剩余比例
+                try:
+                    rem = float(bucket.get("remainingFraction", 1.0))
+                except (ValueError, TypeError):
+                    rem = 1.0
+                rem = max(0.0, min(1.0, rem))
+
+                if is_weekly and not weekly_bucket:
+                    weekly_bucket = {"rem": rem, "reset_ts": reset_ts}
+                elif is_five_hour and not five_hour_bucket:
+                    five_hour_bucket = {"rem": rem, "reset_ts": reset_ts}
+
+        # 策略 1: 周限额已耗尽 (已用100% / 剩余<1%) 且重置在未来 -> 必须等待周限额重置
+        if weekly_bucket and weekly_bucket["rem"] < 0.01 and weekly_bucket["reset_ts"] > current_time:
+            return weekly_bucket["reset_ts"]
+
+        # 策略 2: 五小时限额已耗尽 (已用100% / 剩余<1%) 且重置在未来 -> 冷却至五小时限额重置
+        if five_hour_bucket and five_hour_bucket["rem"] < 0.01 and five_hour_bucket["reset_ts"] > current_time:
+            return five_hour_bucket["reset_ts"]
+
+        # 策略 3: 本地数据尚未标记耗尽（但API已报429），优先使用五小时限额未来的重置时间
+        if five_hour_bucket and five_hour_bucket["reset_ts"] > current_time:
+            return five_hour_bucket["reset_ts"]
+
+        # 策略 4: 从所有未来有效的重置时间中取最近的一个
+        if all_future_resets:
+            return min(all_future_resets)
+
+        return None
+
+    async def get_quota_reset_for_credential(
+        self, filename: str, mode: str = "geminicli"
+    ) -> Optional[float]:
+        """
+        异步接口：从存储中读取指定凭证的 quota 重置时间戳。
+        """
+        self._ensure_initialized()
+        st = self._states.get(mode, {}).get(filename)
+        if not st:
+            return None
+        return self.get_quota_reset_from_state(st)
+
     def _credential_schedule_key(self, state_dict: Dict[str, Dict[str, Any]], fname: str):
         st = state_dict.get(fname, {})
         rem_fraction, reset_ts = self._extract_weekly_quota_info(st)
@@ -629,8 +776,17 @@ class Storage:
             if st.get("tier") == "unverified":
                 continue
 
+            model_cooldowns = st.get("model_cooldowns", {})
+
+            # 【修复】始终检查 "default" 账号级全局冷却键
+            # 积分耗尽等长冷却错误会同时写入 model_name 和 "default" 两个键，
+            # 此处统一拦截，防止通过不同 model_name 绕过冷却
+            global_cooldown = model_cooldowns.get("default", 0)
+            if global_cooldown > current_time:
+                continue
+
+            # 检查特定模型的冷却
             if model_name:
-                model_cooldowns = st.get("model_cooldowns", {})
                 cooldown_until = model_cooldowns.get(model_name, 0)
                 if cooldown_until > current_time:
                     continue

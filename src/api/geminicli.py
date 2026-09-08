@@ -22,7 +22,7 @@ from src.config import get_code_assist_endpoint, get_auto_ban_error_codes
 from src.log import log
 
 from src.auth import credential_manager, get_geminicli_user_agent
-from src.client import stream_post_async, post_async
+from src.client import stream_post_async, post_async, evict_session
 
 # 导入共同的基础功能
 from src.api.utils import (
@@ -31,6 +31,9 @@ from src.api.utils import (
     record_api_call_success,
     record_api_call_error,
     parse_and_log_cooldown,
+    is_network_error,
+    format_network_error,
+    calculate_backoff_delay,
 )
 
 # ==================== 全局凭证管理器 ====================
@@ -254,20 +257,22 @@ async def stream_request(
                             except Exception:
                                 pass
 
-                        # 预热下一个凭证
+                        # 【修复竞态】先记录错误并写入冷却，再启动预热任务
+                        # 原逻辑：先 create_task(get_valid_credential) 再 await record_api_call_error
+                        # 导致预热任务运行时冷却尚未写入，可能拿到同一个刚报错的账号
+                        await record_api_call_error(
+                            credential_manager, current_file, status_code,
+                            cooldown_until, mode="geminicli", model_name=model_name,
+                            error_message=error_body
+                        )
+
+                        # 冷却已落地，再预热下一个凭证（此时 get_next_available_credential 会正确跳过冷却账号）
                         if next_cred_task is None and attempt < max_retries:
                             next_cred_task = asyncio.create_task(
                                 credential_manager.get_valid_credential(
                                     mode="geminicli", model_name=model_name, force_rotate=True
                                 )
                             )
-
-                        # 记录错误并切换凭证
-                        await record_api_call_error(
-                            credential_manager, current_file, status_code,
-                            cooldown_until, mode="geminicli", model_name=model_name,
-                            error_message=error_body
-                        )
 
                         # 检查是否应该重试
                         should_retry = await handle_error_with_retry(
@@ -285,6 +290,7 @@ async def stream_request(
                                 f"[GEMINICLI STREAM] 达到最大重试次数或不应重试，返回原始错误")
                             yield chunk
                             return
+
                     elif status_code == 404 and "preview" in model_name.lower():
                         # 特殊处理：preview模型返回404，说明该凭证不支持preview模型
                         log.warning(
@@ -389,7 +395,12 @@ async def stream_request(
                 continue  # 重试
 
         except Exception as e:
-            log.error(f"[GEMINICLI STREAM] 流式请求异常: {e}, 凭证: {current_file}")
+            if is_network_error(e):
+                await evict_session(f"geminicli:{current_file}")
+                friendly = format_network_error(e)
+                log.warning(f"[GEMINICLI STREAM] 网络抖动/超时 ({friendly}), 凭证: {current_file}")
+            else:
+                log.error(f"[GEMINICLI STREAM] 流式请求异常: {e}, 凭证: {current_file}")
             await record_api_call_error(
                 credential_manager, current_file, 500,
                 None, mode="geminicli", model_name=model_name,
@@ -597,20 +608,20 @@ async def non_stream_request(
                     except Exception:
                         pass
 
-                # 并行预热下一个凭证,不阻塞当前处理
+                # 【修复竞态】先记录错误并写入冷却，再启动预热任务
+                await record_api_call_error(
+                    credential_manager, current_file, status_code,
+                    cooldown_until, mode="geminicli", model_name=model_name,
+                    error_message=error_text
+                )
+
+                # 冷却已落地，再并行预热下一个凭证（此时能正确跳过冷却账号）
                 if next_cred_task is None and attempt < max_retries:
                     next_cred_task = asyncio.create_task(
                         credential_manager.get_valid_credential(
                             mode="geminicli", model_name=model_name, force_rotate=True
                         )
                     )
-
-                # 记录错误并切换凭证
-                await record_api_call_error(
-                    credential_manager, current_file, status_code,
-                    cooldown_until, mode="geminicli", model_name=model_name,
-                    error_message=error_text
-                )
 
                 # 检查是否应该重试（会自动处理禁用逻辑）
                 should_retry = await handle_error_with_retry(
@@ -643,6 +654,7 @@ async def non_stream_request(
                     # 不重试，直接返回原始错误
                     log.error(f"[NON-STREAM] 达到最大重试次数或不应重试，返回原始错误")
                     return last_error_response
+
             elif status_code == 404 and "preview" in model_name.lower():
                 # 特殊处理：preview模型返回404，说明该凭证不支持preview模型
                 log.warning(
@@ -708,7 +720,12 @@ async def non_stream_request(
                 return last_error_response
 
         except Exception as e:
-            log.error(f"[GEMINICLI] 非流式请求异常: {e}, 凭证: {current_file}")
+            if is_network_error(e):
+                await evict_session(f"geminicli:{current_file}")
+                friendly = format_network_error(e)
+                log.warning(f"[GEMINICLI] 非流式网络抖动/超时 ({friendly}), 凭证: {current_file}")
+            else:
+                log.error(f"[GEMINICLI] 非流式请求异常: {e}, 凭证: {current_file}")
             await record_api_call_error(
                 credential_manager, current_file, 500,
                 None, mode="geminicli", model_name=model_name,

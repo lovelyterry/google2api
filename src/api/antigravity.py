@@ -32,6 +32,9 @@ from src.api.utils import (
     record_api_call_success,
     record_api_call_error,
     parse_and_log_cooldown,
+    is_network_error,
+    format_network_error,
+    calculate_backoff_delay,
 )
 
 # ==================== 全局凭证管理器 ====================
@@ -438,7 +441,8 @@ async def stream_request(
                                 mode="antigravity"
                             )
                         else:
-                            # 记录API调用错误(不禁用)
+                            # 【修复竞态】先记录API调用错误（写入冷却），再启动预热任务
+                            # 确保 get_next_available_credential 能正确跳过刚被冷却的账号
                             await record_api_call_error(
                                 credential_manager,
                                 current_file,
@@ -456,13 +460,14 @@ async def stream_request(
                                 f"[ANTIGRAVITY STREAM] 收到错误 {status_code}，触发重试 (尝试 {attempt + 1}/{max_retries + 1})"
                             )
 
-                            # 在准备重试前异步预热下一个凭证
+                            # 冷却已落地，再异步预热下一个凭证（此时能正确跳过冷却账号）
                             next_cred_task = asyncio.create_task(
                                 credential_manager.get_valid_credential(
                                     mode="antigravity", model_name=model_name, force_rotate=True
                                 )
                             )
                             break  # 跳出生成器循环，准备下一次重试
+
 
                         # 如果不能重试或已达最大重试次数，把错误 chunk yield 给上层
                         yield chunk
@@ -743,7 +748,8 @@ async def non_stream_request(
                         f"[ANTIGRAVITY NON-STREAM] 收到错误 {status_code}，触发重试 (尝试 {attempt + 1}/{max_retries + 1})"
                     )
 
-                    # 预热下一个凭证
+                    # 【修复竞态】record_api_call_error 已在上方执行完毕（冷却已落地），
+                    # 此时再预热下一个凭证，get_next_available_credential 能正确跳过冷却账号
                     next_cred_task = asyncio.create_task(
                         credential_manager.get_valid_credential(
                             mode="antigravity", model_name=model_name, force_rotate=True
@@ -764,6 +770,7 @@ async def non_stream_request(
                             "[ANTIGRAVITY NON-STREAM] 重试时无法获取有效凭证，放弃重试")
                         return last_error_response
                     continue
+
 
                 # 不满足重试条件，直接返回错误
                 return last_error_response
@@ -907,9 +914,9 @@ async def fetch_available_models(force_refresh: bool = False) -> List[Dict[str, 
                 return _MODELS_CACHE if _MODELS_CACHE else []
 
         except Exception as e:
-            if _is_network_error(e):
+            if is_network_error(e):
                 await evict_session(session_key)
-                friendly_err = _format_network_error(e)
+                friendly_err = format_network_error(e)
                 log.warning(f"[ANTIGRAVITY] 获取可用模型遇到网络异常 (已重置连接): {friendly_err}")
             else:
                 import traceback
@@ -937,40 +944,6 @@ def _parse_reset_time_to_beijing(reset_time_raw: str) -> str:
         log.warning(
             f"[ANTIGRAVITY QUOTA] Failed to parse reset time ({reset_time_raw}): {e}")
         return 'N/A'
-
-
-def _is_network_error(e: Exception) -> bool:
-    """判断是否属于网络/超时/TLS/DNS/代理连接异常"""
-    err_str = str(e).lower()
-    err_cls = type(e).__name__.lower()
-    keywords = [
-        "tls connect error", "sslerror", "openssl_internal", "ssl",
-        "could not resolve host", "resolve host", "connection refused",
-        "connection reset", "broken pipe", "failed to connect",
-        "network is unreachable", "timeout", "timed out", "timedout",
-        "curle_", "curl: (28)", "curl: (7)", "curl: (35)", "curl: (56)",
-        "curl: (52)", "curl: (6)", "0 bytes received", "failed to perform, curl:"
-    ]
-    if any(k in err_str for k in keywords):
-        return True
-    if any(cls_name in err_cls for cls_name in ["timeout", "curlerror", "requestexception", "connectionerror"]):
-        return True
-    return False
-
-
-def _format_network_error(e: Exception) -> str:
-    """将网络/TLS/curl 底层异常转换为人性化的中文提示信息"""
-    err_str = str(e)
-    err_str_lower = err_str.lower()
-    if any(k in err_str_lower for k in ["timeout", "timed out", "curle_operation_timedout", "curl: (28)", "0 bytes received"]):
-        return "网络请求超时 (代理节点响应过慢或底层连接静默中断)"
-    if any(k in err_str_lower for k in ["tls connect error", "sslerror", "openssl_internal", "ssl", "curl: (35)"]):
-        return "网络连接失败 (TLS/SSL握手异常，请检查代理节点联通性)"
-    if any(k in err_str_lower for k in ["could not resolve host", "resolve host", "curl: (6)"]):
-        return "网络连接失败 (无法解析域名 DNS，请检查网络/代理设置)"
-    if any(k in err_str_lower for k in ["connection refused", "failed to connect", "curl: (7)"]):
-        return "网络连接失败 (目标地址或代理拒绝连接)"
-    return f"网络请求异常: {err_str}"
 
 
 async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
@@ -1034,16 +1007,17 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
                 }
 
         except Exception as e:
-            is_net_err = _is_network_error(e)
-            friendly_err = _format_network_error(e)
+            is_net_err = is_network_error(e)
+            friendly_err = format_network_error(e)
 
             # 遇到网络或超时异常，主动清理损坏的 Session
             if is_net_err:
                 await evict_session(session_key)
 
             if is_net_err and attempt < max_retries - 1:
-                log.warning(f"[ANTIGRAVITY QUOTA] 遇到网络抖动/超时 ({friendly_err})，已重置连接，正在进行第 {attempt + 1} 次重试...")
-                await asyncio.sleep(0.5)
+                delay = calculate_backoff_delay(attempt, base=0.5)
+                log.warning(f"[ANTIGRAVITY QUOTA] 遇到网络抖动/超时 ({friendly_err})，已重置连接，正在等待 {delay:.2f}s 后进行第 {attempt + 1} 次重试...")
+                await asyncio.sleep(delay)
                 continue
 
             if is_net_err:
@@ -1130,16 +1104,17 @@ async def fetch_quota_summary(access_token: str, project_id: Optional[str] = Non
                 }
 
         except Exception as e:
-            is_net_err = _is_network_error(e)
-            friendly_err = _format_network_error(e)
+            is_net_err = is_network_error(e)
+            friendly_err = format_network_error(e)
 
             # 遇到网络或超时异常，主动清理损坏的 Session
             if is_net_err:
                 await evict_session(session_key)
 
             if is_net_err and attempt < max_retries - 1:
-                log.warning(f"[ANTIGRAVITY QUOTA SUMMARY] 遇到网络抖动/超时 ({friendly_err})，已重置连接，正在进行第 {attempt + 1} 次重试...")
-                await asyncio.sleep(0.5)
+                delay = calculate_backoff_delay(attempt, base=0.5)
+                log.warning(f"[ANTIGRAVITY QUOTA SUMMARY] 遇到网络抖动/超时 ({friendly_err})，已重置连接，正在等待 {delay:.2f}s 后进行第 {attempt + 1} 次重试...")
+                await asyncio.sleep(delay)
                 continue
 
             if is_net_err:

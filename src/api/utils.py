@@ -3,12 +3,14 @@ Base API Client - 共用的 API 客户端基础功能
 提供错误处理、自动封禁、重试逻辑等共同功能
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import re
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from fastapi import Response
 
@@ -20,7 +22,9 @@ from src.config import (
     get_retry_429_max_retries,
 )
 from src.log import log
-from src.auth import CredentialManager
+
+if TYPE_CHECKING:
+    from src.auth import CredentialManager
 
 
 # ==================== 错误检查与处理 ====================
@@ -230,7 +234,6 @@ async def parse_and_log_cooldown(
     return None
 
 
-RESOURCE_EXHAUSTED_COOLDOWN_HOURS = 4  # RESOURCE_EXHAUSTED 错误的默认冷却时间（小时）
 
 
 def parse_quota_reset_timestamp(error_response: dict, mode: str = "geminicli") -> Optional[float]:
@@ -244,61 +247,86 @@ def parse_quota_reset_timestamp(error_response: dict, mode: str = "geminicli") -
     Returns:
         Unix时间戳（秒），如果无法解析则返回None
 
-    示例错误响应:
+    支持的错误响应格式:
+    1. QUOTA_EXHAUSTED / INSUFFICIENT_G1_CREDITS_BALANCE - 含 quotaResetTimeStamp:
     {
       "error": {
-        "code": 429,
-        "message": "You have exhausted your capacity...",
-        "status": "RESOURCE_EXHAUSTED",
-        "details": [
-          {
-            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-            "reason": "QUOTA_EXHAUSTED",
-            "metadata": {
-              "quotaResetTimeStamp": "2025-11-30T14:57:24Z",
-              "quotaResetDelay": "13h19m1.20964964s"
-            }
+        "code": 429, "status": "RESOURCE_EXHAUSTED",
+        "details": [{
+          "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+          "reason": "INSUFFICIENT_G1_CREDITS_BALANCE",
+          "metadata": {
+            "quotaResetTimeStamp": "2026-09-08T13:00:00Z",
+            "quotaResetDelay": "2h17m30s"
           }
-        ]
+        }]
       }
     }
+    2. RATE_LIMIT_EXCEEDED - 含 message 中的时间描述:
+       "Your quota will reset after 2h 17m 30s."
     """
     try:
         error_obj = error_response.get("error", {})
-
-        if mode.lower() == "antigravity" and error_obj.get("status") == "RESOURCE_EXHAUSTED":
-            return None
-
         details = error_obj.get("details", [])
 
+        # 遍历所有 ErrorInfo detail，统一提取重置时间
+        # INSUFFICIENT_G1_CREDITS_BALANCE 是5小时滚动限额，与普通 QUOTA_EXHAUSTED 一样
+        # 优先读取 metadata 中的精确时间戳，不硬编码固定冷却时长
         for detail in details:
-            if detail.get("@type") == "type.googleapis.com/google.rpc.ErrorInfo":
-                reset_timestamp_str = detail.get(
-                    "metadata", {}).get("quotaResetTimeStamp")
+            if detail.get("@type") != "type.googleapis.com/google.rpc.ErrorInfo":
+                continue
 
-                if reset_timestamp_str:
-                    if reset_timestamp_str.endswith("Z"):
-                        reset_timestamp_str = reset_timestamp_str.replace(
-                            "Z", "+00:00")
+            reason = detail.get("reason", "")
+            metadata = detail.get("metadata", {})
 
+            # 记录日志方便调试
+            if reason == "INSUFFICIENT_G1_CREDITS_BALANCE":
+                log.warning(
+                    f"[{mode.upper()}] 检测到 G1 积分限额耗尽 (INSUFFICIENT_G1_CREDITS_BALANCE)，"
+                    f"尝试从 metadata 读取精确重置时间..."
+                )
+
+            # 1. 优先读取精确的 quotaResetTimeStamp
+            reset_timestamp_str = metadata.get("quotaResetTimeStamp")
+            if reset_timestamp_str:
+                if reset_timestamp_str.endswith("Z"):
+                    reset_timestamp_str = reset_timestamp_str.replace("Z", "+00:00")
+                try:
                     reset_dt = datetime.fromisoformat(reset_timestamp_str)
                     if reset_dt.tzinfo is None:
                         reset_dt = reset_dt.replace(tzinfo=timezone.utc)
+                    cooldown_until = reset_dt.astimezone(timezone.utc).timestamp()
+                    log.info(
+                        f"[{mode.upper()}] 读取到精确重置时间 (quotaResetTimeStamp): "
+                        f"{reset_dt.isoformat()}"
+                    )
+                    return cooldown_until
+                except Exception:
+                    pass
 
-                    return reset_dt.astimezone(timezone.utc).timestamp()
+            # 2. 次选：解析 quotaResetDelay（如 "2h17m30.5s"）
+            reset_delay_str = metadata.get("quotaResetDelay")
+            if reset_delay_str:
+                unit_to_seconds = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+                parts = re.findall(r"(\d+(?:\.\d+)?)([smhd])", reset_delay_str)
+                if parts:
+                    cooldown_seconds = sum(
+                        float(value) * unit_to_seconds[unit] for value, unit in parts
+                    )
+                    if cooldown_seconds > 0:
+                        cooldown_until = time.time() + cooldown_seconds
+                        log.info(
+                            f"[{mode.upper()}] 读取到重置延迟 (quotaResetDelay): "
+                            f"{reset_delay_str} → 冷却 {cooldown_seconds:.0f}s"
+                        )
+                        return cooldown_until
 
-        # 解析消息中的 "Your quota will reset after Xs" / "Xh Ym Zs" 格式（RATE_LIMIT_EXCEEDED）
+        # 3. 解析 message 中的 "Your quota will reset after Xh Ym Zs." 格式
         message = error_obj.get("message", "")
         reset_match = re.search(r"Your quota will reset after (.+?)\.", message)
         if reset_match:
             duration_str = reset_match.group(1).strip()
-            unit_to_seconds = {
-                "s": 1,
-                "m": 60,
-                "h": 3600,
-                "d": 86400,
-            }
-            # 匹配所有 "数值+单位" 片段，支持 "6s"、"6h 30m 15s" 等组合格式
+            unit_to_seconds = {"s": 1, "m": 60, "h": 3600, "d": 86400}
             parts = re.findall(r"(\d+)([smhd])", duration_str)
             if parts:
                 cooldown_seconds = sum(
@@ -308,19 +336,71 @@ def parse_quota_reset_timestamp(error_response: dict, mode: str = "geminicli") -
                     cooldown_until = time.time() + cooldown_seconds
                     return cooldown_until
 
-        # 如果是 RESOURCE_EXHAUSTED 或 429 错误，设置默认4小时冷却时间
-        err_msg = str(error_obj.get("message", "")).lower()
+        # 4. 从错误响应无法解析出任何时间 → 返回 None
+        # 调用方 (credential_manager.record_api_call_result) 会进一步从
+        # 该账号的 quota_groups.resetTimeRaw 中读取真实重置时间；
+        # 若 quota_groups 也没有数据，才最终兜底为 15 秒快速恢复。
+        # 对于明确是 RESOURCE_EXHAUSTED/429 的情况，也不要在这里猜时长了。
         err_status = str(error_obj.get("status", "")).upper()
         if (
             err_status == "RESOURCE_EXHAUSTED"
             or error_obj.get("code") == 429
-            or "exhausted" in err_msg
-            or "quota" in err_msg
         ):
-            cooldown_until = time.time() + RESOURCE_EXHAUSTED_COOLDOWN_HOURS * 3600
-            return cooldown_until
+            log.debug(
+                f"[{mode.upper()}] 错误响应中无精确重置时间，交由 quota_groups 兜底"
+            )
+            return None
+
 
         return None
 
     except Exception:
         return None
+
+
+
+
+# ==================== 网络异常识别与退避重试辅助 ====================
+
+def is_network_error(e: Exception) -> bool:
+    """判断是否属于网络/超时/TLS/DNS/代理连接异常"""
+    err_str = str(e).lower()
+    err_cls = type(e).__name__.lower()
+    keywords = [
+        "tls connect error", "sslerror", "openssl_internal", "ssl",
+        "could not resolve host", "resolve host", "connection refused",
+        "connection reset", "broken pipe", "failed to connect",
+        "network is unreachable", "timeout", "timed out", "timedout",
+        "curle_", "curl: (28)", "curl: (7)", "curl: (35)", "curl: (56)",
+        "curl: (52)", "curl: (6)", "0 bytes received", "failed to perform, curl:"
+    ]
+    if any(k in err_str for k in keywords):
+        return True
+    if any(cls_name in err_cls for cls_name in ["timeout", "curlerror", "requestexception", "connectionerror"]):
+        return True
+    return False
+
+
+def format_network_error(e: Exception) -> str:
+    """将网络/TLS/curl 底层异常转换为人性化的中文提示信息"""
+    err_str = str(e)
+    err_str_lower = err_str.lower()
+    if any(k in err_str_lower for k in ["timeout", "timed out", "curle_operation_timedout", "curl: (28)", "0 bytes received"]):
+        return "网络请求超时 (代理节点响应过慢或底层连接静默中断)"
+    if any(k in err_str_lower for k in ["tls connect error", "sslerror", "openssl_internal", "ssl", "curl: (35)"]):
+        return "网络连接失败 (TLS/SSL握手异常，请检查代理节点联通性)"
+    if any(k in err_str_lower for k in ["could not resolve host", "resolve host", "curl: (6)"]):
+        return "网络连接失败 (无法解析域名 DNS，请检查网络/代理设置)"
+    if any(k in err_str_lower for k in ["connection refused", "failed to connect", "curl: (7)"]):
+        return "网络连接失败 (目标地址或代理拒绝连接)"
+    return f"网络请求异常: {err_str}"
+
+
+def calculate_backoff_delay(attempt: int, base: float = 0.5, max_delay: float = 3.0) -> float:
+    """计算带随机抖动的指数退避重试延迟"""
+    import random
+    delay = min(base * (2 ** attempt), max_delay)
+    # 添加 10% ~ 30% 随机抖动
+    jitter = random.uniform(0.1, 0.3) * delay
+    return delay + jitter
+

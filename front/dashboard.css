@@ -294,6 +294,18 @@ button:disabled, .btn:disabled, .btn-compact:disabled, .btn-xs:disabled, .custom
     border-color: var(--danger) !important;
 }
 
+.btn-warning-outline {
+    background-color: var(--warning-light) !important;
+    color: var(--warning) !important;
+    border: 1px solid var(--warning) !important;
+}
+
+.btn-warning-outline:hover:not(:disabled) {
+    background-color: var(--warning) !important;
+    color: #ffffff !important;
+    border-color: var(--warning) !important;
+}
+
 .btn-secondary-outline {
     background-color: rgba(255, 255, 255, 0.05) !important;
     color: var(--text-primary) !important;

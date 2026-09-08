@@ -18,7 +18,8 @@ from src.config import (
 )
 from src.log import log
 
-from src.client import get_async, post_async
+from src.client import get_async, post_async, evict_session
+from src.api.utils import is_network_error, format_network_error, calculate_backoff_delay
 
 
 class TokenError(Exception):
@@ -82,51 +83,75 @@ class Credentials:
             "grant_type": "refresh_token",
         }
 
-        try:
-            oauth_base_url = await get_oauth_proxy_url()
-            token_url = f"{oauth_base_url.rstrip('/')}/token"
-            log.debug(f"[Google OAuth] 正在发送 Token 刷新请求 -> URL: {token_url}")
-            response = await post_async(
-                token_url,
-                data=data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                session_key=f"oauth:{self.client_id[:8]}",
-            )
-            log.debug(
-                f"[Google OAuth] Token 刷新响应状态码: {response.status_code}, 内容: {response.text}")
-            response.raise_for_status()
+        session_key = f"oauth:{self.client_id[:8]}"
+        max_retries = 2
+        last_exception = None
 
-            token_data = response.json()
-            self.access_token = token_data["access_token"]
-
-            if "expires_in" in token_data:
-                expires_in = int(token_data["expires_in"])
-                current_utc = datetime.now(timezone.utc)
-                self.expires_at = current_utc + timedelta(seconds=expires_in)
-                log.debug(
-                    f"Token刷新: 当前UTC时间={current_utc.isoformat()}, "
-                    f"有效期={expires_in}秒, "
-                    f"过期时间={self.expires_at.isoformat()}"
+        for attempt in range(max_retries):
+            try:
+                oauth_base_url = await get_oauth_proxy_url()
+                token_url = f"{oauth_base_url.rstrip('/')}/token"
+                log.debug(f"[Google OAuth] 正在发送 Token 刷新请求 -> URL: {token_url}")
+                response = await post_async(
+                    token_url,
+                    data=data,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=30.0,
+                    session_key=session_key,
                 )
+                log.debug(
+                    f"[Google OAuth] Token 刷新响应状态码: {response.status_code}, 内容: {response.text}")
+                response.raise_for_status()
 
-            if "refresh_token" in token_data:
-                self.refresh_token = token_data["refresh_token"]
+                token_data = response.json()
+                self.access_token = token_data["access_token"]
 
-            log.debug(f"Token刷新成功，过期时间: {self.expires_at}")
+                if "expires_in" in token_data:
+                    expires_in = int(token_data["expires_in"])
+                    current_utc = datetime.now(timezone.utc)
+                    self.expires_at = current_utc + timedelta(seconds=expires_in)
+                    log.debug(
+                        f"Token刷新: 当前UTC时间={current_utc.isoformat()}, "
+                        f"有效期={expires_in}秒, "
+                        f"过期时间={self.expires_at.isoformat()}"
+                    )
 
-        except Exception as e:
-            error_msg = str(e)
-            status_code = None
-            if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
-                status_code = e.response.status_code
-                error_msg = f"Token刷新失败 (HTTP {status_code}): {error_msg}"
-            else:
-                error_msg = f"Token刷新失败: {error_msg}"
+                if "refresh_token" in token_data:
+                    self.refresh_token = token_data["refresh_token"]
 
-            log.error(error_msg)
-            token_error = TokenError(error_msg)
-            token_error.status_code = status_code
-            raise token_error
+                log.debug(f"Token刷新成功，过期时间: {self.expires_at}")
+                return
+
+            except Exception as e:
+                last_exception = e
+                is_net = is_network_error(e)
+                if is_net:
+                    await evict_session(session_key)
+
+                if is_net and attempt < max_retries - 1:
+                    delay = calculate_backoff_delay(attempt, base=0.5)
+                    friendly = format_network_error(e)
+                    log.warning(f"[Google OAuth] Token 刷新遇到网络抖动 ({friendly})，正在等待 {delay:.2f}s 后进行第 {attempt + 1} 次重试...")
+                    await asyncio.sleep(delay)
+                    continue
+
+                error_msg = str(e)
+                status_code = None
+                if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                    status_code = e.response.status_code
+                    error_msg = f"Token刷新失败 (HTTP {status_code}): {error_msg}"
+                else:
+                    friendly = format_network_error(e) if is_net else str(e)
+                    error_msg = f"Token刷新失败: {friendly}"
+
+                if not is_net:
+                    log.error(error_msg)
+                else:
+                    log.warning(error_msg)
+
+                token_error = TokenError(error_msg)
+                token_error.status_code = status_code
+                raise token_error from e
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Credentials":

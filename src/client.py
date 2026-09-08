@@ -26,13 +26,41 @@ except ImportError:
 
 
 def _get_default_curl_options() -> Dict[Any, Any]:
-    """关闭 libcurl 30 秒低速断连检测 (LOW_SPEED_LIMIT=0, LOW_SPEED_TIME=0)"""
+    """
+    配置 libcurl 核心网络与连接优化选项：
+    - 关闭低速断连检测 (LOW_SPEED_LIMIT=0, LOW_SPEED_TIME=0)，保障大模型慢速流式输出不被中断
+    - 启用 TCP Keep-Alive 保活心跳 (TCP_KEEPALIVE=1, TCP_KEEPIDLE=30, TCP_KEEPINTVL=10)，快速感知静默死连接
+    - 连接建立超时 CONNECTTIMEOUT=15，避免连接卡死在握手阶段
+    - DNS 缓存超时 DNS_CACHE_TIMEOUT=600，降低 DNS 重复解析往返延迟
+    """
+    opts: Dict[Any, Any] = {}
     if CurlOpt:
         try:
-            return {CurlOpt.LOW_SPEED_LIMIT: 0, CurlOpt.LOW_SPEED_TIME: 0}
+            opts[CurlOpt.LOW_SPEED_LIMIT] = 0
+            opts[CurlOpt.LOW_SPEED_TIME] = 0
+            if hasattr(CurlOpt, "TCP_KEEPALIVE"):
+                opts[CurlOpt.TCP_KEEPALIVE] = 1
+            if hasattr(CurlOpt, "TCP_KEEPIDLE"):
+                opts[CurlOpt.TCP_KEEPIDLE] = 30
+            if hasattr(CurlOpt, "TCP_KEEPINTVL"):
+                opts[CurlOpt.TCP_KEEPINTVL] = 10
+            if hasattr(CurlOpt, "CONNECTTIMEOUT"):
+                opts[CurlOpt.CONNECTTIMEOUT] = 15
+            if hasattr(CurlOpt, "DNS_CACHE_TIMEOUT"):
+                opts[CurlOpt.DNS_CACHE_TIMEOUT] = 600
+            return opts
         except Exception:
             pass
-    return {19: 0, 20: 0}
+    # Fallback 常量 ID 映射
+    return {
+        19: 0,   # LOW_SPEED_LIMIT
+        20: 0,   # LOW_SPEED_TIME
+        213: 1,  # TCP_KEEPALIVE
+        214: 30, # TCP_KEEPIDLE
+        215: 10, # TCP_KEEPINTVL
+        78: 15,  # CONNECTTIMEOUT
+        92: 600, # DNS_CACHE_TIMEOUT
+    }
 
 
 async def _close_session(session: Any):
@@ -148,6 +176,7 @@ class HttpClientManager:
                 "timeout": timeout,
                 "impersonate": impersonate,
                 "verify": False,
+                "curl_options": _get_default_curl_options(),
             }
             if proxy:
                 session_kwargs["proxy"] = proxy

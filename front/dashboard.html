@@ -227,6 +227,7 @@
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'enable')">启用账号</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'disable')">禁用账号</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'enable_credit')">开启积分</button>
+                                        <button class="btn-compact btn-warning-outline" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'disable_credit')">关闭积分</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchRefreshEmails('antigravity')">刷新邮箱</button>
                                         <button class="btn-compact btn-danger-outline" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'delete')">删除账号</button>
                                     </div>
