@@ -711,14 +711,7 @@ class Storage:
         if five_hour_bucket and five_hour_bucket["rem"] < 0.01 and five_hour_bucket["reset_ts"] > current_time:
             return five_hour_bucket["reset_ts"]
 
-        # 策略 3: 本地数据尚未标记耗尽（但API已报429），优先使用五小时限额未来的重置时间
-        if five_hour_bucket and five_hour_bucket["reset_ts"] > current_time:
-            return five_hour_bucket["reset_ts"]
-
-        # 策略 4: 从所有未来有效的重置时间中取最近的一个
-        if all_future_resets:
-            return min(all_future_resets)
-
+        # 明确未达到 100% 耗尽时不设置长冷却（返回 None，由调用方进行 15 秒短退避恢复，避免偶发异常误判为 5 小时冷却）
         return None
 
     async def get_quota_reset_for_credential(
@@ -778,18 +771,18 @@ class Storage:
 
             model_cooldowns = st.get("model_cooldowns", {})
 
-            # 【修复】始终检查 "default" 账号级全局冷却键
-            # 积分耗尽等长冷却错误会同时写入 model_name 和 "default" 两个键，
-            # 此处统一拦截，防止通过不同 model_name 绕过冷却
-            global_cooldown = model_cooldowns.get("default", 0)
-            if global_cooldown > current_time:
-                continue
-
-            # 检查特定模型的冷却
+            # 检查模型级冷却：
+            # 1. 如果请求指定了具体模型，仅检查该具体模型是否在冷却，不被 default 连带误杀
+            # 2. 如果请求未指定具体模型，才检查 default 全局冷却
             if model_name:
                 cooldown_until = model_cooldowns.get(model_name, 0)
                 if cooldown_until > current_time:
                     continue
+            else:
+                global_cooldown = model_cooldowns.get("default", 0)
+                if global_cooldown > current_time:
+                    continue
+
 
             cred_data = await self.get_credential(fname, mode=mode)
             if cred_data:

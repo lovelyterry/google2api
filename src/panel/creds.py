@@ -785,6 +785,11 @@ async def creds_action(
                 return JSONResponse(content={"message": f"已关闭凭证信用额度模式 {os.path.basename(filename)}"})
             raise HTTPException(status_code=500, detail="关闭信用额度模式失败，可能凭证不存在")
 
+        elif action == "reset_cooldown":
+            await clear_all_model_cooldowns_for_credential(storage_adapter, filename, mode)
+            log.info(f"Web请求: 重置凭证冷却 {filename} (mode={mode})")
+            return JSONResponse(content={"message": f"已成功重置凭证 {os.path.basename(filename)} 的全部模型冷却状态"})
+
         else:
             raise HTTPException(status_code=400, detail="无效的操作类型")
 
@@ -916,6 +921,9 @@ async def creds_batch_action(
                     else:
                         errors.append(f"{filename}: 关闭信用额度模式失败")
                         continue
+                elif action == "reset_cooldown":
+                    await clear_all_model_cooldowns_for_credential(storage_adapter, filename, mode)
+                    success_count += 1
                 else:
                     errors.append(f"{filename}: 无效的操作类型")
                     continue

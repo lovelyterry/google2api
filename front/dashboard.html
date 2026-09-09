@@ -224,6 +224,7 @@
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchTestCredentials('antigravity')">冒烟测试</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchRefreshQuotas('antigravity')">刷新额度</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchToggleErrorDetails('antigravity')">查看报错</button>
+                                        <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'reset_cooldown')">重置冷却</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'enable')">启用账号</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'disable')">禁用账号</button>
                                         <button class="btn-compact" :disabled="ag.selectedFiles.length === 0" @click="batchAction('antigravity', 'enable_credit')">开启积分</button>
@@ -370,6 +371,7 @@
                                             <div class="action-subgroup flex-between">
                                                 <button class="btn-xs flex-1" @click="refreshSingleQuota('antigravity', item.filename)">刷新额度</button>
                                                 <button class="btn-xs flex-1" @click="toggleErrorDetails('antigravity', item.filename, item.pathId)">查看报错</button>
+                                                <button class="btn-xs flex-1" @click="singleAction('antigravity', item.filename, 'reset_cooldown')">重置冷却</button>
                                             </div>
                                             <div class="action-subgroup flex-between">
                                                 <button class="btn-xs flex-1" @click="singleAction('antigravity', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
@@ -461,6 +463,7 @@
                                                     <button class="btn-xs mr-1" @click="testCredential('antigravity', item.filename)">冒烟测试</button>
                                                     <button class="btn-xs mr-1" @click="refreshSingleQuota('antigravity', item.filename)">刷新额度</button>
                                                     <button class="btn-xs mr-1" @click="toggleErrorDetails('antigravity', item.filename, item.pathId)">查看报错</button>
+                                                    <button class="btn-xs mr-1" @click="singleAction('antigravity', item.filename, 'reset_cooldown')">重置冷却</button>
                                                     <button class="btn-xs mr-1" @click="singleAction('antigravity', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
                                                     <button class="btn-xs mr-1" @click="singleAction('antigravity', item.filename, item.enable_credit ? 'disable_credit' : 'enable_credit')">{{ item.enable_credit ? '关闭积分' : '开启积分' }}</button>
                                                     <button class="btn-xs btn-danger-outline" @click="deleteSingleCredential('antigravity', item.filename)">删除账号</button>
@@ -555,6 +558,7 @@
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchVerifyProjectIds('oauth')">检验账号</button>
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchTestCredentials('oauth')">冒烟测试</button>
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchToggleErrorDetails('oauth')">查看报错</button>
+                                        <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchAction('oauth', 'reset_cooldown')">重置冷却</button>
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchAction('oauth', 'enable')">启用账号</button>
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchAction('oauth', 'disable')">禁用账号</button>
                                         <button class="btn-compact" :disabled="oauth.selectedFiles.length === 0" @click="batchConfigurePreview()">设置预览</button>
@@ -673,6 +677,7 @@
                                             </div>
                                             <div class="action-subgroup" style="justify-content: space-between;">
                                                 <button class="btn-xs" style="flex: 1;" @click="toggleErrorDetails('oauth', item.filename, item.pathId)">查看报错</button>
+                                                <button class="btn-xs" style="flex: 1;" @click="singleAction('oauth', item.filename, 'reset_cooldown')">重置冷却</button>
                                                 <button class="btn-xs" style="flex: 1;" @click="singleAction('oauth', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
                                                 <button class="btn-xs btn-danger-outline" style="flex: 1;" @click="deleteSingleCredential('oauth', item.filename)">删除账号</button>
                                             </div>
@@ -732,6 +737,7 @@
                                                     <button class="btn-xs mr-1" @click="verifyProjectId('oauth', item.filename)">检验账号</button>
                                                     <button class="btn-xs mr-1" @click="testCredential('oauth', item.filename)">冒烟测试</button>
                                                     <button class="btn-xs mr-1" @click="toggleErrorDetails('oauth', item.filename, item.pathId)">查看报错</button>
+                                                    <button class="btn-xs mr-1" @click="singleAction('oauth', item.filename, 'reset_cooldown')">重置冷却</button>
                                                     <button class="btn-xs mr-1" @click="singleAction('oauth', item.filename, item.disabled ? 'enable' : 'disable')">{{ item.disabled ? '启用账号' : '禁用账号' }}</button>
                                                     <button class="btn-xs btn-danger-outline" @click="deleteSingleCredential('oauth', item.filename)">删除账号</button>
                                                 </td>

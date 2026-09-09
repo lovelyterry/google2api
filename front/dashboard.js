@@ -323,9 +323,9 @@ const app = createApp({
                 showStatus('请先选择要操作的文件', 'error');
                 return;
             }
-            const actionNames = { enable: '启用', disable: '禁用', delete: '删除', enable_credit: '开启积分', disable_credit: '关闭积分' };
+            const actionNames = { enable: '启用', disable: '禁用', delete: '删除', enable_credit: '开启积分', disable_credit: '关闭积分', reset_cooldown: '重置冷却' };
             const label = actionNames[action] || action;
-            if (!await showConfirm(`确定要${label}选中的 ${m.selectedFiles.length} 个文件吗？`, '批量操作确认', { type: action === 'delete' ? 'danger' : 'warning' })) return;
+            if (!await showConfirm(`确定要${label}选中的 ${m.selectedFiles.length} 个文件吗？`, '批量操作确认', { type: action === 'delete' ? 'danger' : (action === 'reset_cooldown' ? 'info' : 'warning') })) return;
 
             try {
                 showStatus(`正在执行批量${label}操作...`, 'info');
