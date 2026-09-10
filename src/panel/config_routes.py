@@ -63,6 +63,7 @@ async def get_config(token: str = Depends(verify_panel_token)):
 
         # 自适应思考默认预算配置 (用于 Claude Code / Extended Thinking)
         current_config["adaptive_thinking_budget"] = await config.get_adaptive_thinking_budget()
+        current_config["force_disable_thinking"] = await config.get_force_disable_thinking()
 
         # 服务器配置
         current_config["host"] = await config.get_server_host()
@@ -127,6 +128,22 @@ async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_pa
         if "return_thoughts_to_frontend" in new_config:
             if not isinstance(new_config["return_thoughts_to_frontend"], bool):
                 raise HTTPException(status_code=400, detail="思维链返回开关必须是布尔值")
+
+        if "force_disable_thinking" in new_config:
+            if not isinstance(new_config["force_disable_thinking"], bool):
+                raise HTTPException(status_code=400, detail="强制禁用思考开关必须是布尔值")
+
+        if "adaptive_thinking_budget" in new_config:
+            if (
+                not isinstance(new_config["adaptive_thinking_budget"], int)
+                or new_config["adaptive_thinking_budget"] < 0
+            ):
+                raise HTTPException(status_code=400, detail="自适应思考预算必须是大于等于0的整数")
+            # 预算为 0 自动同步开启强制禁用思考，大于 0 自动解除
+            if new_config["adaptive_thinking_budget"] == 0:
+                new_config["force_disable_thinking"] = True
+            elif "force_disable_thinking" not in new_config:
+                new_config["force_disable_thinking"] = False
 
         if "antigravity_switch_credential_enabled" in new_config:
             if not isinstance(new_config["antigravity_switch_credential_enabled"], bool):

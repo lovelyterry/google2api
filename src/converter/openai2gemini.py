@@ -1567,15 +1567,19 @@ async def convert_openai_to_gemini_request(openai_request: Dict[str, Any]) -> Di
         generation_config["seed"] = openai_request["seed"]
 
     # 处理 OpenAI reasoning_effort 参数 (映射到 Gemini thinkingConfig)
-    reasoning_effort = openai_request.get("reasoning_effort")
-    if reasoning_effort and isinstance(reasoning_effort, str):
-        re_lower = reasoning_effort.lower()
-        if re_lower in ("low", "minimal"):
-            generation_config["thinkingConfig"] = {"thinkingLevel": "LOW", "thinkingBudget": 1024}
-        elif re_lower in ("medium", "auto"):
-            generation_config["thinkingConfig"] = {"thinkingLevel": "MEDIUM", "thinkingBudget": 8192}
-        elif re_lower == "high":
-            generation_config["thinkingConfig"] = {"thinkingLevel": "HIGH", "thinkingBudget": 32768}
+    from src.config import get_force_disable_thinking_sync
+    if get_force_disable_thinking_sync():
+        generation_config["thinkingConfig"] = {"thinkingBudget": 0, "includeThoughts": False}
+    else:
+        reasoning_effort = openai_request.get("reasoning_effort")
+        if reasoning_effort and isinstance(reasoning_effort, str):
+            re_lower = reasoning_effort.lower()
+            if re_lower in ("low", "minimal"):
+                generation_config["thinkingConfig"] = {"thinkingLevel": "LOW", "thinkingBudget": 1024}
+            elif re_lower in ("medium", "auto"):
+                generation_config["thinkingConfig"] = {"thinkingLevel": "MEDIUM", "thinkingBudget": 8192}
+            elif re_lower == "high":
+                generation_config["thinkingConfig"] = {"thinkingLevel": "HIGH", "thinkingBudget": 32768}
 
     # 处理 response_format
     if "response_format" in openai_request and openai_request["response_format"]:

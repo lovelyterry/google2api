@@ -1698,6 +1698,9 @@ const app = createApp({
                 if (res.ok) {
                     config.form = data.config || {};
                     config.envLocked = data.env_locked || [];
+                    if (config.form.force_disable_thinking) {
+                        config.form.adaptive_thinking_budget = 0;
+                    }
                     showStatus('配置加载成功', 'success');
                 }
             } catch (e) {
@@ -1709,6 +1712,11 @@ const app = createApp({
 
         const saveConfig = async () => {
             try {
+                if (config.form.adaptive_thinking_budget === 0) {
+                    config.form.force_disable_thinking = true;
+                } else if (config.form.adaptive_thinking_budget > 0) {
+                    config.form.force_disable_thinking = false;
+                }
                 showStatus('正在保存全局配置...', 'info');
                 const res = await fetch('./config', {
                     method: 'POST',

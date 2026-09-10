@@ -1444,31 +1444,40 @@
                                         </div>
                                     </div>
 
-                                    <!-- 4. 思维链与自适应深度思考 -->
+                                    <!-- 4. 思维链与深度思考策略 (合并统一设置) -->
                                     <div class="policy-row" style="padding: 16px 0; border-bottom: 1px solid var(--border-color);">
-                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
-                                            <div style="flex: 1;">
-                                                <label for="returnThoughtsToFrontend" style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; cursor: pointer; color: var(--text-primary);">
+                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+                                            <div style="flex: 1; min-width: 260px;">
+                                                <label for="adaptiveThinkingBudget" style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; cursor: pointer; color: var(--text-primary);">
                                                     <span>🧠</span>
-                                                    <span>思维链与自适应深度思考</span>
+                                                    <span>思维链与深度思考策略 (Thinking Strategy)</span>
                                                 </label>
                                                 <p style="margin: 4px 0 0 28px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
-                                                    保留并输出 Gemini 2.0 / 3.7 / Claude Thinking 模型的思考推理过程文本，并控制自适应推理预算天花板
+                                                    控制 Gemini 2.5 / 3.x 及 Claude Thinking 模型的思考强度。选择“⚡ 彻底禁用思考”将强制 Tier-Off 并秒级出字，杜绝 Claude Code 长时间卡顿。
                                                 </p>
                                             </div>
-                                            <div style="display: flex; align-items: center; padding-top: 2px;">
-                                                <input type="checkbox" id="returnThoughtsToFrontend" v-model="config.form.return_thoughts_to_frontend" class="config-checkbox" style="width: 18px; height: 18px; cursor: pointer;" />
+                                            <div style="display: flex; align-items: center;">
+                                                <select id="adaptiveThinkingBudget" v-model.number="config.form.adaptive_thinking_budget" @change="config.form.force_disable_thinking = (config.form.adaptive_thinking_budget === 0)" class="config-input-styled" style="min-width: 320px; max-width: 420px; padding: 8px 12px; font-size: 13px; font-weight: 600; border-radius: 8px;">
+                                                    <option :value="0">⚡ 彻底禁用思考 (Tier-Off / 极速出字，解决卡顿)</option>
+                                                    <option :value="1024">🚀 极简思考 (Tier-Low / 1,024 Tokens 快速出字)</option>
+                                                    <option :value="8000">💡 轻量思考 (Tier-Low / 8,000 Tokens)</option>
+                                                    <option :value="16000">⚖️ 标准平衡 (Tier-Medium / 16,000 Tokens 官方推荐)</option>
+                                                    <option :value="32000">🔬 深度推演 (Tier-High / 32,000 Tokens)</option>
+                                                    <option :value="48000">🔭 超长思考 (Tier-High / 48,000 Tokens)</option>
+                                                    <option :value="64000">🌌 极限满额 (Tier-Max / 64,000 Tokens)</option>
+                                                </select>
                                             </div>
                                         </div>
-                                        <div style="margin: 12px 0 0 28px; padding: 12px 16px; border-radius: 8px; background: rgba(0,0,0,0.02); border: 1px solid var(--border-color); display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
-                                            <label for="adaptiveThinkingBudget" style="font-size: 12px; font-weight: 600; white-space: nowrap;">Claude Code 自适应思考默认预算上限 (Tier 档位):</label>
-                                            <select id="adaptiveThinkingBudget" v-model.number="config.form.adaptive_thinking_budget" class="config-input-styled" style="flex: 1; min-width: 260px; max-width: 380px; padding: 6px 10px; font-size: 12px;">
-                                                <option :value="16000">16,000 Tokens (Tier-Medium 标准思考)</option>
-                                                <option :value="32000">32,000 Tokens (Tier-High 深度推演)</option>
-                                                <option :value="48000">48,000 Tokens (Tier-High 自适应推荐默认)</option>
-                                                <option :value="64000">64,000 Tokens (Tier-Max 满额极限思考)</option>
-                                            </select>
-                                            <small class="config-note">当客户端未传固定数值时的自适应推理上限</small>
+
+                                        <!-- 仅在启用思考时展示的流式返回选项 -->
+                                        <div style="margin: 12px 0 0 28px; padding: 10px 14px; border-radius: 8px; background: rgba(0,0,0,0.02); border: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; gap: 14px; transition: opacity 0.2s;" :style="config.form.adaptive_thinking_budget === 0 ? 'opacity: 0.4; pointer-events: none;' : ''">
+                                            <div>
+                                                <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">向前端客户端流式输出思考过程文本</span>
+                                                <p style="margin: 2px 0 0 0; font-size: 11px; color: var(--text-secondary);">
+                                                    关闭时模型思考仅在后台静默执行，仅返回回答正文（彻底禁用思考时此项自动禁用）
+                                                </p>
+                                            </div>
+                                            <input type="checkbox" id="returnThoughtsToFrontend" v-model="config.form.return_thoughts_to_frontend" class="config-checkbox" style="width: 18px; height: 18px; cursor: pointer;" />
                                         </div>
                                     </div>
 

@@ -46,6 +46,7 @@ ENV_MAPPINGS = {
     "QUOTA_WARMUP_ENABLED": "quota_warmup_enabled",
     "QUOTA_WARMUP_IDLE_HOURS": "quota_warmup_idle_hours",
     "ADAPTIVE_THINKING_BUDGET": "adaptive_thinking_budget",
+    "FORCE_DISABLE_THINKING": "force_disable_thinking",
 }
 
 
@@ -458,14 +459,14 @@ async def get_quota_warmup_idle_hours() -> float:
 
 
 async def get_adaptive_thinking_budget() -> int:
-    """Get adaptive thinking default budget setting (default: 48000)."""
+    """Get adaptive thinking default budget setting (default: 16000)."""
     env_value = os.getenv("ADAPTIVE_THINKING_BUDGET")
     if env_value:
         try:
             return int(env_value)
         except ValueError:
             pass
-    return int(await get_config_value("adaptive_thinking_budget", 48000))
+    return int(await get_config_value("adaptive_thinking_budget", 16000))
 
 
 def get_adaptive_thinking_budget_sync() -> int:
@@ -476,5 +477,26 @@ def get_adaptive_thinking_budget_sync() -> int:
             return int(env_value)
         except ValueError:
             pass
-    return int(_get_cached_config("adaptive_thinking_budget", 48000))
+    return int(_get_cached_config("adaptive_thinking_budget", 16000))
+
+
+async def get_force_disable_thinking() -> bool:
+    """Get force disable thinking setting (default: False)."""
+    env_value = os.getenv("FORCE_DISABLE_THINKING")
+    if env_value:
+        return env_value.strip().lower() in ("1", "true", "yes", "on")
+    if await get_adaptive_thinking_budget() <= 0:
+        return True
+    return bool(await get_config_value("force_disable_thinking", False))
+
+
+def get_force_disable_thinking_sync() -> bool:
+    """Get force disable thinking from memory cache (sync)."""
+    env_value = os.getenv("FORCE_DISABLE_THINKING")
+    if env_value:
+        return env_value.strip().lower() in ("1", "true", "yes", "on")
+    if get_adaptive_thinking_budget_sync() <= 0:
+        return True
+    return bool(_get_cached_config("force_disable_thinking", False))
+
 

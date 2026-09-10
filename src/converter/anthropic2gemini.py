@@ -35,7 +35,7 @@ MIN_SIGNATURE_LENGTH = 10
 
 def has_valid_thoughtsignature(block: Dict[str, Any]) -> bool:
     """
-    检查 thinking 块是否有有效签名
+    检查 thinking 块是否有有效签名 (兼容 Anthropic 标准 signature 和 Google thoughtSignature)
 
     Args:
         block: content block 字典
@@ -51,7 +51,8 @@ def has_valid_thoughtsignature(block: Dict[str, Any]) -> bool:
         return True  # 非 thinking 块默认有效
 
     thinking = block.get("thinking", "")
-    thoughtsignature = block.get("thoughtSignature")
+    # 兼容 Anthropic 官方标准 signature 字段与 Google 驼峰 thoughtSignature
+    thoughtsignature = block.get("signature") or block.get("thoughtSignature")
 
     # 空 thinking + 任意 thoughtsignature = 有效 (trailing signature case)
     if not thinking and thoughtsignature is not None:
@@ -67,6 +68,7 @@ def has_valid_thoughtsignature(block: Dict[str, Any]) -> bool:
 def sanitize_thinking_block(block: Dict[str, Any]) -> Dict[str, Any]:
     """
     清理 thinking 块,只保留必要字段(移除 cache_control 等)
+    同时注入 signature 与 thoughtSignature，确保双向兼容。
 
     Args:
         block: content block 字典
@@ -87,8 +89,10 @@ def sanitize_thinking_block(block: Dict[str, Any]) -> Dict[str, Any]:
         "thinking": block.get("thinking", "")
     }
 
-    thoughtsignature = block.get("thoughtSignature")
+    # 双向对齐签名字段
+    thoughtsignature = block.get("signature") or block.get("thoughtSignature")
     if thoughtsignature:
+        sanitized["signature"] = thoughtsignature
         sanitized["thoughtSignature"] = thoughtsignature
 
     return sanitized
@@ -159,6 +163,11 @@ def filter_invalid_thinking_blocks(messages: List[Dict[str, Any]]) -> None:
                 continue
 
             # 所有 thinking 块都需要清理（移除 cache_control 等额外字段）
+            from src.config import get_force_disable_thinking_sync
+            if get_force_disable_thinking_sync():
+                # 全局强制禁用思考模式下，直接丢弃所有历史 thinking 块，避免大段思考污染上下文
+                continue
+
             # 检查 thinking 块的有效性
             if has_valid_thoughtsignature(block):
                 # 有效签名，清理后保留
@@ -714,40 +723,62 @@ def build_generation_config(payload: Dict[str, Any]) -> Dict[str, Any]:
         config["maxOutputTokens"] = max_tokens
 
     # 处理 extended thinking 参数 (plan mode / Claude 3.7 adaptive thinking)
+    from src.config import get_force_disable_thinking_sync
+    force_disable = get_force_disable_thinking_sync()
+
     thinking = payload.get("thinking")
     is_plan_mode = False
-    if thinking and isinstance(thinking, dict):
+
+    if force_disable:
+        # 全局强制禁用思考模式：无论客户端发送什么，彻底禁用思维链推演
+        config["thinkingConfig"] = {
+            "thinkingBudget": 0,
+            "includeThoughts": False
+        }
+        payload.pop("thinking", None)
+        log.debug("[ANTHROPIC2GEMINI] 全局强制禁用思考模式生效: thinkingBudget=0, includeThoughts=False")
+    elif thinking and isinstance(thinking, dict):
         thinking_type = thinking.get("type")
         budget_tokens = thinking.get("budget_tokens")
 
         # 如果启用了 extended thinking，设置 thinkingConfig
         if thinking_type in ("enabled", "adaptive"):
-            is_plan_mode = True
             thinking_config: Dict[str, Any] = {}
 
             # 设置思考预算，默认读取系统自适应配置
             if budget_tokens is not None:
-                thinking_config["thinkingBudget"] = budget_tokens
+                budget = budget_tokens
             else:
                 from src.config import get_adaptive_thinking_budget_sync
-                thinking_config["thinkingBudget"] = get_adaptive_thinking_budget_sync()
+                budget = get_adaptive_thinking_budget_sync()
 
-            # 始终包含思考内容，这样才能看到计划
-            thinking_config["includeThoughts"] = True
+            if budget <= 0:
+                # 预算为 0 时彻底关闭思考
+                thinking_config["thinkingBudget"] = 0
+                thinking_config["includeThoughts"] = False
+                config["thinkingConfig"] = thinking_config
+                log.debug("[ANTHROPIC2GEMINI] 自适应思考预算为0，关闭思考模式 (Tier-Off)")
+            else:
+                is_plan_mode = True
+                thinking_config["thinkingBudget"] = budget
+                # 始终包含思考内容，这样才能看到计划
+                thinking_config["includeThoughts"] = True
+                config["thinkingConfig"] = thinking_config
 
-            config["thinkingConfig"] = thinking_config
+                # 关键防截断优化：Gemini 的 maxOutputTokens 是「思考 Token + 回答正文」的总和
+                # 自动扩容 maxOutputTokens，防止客户端较小的 max_tokens (如 4096) 导致思考提前被截断
+                current_max = config.get("maxOutputTokens", 8192)
+                required_max = thinking_config["thinkingBudget"] + (max_tokens if max_tokens else 8192)
+                config["maxOutputTokens"] = min(65536, max(current_max, required_max))
 
-            # 关键防截断优化：Gemini 的 maxOutputTokens 是「思考 Token + 回答正文」的总和
-            # 自动扩容 maxOutputTokens，防止客户端较小的 max_tokens (如 4096) 导致思考提前被截断
-            current_max = config.get("maxOutputTokens", 8192)
-            required_max = thinking_config["thinkingBudget"] + (max_tokens if max_tokens else 8192)
-            config["maxOutputTokens"] = min(65536, max(current_max, required_max))
-
-            log.debug(
-                f"[ANTHROPIC2GEMINI] Extended thinking enabled ({thinking_type}) with budget: {thinking_config['thinkingBudget']}, maxOutputTokens expanded to: {config['maxOutputTokens']}")
+                log.debug(
+                    f"[ANTHROPIC2GEMINI] Extended thinking enabled ({thinking_type}) with budget: {thinking_config['thinkingBudget']}, maxOutputTokens expanded to: {config['maxOutputTokens']}")
         elif thinking_type == "disabled":
-            # 明确禁用思考模式，物理移除 thinkingConfig 避免 API 拒绝
-            config.pop("thinkingConfig", None)
+            # 明确禁用思考模式
+            config["thinkingConfig"] = {
+                "thinkingBudget": 0,
+                "includeThoughts": False
+            }
             log.debug("[ANTHROPIC2GEMINI] Extended thinking explicitly disabled")
 
     stop_sequences = payload.get("stop_sequences")
@@ -927,6 +958,9 @@ def gemini_to_anthropic_response(
 
         # 处理 thinking 块
         if part.get("thought") is True:
+            from src.config import get_force_disable_thinking_sync
+            if get_force_disable_thinking_sync():
+                continue
             if is_skip_thought_signature_placeholder(part):
                 continue
             thinking_text = part.get("text", "")
@@ -936,9 +970,10 @@ def gemini_to_anthropic_response(
             block: Dict[str, Any] = {
                 "type": "thinking", "thinking": str(thinking_text)}
 
-            # 如果有 thoughtsignature 则添加
+            # 兼容 Anthropic 标准 signature 与内部 thoughtSignature
             thoughtsignature = part.get("thoughtSignature")
             if thoughtsignature:
+                block["signature"] = thoughtsignature
                 block["thoughtSignature"] = thoughtsignature
 
             content.append(block)
@@ -1053,6 +1088,8 @@ async def gemini_stream_to_anthropic_stream(
     current_block_index = -1
     current_thinking_signature: Optional[str] = None
     last_thinking_signature: Optional[str] = None
+    thinking_block_ever_started = False
+    thinking_signature_sent = False
     has_tool_use = False
     input_tokens = 0
     output_tokens = 0
@@ -1065,15 +1102,35 @@ async def gemini_stream_to_anthropic_stream(
         return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
 
     def _close_block() -> Optional[bytes]:
-        """关闭当前内容块"""
-        nonlocal current_block_type
+        """关闭当前内容块，确保思考块规范结束"""
+        nonlocal current_block_type, thinking_signature_sent
         if current_block_type is None:
             return None
+
+        extra_events = []
+        # 若关闭思考块且尚未发送签名，但存在有效签名时补发 signature_delta
+        if current_block_type == "thinking" and not thinking_signature_sent:
+            sig = current_thinking_signature or last_thinking_signature
+            if sig:
+                thinking_signature_sent = True
+                extra_events.append(
+                    _sse_event(
+                        "content_block_delta",
+                        {
+                            "type": "content_block_delta",
+                            "index": current_block_index,
+                            "delta": {"type": "signature_delta", "signature": sig},
+                        },
+                    )
+                )
+
         event = _sse_event(
             "content_block_stop",
             {"type": "content_block_stop", "index": current_block_index},
         )
         current_block_type = None
+        if extra_events:
+            return b"".join(extra_events) + event
         return event
 
     def _usage_payload() -> Dict[str, int]:
@@ -1211,6 +1268,10 @@ async def gemini_stream_to_anthropic_stream(
 
                 # 处理 thinking 块
                 if part.get("thought") is True:
+                    from src.config import get_force_disable_thinking_sync
+                    if get_force_disable_thinking_sync():
+                        continue
+
                     if is_skip_thought_signature_placeholder(part):
                         continue
                     thinking_text = part.get("text", "")
@@ -1218,20 +1279,27 @@ async def gemini_stream_to_anthropic_stream(
                     if thoughtsignature:
                         last_thinking_signature = thoughtsignature
 
-                    # 检查是否需要关闭上一个块并开启新的 thinking 块
+                    # 检查是否需要开启思考块 (一条消息内只允许首个且唯一的 thinking 块)
                     if current_block_type != "thinking":
+                        if thinking_block_ever_started:
+                            # 已经完成过思考阶段，绝不再开启第二个 thinking 块，避免客户端解析器卡死
+                            continue
+
                         close_evt = _close_block()
                         if close_evt:
                             yield close_evt
 
                         current_block_index += 1
                         current_block_type = "thinking"
+                        thinking_block_ever_started = True
                         current_thinking_signature = thoughtsignature
 
                         block: Dict[str, Any] = {
                             "type": "thinking", "thinking": ""}
                         if thoughtsignature:
+                            block["signature"] = thoughtsignature
                             block["thoughtSignature"] = thoughtsignature
+                            thinking_signature_sent = True
                         yield _sse_event(
                             "content_block_start",
                             {
@@ -1240,27 +1308,16 @@ async def gemini_stream_to_anthropic_stream(
                                 "content_block": block,
                             },
                         )
-                    elif thoughtsignature and thoughtsignature != current_thinking_signature:
-                        # 签名变化，需要开启新的 thinking 块
-                        close_evt = _close_block()
-                        if close_evt:
-                            yield close_evt
-
-                        current_block_index += 1
-                        current_block_type = "thinking"
+                    elif thoughtsignature and not thinking_signature_sent:
+                        # 思考块进行中获得签名，通过标准 signature_delta 发送，严禁关闭并重开新块
+                        thinking_signature_sent = True
                         current_thinking_signature = thoughtsignature
-
-                        block_new: Dict[str, Any] = {
-                            "type": "thinking", "thinking": ""}
-                        if thoughtsignature:
-                            block_new["thoughtSignature"] = thoughtsignature
-
                         yield _sse_event(
-                            "content_block_start",
+                            "content_block_delta",
                             {
-                                "type": "content_block_start",
+                                "type": "content_block_delta",
                                 "index": current_block_index,
-                                "content_block": block_new,
+                                "delta": {"type": "signature_delta", "signature": thoughtsignature},
                             },
                         )
 

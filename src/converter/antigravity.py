@@ -490,6 +490,8 @@ def _normalize_antigravity_request(
     thinking = is_thinking_model(model)
 
     from src.token_usage import set_current_thinking_info, format_token
+    from src.config import get_force_disable_thinking_sync
+    force_disable = get_force_disable_thinking_sync()
 
     # 针对 Gemini 模型：根据思考设置映射至真实的 Antigravity 后端模型 ID
     if "gemini" in model.lower():
@@ -504,7 +506,12 @@ def _normalize_antigravity_request(
         if "gemini-3" in original_model.lower():
             if "tiered" in original_model.lower():
                 # gemini-3.7-flash-tiered / tiered 模型原生支持动态分级思考 thinkingConfig
-                if "thinkingConfig" in generation_config:
+                if force_disable:
+                    generation_config["thinkingConfig"] = {
+                        "thinkingBudget": 0,
+                        "includeThoughts": False
+                    }
+                elif "thinkingConfig" in generation_config:
                     thinking_config = generation_config["thinkingConfig"]
                     if return_thoughts is not None and "includeThoughts" not in thinking_config:
                         thinking_config["includeThoughts"] = return_thoughts
@@ -538,17 +545,24 @@ def _normalize_antigravity_request(
                 # Antigravity uses the Gemini 3.x model route/name to select thinking depth.
                 # Do not send thinkingLevel/thinkingBudget because they can conflict with that route.
                 # Keep includeThoughts so reasoning is still returned to the frontend when enabled.
-                thinking_config = generation_config.setdefault("thinkingConfig", {})
-                thinking_config.pop("thinkingBudget", None)
-                thinking_config.pop("thinkingLevel", None)
-                if return_thoughts is not None:
-                    thinking_config["includeThoughts"] = return_thoughts
-                elif "includeThoughts" not in thinking_config:
-                    thinking_config["includeThoughts"] = True
-                set_current_thinking_info("固定级别")
+                if force_disable:
+                    generation_config.pop("thinkingConfig", None)
+                    set_current_thinking_info("思考:关闭")
+                else:
+                    thinking_config = generation_config.setdefault("thinkingConfig", {})
+                    thinking_config.pop("thinkingBudget", None)
+                    thinking_config.pop("thinkingLevel", None)
+                    if return_thoughts is not None:
+                        thinking_config["includeThoughts"] = return_thoughts
+                    elif "includeThoughts" not in thinking_config:
+                        thinking_config["includeThoughts"] = True
+                    set_current_thinking_info("固定级别")
         else:
             # 对于 Gemini 2.5 系列
-            if thinking or "thinkingConfig" in generation_config:
+            if force_disable:
+                generation_config["thinkingConfig"] = {"thinkingBudget": 0, "includeThoughts": False}
+                set_current_thinking_info("思考:关闭")
+            elif thinking or "thinkingConfig" in generation_config:
                 if "thinkingConfig" not in generation_config:
                     generation_config["thinkingConfig"] = {}
                 thinking_config = generation_config["thinkingConfig"]
@@ -563,7 +577,10 @@ def _normalize_antigravity_request(
                 set_current_thinking_info("思考:关闭")
     else:
         # 针对非 Gemini 模型（如 Claude）
-        if thinking or "thinkingConfig" in generation_config:
+        if force_disable:
+            generation_config.pop("thinkingConfig", None)
+            set_current_thinking_info("思考:关闭")
+        elif thinking or "thinkingConfig" in generation_config:
             # 直接设置 thinkingConfig，默认思考预算
             if "thinkingConfig" not in generation_config:
                 generation_config["thinkingConfig"] = {}
