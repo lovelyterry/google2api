@@ -130,10 +130,11 @@ async def wrap_cli_request(
     # 注入 labels
     inner["labels"] = _build_labels(model, session_id, 1)
 
-    # toolConfig 默认 VALIDATED
+    # toolConfig 默认 VALIDATED（仅在未指定 mode 时设为 VALIDATED，不覆盖客户端显式配置）
     tool_config = inner.get("toolConfig") or {}
     func_config = tool_config.get("functionCallingConfig") or {}
-    func_config["mode"] = "VALIDATED"
+    if not func_config.get("mode"):
+        func_config["mode"] = "VALIDATED"
     tool_config["functionCallingConfig"] = func_config
     inner["toolConfig"] = tool_config
 

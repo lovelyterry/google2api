@@ -302,47 +302,43 @@ def _ensure_empty_tool_schema_for_claude(tools: Any, model_name: str, mode: str 
     is_claude = "claude" in (model_name or "").lower()
 
     if is_claude:
-        normalized_tools = []
+        all_claude_declarations = []
         for tool in tools:
             if not isinstance(tool, dict):
-                normalized_tools.append(tool)
                 continue
 
-            normalized_tool = tool.copy()
-
-            schema = {"type": "object", "properties": {}}
-            name = ""
-            description = ""
-
-            # Extract schema from either format
-            custom_tool = normalized_tool.get("custom")
+            # 1. 兼容 Anthropic custom 工具格式
+            custom_tool = tool.get("custom")
             if isinstance(custom_tool, dict):
-                schema = custom_tool.get("input_schema") or custom_tool.get("inputSchema") or schema
-                name = custom_tool.get("name", "")
-                description = custom_tool.get("description", "")
-            else:
-                declarations = normalized_tool.get("functionDeclarations") or normalized_tool.get("function_declarations")
-                if isinstance(declarations, list) and declarations and isinstance(declarations[0], dict):
-                    decl = declarations[0]
-                    schema = (
-                        decl.get("parametersJsonSchema") or
-                        decl.get("parameters_json_schema") or
-                        decl.get("parameters") or schema
-                    )
-                    name = decl.get("name", "")
-                    description = decl.get("description", "")
-
-            # For ALL Claude models, try outputting functionDeclarations with parameters!
-            # If Google's backend expects parameters to translate to input_schema, this will fix the Field required error.
-            normalized_tools.append({
-                "functionDeclarations": [{
-                    "name": name,
-                    "description": description,
+                schema = custom_tool.get("input_schema") or custom_tool.get("inputSchema") or {"type": "object", "properties": {}}
+                all_claude_declarations.append({
+                    "name": custom_tool.get("name", ""),
+                    "description": custom_tool.get("description", ""),
                     "parameters": schema
-                }]
-            })
+                })
+            else:
+                # 2. 兼容并完整遍历 functionDeclarations 中的所有工具声明
+                declarations = tool.get("functionDeclarations") or tool.get("function_declarations")
+                if isinstance(declarations, list):
+                    for decl in declarations:
+                        if not isinstance(decl, dict):
+                            continue
+                        schema = (
+                            decl.get("parameters") or
+                            decl.get("parametersJsonSchema") or
+                            decl.get("parameters_json_schema") or
+                            {"type": "object", "properties": {}}
+                        )
+                        all_claude_declarations.append({
+                            "name": decl.get("name", ""),
+                            "description": decl.get("description", ""),
+                            "parameters": schema
+                        })
 
-        return normalized_tools
+        if not all_claude_declarations:
+            return tools
+
+        return [{"functionDeclarations": all_claude_declarations}]
 
     # 对于 Gemini 模型：
     # 后端需要标准的 functionDeclarations 格式。

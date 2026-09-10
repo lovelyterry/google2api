@@ -135,43 +135,33 @@ async def messages(
             yield first_chunk
             return
 
-        # 包装流式生成器以处理错误响应
+        # 包装流式生成器以传递给转换器
         async def gemini_chunk_wrapper():
             async for chunk in prepend_async_item(first_chunk, stream_gen):
-                # 检查是否是Response对象（错误情况）
-                if isinstance(chunk, Response):
-                    # 错误响应，不进行转换，直接传递
-                    try:
-                        error_content = chunk.body if isinstance(
-                            chunk.body, bytes) else (chunk.body or b'').encode('utf-8')
-                        gemini_error = json.loads(
-                            error_content.decode('utf-8'))
-                        from src.converter.anthropic2gemini import gemini_to_anthropic_response
-                        anthropic_error = gemini_to_anthropic_response(
-                            gemini_error,
-                            real_model,
-                            chunk.status_code
-                        )
-                        yield f"data: {json.dumps(anthropic_error)}\n\n".encode('utf-8')
-                    except Exception:
-                        yield f"data: {json.dumps({'type': 'error', 'error': {'type': 'api_error', 'message': 'Stream error'}})}\n\n".encode('utf-8')
-                    yield b"data: [DONE]\n\n"
-                    return
+                if isinstance(chunk, str):
+                    yield chunk.encode('utf-8')
                 else:
-                    # 确保是bytes类型
-                    if isinstance(chunk, str):
-                        yield chunk.encode('utf-8')
-                    else:
-                        yield chunk
+                    yield chunk
 
-        # 使用转换器处理整个流
-        async for anthropic_chunk in gemini_stream_to_anthropic_stream(
-            gemini_chunk_wrapper(),
-            real_model,
-            200
-        ):
-            if anthropic_chunk:
-                yield anthropic_chunk
+        try:
+            # 使用转换器处理整个流
+            async for anthropic_chunk in gemini_stream_to_anthropic_stream(
+                gemini_chunk_wrapper(),
+                real_model,
+                200
+            ):
+                if anthropic_chunk:
+                    yield anthropic_chunk
+        except (GeneratorExit, asyncio.CancelledError):
+            log.debug(f"[GEMINICLI ROUTER] 客户端打断/取消连接 (模型: {real_model})")
+            return
+        except Exception as e:
+            log.error(
+                f"[GEMINICLI STREAM ERROR] 发生未捕获异常: {e}"
+            )
+            err_evt = {"type": "error", "error": {
+                "type": "api_error", "message": f"Stream generator error: {str(e)}"}}
+            yield f"event: error\ndata: {json.dumps(err_evt)}\n\n".encode('utf-8')
 
     return await build_streaming_response_or_error(normal_stream_generator())
 

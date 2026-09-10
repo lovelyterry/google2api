@@ -1687,8 +1687,12 @@ const app = createApp({
         const config = reactive({
             form: {},
             envLocked: [],
-            loading: false
+            loading: false,
+            saveStatus: 'ready', // 'ready' | 'saving' | 'saved' | 'error'
         });
+
+        let isConfigLoaded = false;
+        let autoSaveTimer = null;
 
         const loadConfig = async () => {
             config.loading = true;
@@ -1696,12 +1700,16 @@ const app = createApp({
                 const res = await fetch('./config', { headers: getAuthHeaders() });
                 const data = await res.json();
                 if (res.ok) {
+                    isConfigLoaded = false;
                     config.form = data.config || {};
                     config.envLocked = data.env_locked || [];
                     if (config.form.force_disable_thinking) {
                         config.form.adaptive_thinking_budget = 0;
                     }
-                    showStatus('配置加载成功', 'success');
+                    await nextTick();
+                    setTimeout(() => {
+                        isConfigLoaded = true;
+                    }, 120);
                 }
             } catch (e) {
                 showStatus(`加载配置失败: ${e.message}`, 'error');
@@ -1710,14 +1718,17 @@ const app = createApp({
             }
         };
 
-        const saveConfig = async () => {
+        const saveConfig = async (silent = false) => {
             try {
                 if (config.form.adaptive_thinking_budget === 0) {
                     config.form.force_disable_thinking = true;
                 } else if (config.form.adaptive_thinking_budget > 0) {
                     config.form.force_disable_thinking = false;
                 }
-                showStatus('正在保存全局配置...', 'info');
+                config.saveStatus = 'saving';
+                if (!silent) {
+                    showStatus('正在自动同步全局配置...', 'info');
+                }
                 const res = await fetch('./config', {
                     method: 'POST',
                     headers: getAuthHeaders(),
@@ -1725,34 +1736,57 @@ const app = createApp({
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    showStatus('✅ 全局配置保存成功（热更新已同步生效）', 'success');
-                    await loadConfig();
+                    config.saveStatus = 'saved';
+                    showStatus('✅ 改动已自动保存并实时生效', 'success');
+                    setTimeout(() => {
+                        if (config.saveStatus === 'saved') {
+                            config.saveStatus = 'ready';
+                        }
+                    }, 2500);
                 } else {
+                    config.saveStatus = 'error';
                     showStatus(`保存失败: ${data.detail || '未知错误'}`, 'error');
                 }
             } catch (e) {
+                config.saveStatus = 'error';
                 showStatus(`保存网络错误: ${e.message}`, 'error');
             }
         };
 
-        const useMirrorUrls = () => {
+        const autoSaveConfig = (delay = 400) => {
+            if (!isConfigLoaded) return;
+            if (autoSaveTimer) clearTimeout(autoSaveTimer);
+            config.saveStatus = 'saving';
+            autoSaveTimer = setTimeout(async () => {
+                await saveConfig(true);
+            }, delay);
+        };
+
+        watch(() => config.form, () => {
+            if (!isConfigLoaded) return;
+            autoSaveConfig(400);
+        }, { deep: true });
+
+        const useMirrorUrls = async () => {
             config.form.code_assist_endpoint = 'https://daily-cloudcode-pa.googleapis.com';
             config.form.oauth_proxy_url = 'https://daily-cloudcode-pa.googleapis.com';
             config.form.googleapis_proxy_url = 'https://daily-cloudcode-pa.googleapis.com';
             config.form.resource_manager_api_url = 'https://daily-cloudcode-pa.googleapis.com';
             config.form.service_usage_api_url = 'https://daily-cloudcode-pa.googleapis.com';
             config.form.antigravity_api_url = 'https://daily-cloudcode-pa.googleapis.com';
-            showStatus('已充填镜像端点地址，请保存配置生效', 'info');
+            if (autoSaveTimer) clearTimeout(autoSaveTimer);
+            await saveConfig(false);
         };
 
-        const restoreOfficialUrls = () => {
+        const restoreOfficialUrls = async () => {
             config.form.code_assist_endpoint = 'https://cloudcode-pa.googleapis.com';
             config.form.oauth_proxy_url = 'https://oauth2.googleapis.com';
             config.form.googleapis_proxy_url = 'https://www.googleapis.com';
             config.form.resource_manager_api_url = 'https://cloudresourcemanager.googleapis.com';
             config.form.service_usage_api_url = 'https://serviceusage.googleapis.com';
             config.form.antigravity_api_url = 'https://daily-cloudcode-pa.googleapis.com';
-            showStatus('已还原官方端点地址，请保存配置生效', 'info');
+            if (autoSaveTimer) clearTimeout(autoSaveTimer);
+            await saveConfig(false);
         };
 
         const diagnostics = reactive({

@@ -230,10 +230,9 @@ def _anthropic_usage_from_metadata(usage_metadata: Any, model: str = "", user_in
     usage = {
         "input_tokens": max(prompt_tokens_total - cached_tokens, 0),
         "output_tokens": int(candidates_token_count or 0),
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": cached_tokens,
     }
-
-    if cached_tokens > 0:
-        usage["cache_read_input_tokens"] = cached_tokens
 
     return usage
 
@@ -282,40 +281,61 @@ def _remove_nulls_for_tool_input(value: Any) -> Any:
 
 def sanitize_edit_tool_input(tool_name: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:
     """
-    针对代码编辑/文件修改类工具（如 Edit, str_replace, replace_file_content 等）
-    对入参（尤其是 old_string / old_str）进行底层归一化清洗：
-    1. 统一 Windows/Unix 换行符（将 \\r\\n 统一转换为 \\n）
-    2. 保留原有入参键名，同时提供标准化别名（old_string 与 old_str 双向兼容）
+    针对代码编辑/文件修改类工具（如 Edit, Update, str_replace, replace_file_content 等）
+    对入参（尤其是 old_string / old_str / new_string / new_str 等）进行底层归一化清洗：
+    1. 统一 Windows/Unix 换行符（将 \\r\\n, \\r 统一转换为 \\n）
+    2. 多别名双向容错对齐（old_string, old_str, oldStr, targetContent 等），解决各客户端 schema 命名差异
+    3. 扩大工具名称识别范围（edit, replace, patch, update, modify 等）
     """
     if not isinstance(tool_args, dict) or not tool_args:
         return tool_args
 
     name_lower = str(tool_name).lower()
-    is_edit_tool = any(k in name_lower for k in ("edit", "str_replace", "replace", "patch"))
+    edit_keywords = ("edit", "replace", "str_replace", "patch", "update", "modify", "substitute")
+    is_edit_tool = any(k in name_lower for k in edit_keywords)
 
     if not is_edit_tool:
         return tool_args
 
     cleaned = dict(tool_args)
 
-    # 别名双向容错对齐（保留原字段同时补充对应别名，避免破坏不同客户端定义的 schema）
-    if "old_str" in cleaned and "old_string" not in cleaned:
-        cleaned["old_string"] = cleaned["old_str"]
-    elif "old_string" in cleaned and "old_str" not in cleaned:
-        cleaned["old_str"] = cleaned["old_string"]
+    # 识别旧字符串与新字符串的主键值
+    old_val = None
+    old_keys = ["old_string", "old_str", "oldStr", "targetContent", "target_content", "target_string", "original_string"]
+    for k in old_keys:
+        if k in cleaned and isinstance(cleaned[k], str):
+            old_val = cleaned[k]
+            break
 
-    if "new_str" in cleaned and "new_string" not in cleaned:
-        cleaned["new_string"] = cleaned["new_str"]
-    elif "new_string" in cleaned and "new_str" not in cleaned:
-        cleaned["new_str"] = cleaned["new_string"]
+    new_val = None
+    new_keys = ["new_string", "new_str", "newStr", "replacementContent", "replacement_content", "replacement_string"]
+    for k in new_keys:
+        if k in cleaned and isinstance(cleaned[k], str):
+            new_val = cleaned[k]
+            break
 
-    # 针对 old_string / old_str 做换行符与格式归一化
-    for key in ("old_string", "old_str", "new_string", "new_str"):
-        if key in cleaned and isinstance(cleaned[key], str):
-            val = cleaned[key]
-            # 统一将 CRLF / CR 转换为标准 LF
-            val = val.replace("\r\n", "\n").replace("\r", "\n")
-            cleaned[key] = val
+    # 如果发现了 old 字符串，统一换行符并同步回所有相关的 key
+    if old_val is not None:
+        norm_old = old_val.replace("\r\n", "\n").replace("\r", "\n")
+        for k in old_keys:
+            if k in cleaned and isinstance(cleaned[k], str):
+                cleaned[k] = norm_old
+        # 双向补充最通用的 old_string 和 old_str
+        if "old_string" not in cleaned:
+            cleaned["old_string"] = norm_old
+        if "old_str" not in cleaned:
+            cleaned["old_str"] = norm_old
+
+    # 如果发现了 new 字符串，统一换行符并同步回所有相关的 key
+    if new_val is not None:
+        norm_new = new_val.replace("\r\n", "\n").replace("\r", "\n")
+        for k in new_keys:
+            if k in cleaned and isinstance(cleaned[k], str):
+                cleaned[k] = norm_new
+        if "new_string" not in cleaned:
+            cleaned["new_string"] = norm_new
+        if "new_str" not in cleaned:
+            cleaned["new_str"] = norm_new
 
     return cleaned
 
@@ -421,30 +441,30 @@ def clean_json_schema(schema: Any) -> Any:
 def convert_tools(anthropic_tools: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
     """
     将 Anthropic tools[] 转换为下游 tools（functionDeclarations）结构。
+    规范聚合成单个 [{"functionDeclarations": [...]}] 结构。
     """
     if not anthropic_tools:
         return None
 
-    gemini_tools: List[Dict[str, Any]] = []
+    function_declarations: List[Dict[str, Any]] = []
     for tool in anthropic_tools:
         name = tool.get("name", "nameless_function")
         description = tool.get("description", "")
         input_schema = tool.get("input_schema", {}) or {}
         parameters = clean_json_schema(input_schema)
 
-        gemini_tools.append(
+        function_declarations.append(
             {
-                "functionDeclarations": [
-                    {
-                        "name": name,
-                        "description": description,
-                        "parametersJsonSchema": parameters,
-                    }
-                ]
+                "name": name,
+                "description": description,
+                "parametersJsonSchema": parameters,
             }
         )
 
-    return gemini_tools or None
+    if not function_declarations:
+        return None
+
+    return [{"functionDeclarations": function_declarations}]
 
 
 # ============================================================================
@@ -452,14 +472,27 @@ def convert_tools(anthropic_tools: Optional[List[Dict[str, Any]]]) -> Optional[L
 # ============================================================================
 
 def _extract_tool_result_output(content: Any) -> str:
-    """从 tool_result.content 中提取输出字符串"""
+    """从 tool_result.content 中提取输出字符串，完整保留多块输出"""
     if isinstance(content, list):
         if not content:
             return ""
-        first = content[0]
-        if isinstance(first, dict) and first.get("type") == "text":
-            return str(first.get("text", ""))
-        return str(first)
+        texts: List[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                item_type = item.get("type")
+                if item_type == "text":
+                    texts.append(str(item.get("text", "")))
+                elif item_type == "image":
+                    texts.append("[Image Data]")
+                else:
+                    texts.append(json.dumps(item, ensure_ascii=False))
+            elif isinstance(item, str):
+                texts.append(item)
+            elif item is not None:
+                texts.append(str(item))
+        if all(t.endswith("\n") for t in texts if t):
+            return "".join(texts)
+        return "\n".join(texts)
     if content is None:
         return ""
     return str(content)
@@ -541,6 +574,17 @@ def convert_messages_to_contents(
                                 }
                             }
                         )
+                elif item_type == "document":
+                    source = item.get("source", {}) or {}
+                    if source.get("type") == "base64":
+                        parts.append(
+                            {
+                                "inlineData": {
+                                    "mimeType": source.get("media_type", "application/pdf"),
+                                    "data": source.get("data", ""),
+                                }
+                            }
+                        )
                 elif item_type == "tool_use":
                     encoded_id = item.get("id") or ""
                     original_id, sig = decode_tool_id_and_signature(encoded_id)
@@ -558,6 +602,7 @@ def convert_messages_to_contents(
                     parts.append(fc_part)
                 elif item_type == "tool_result":
                     output = _extract_tool_result_output(item.get("content"))
+                    is_error = bool(item.get("is_error", False))
                     encoded_tool_use_id = item.get("tool_use_id") or ""
 
                     # 解码获取原始ID（functionResponse不需要签名）
@@ -574,12 +619,16 @@ def convert_messages_to_contents(
                     if not func_name:
                         func_name = "unknown_function"
 
+                    resp_data: Dict[str, Any] = {"output": output}
+                    if is_error:
+                        resp_data["error"] = output
+
                     parts.append(
                         {
                             "functionResponse": {
                                 "id": original_tool_use_id,  # 使用解码后的原始ID以匹配functionCall
                                 "name": func_name,
-                                "response": {"output": output},
+                                "response": resp_data,
                             }
                         }
                     )
@@ -617,11 +666,18 @@ def reorganize_tool_messages(contents: List[Dict[str, Any]]) -> List[Dict[str, A
     for msg in contents:
         parts = msg.get("parts", []) or []
 
-        # 检查是否全部是孤立的 functionResponse 消息（后续由所属的 functionCall 轮次紧随注入）
+        # 检查消息中是否含有 functionResponse
         has_fr = any(isinstance(p, dict) and "functionResponse" in p for p in parts)
-        has_non_fr = any(not (isinstance(p, dict) and "functionResponse" in p) for p in parts)
-        if has_fr and not has_non_fr:
-            continue
+        if has_fr:
+            # 过滤掉已经被收集到 tool_results 的 functionResponse
+            # （后续由所属的 functionCall 轮次紧随注入，避免重复注入）
+            non_fr_parts = [p for p in parts if not (isinstance(p, dict) and "functionResponse" in p)]
+            if not non_fr_parts:
+                # 若纯粹由 functionResponse 构成，则本条消息已在对应 model 之后集中注入，跳过
+                continue
+            # 若含有非 functionResponse 内容（如用户同时发送的文字/图片），仅保留非 functionResponse 部分
+            msg = {**msg, "parts": non_fr_parts}
+            parts = non_fr_parts
 
         fc_parts = [p for p in parts if isinstance(p, dict) and "functionCall" in p]
         if fc_parts:
@@ -849,6 +905,21 @@ async def anthropic_to_gemini_request(payload: Dict[str, Any]) -> Dict[str, Any]
 
     contents = reorganize_tool_messages(contents)
 
+    # 规范化：合并相邻同角色的 contents，确保满足 Gemini 的交替轮次约束 (alternating turns)
+    merged_contents = []
+    for c in contents:
+        if not c.get("parts"):
+            continue
+        if merged_contents and merged_contents[-1]["role"] == c["role"]:
+            merged_contents[-1]["parts"].extend(c["parts"])
+        else:
+            merged_contents.append(c)
+    contents = merged_contents
+
+    # 确保首个 content 角色为 user
+    if contents and contents[0].get("role") == "model":
+        contents.insert(0, {"role": "user", "parts": [{"text": "Hello"}]})
+
     # 转换工具
     tools = convert_tools(payload.get("tools"))
 
@@ -870,18 +941,19 @@ async def anthropic_to_gemini_request(payload: Dict[str, Any]) -> Dict[str, Any]
         gemini_request["tools"] = tools
         # 仅针对包含文件编辑/代码替换类工具场景补充严格逐字字符/空格缩进匹配的指引，避免污染常规工具与分类器评估请求
         raw_tools = payload.get("tools") or []
+        edit_keywords = ("edit", "replace", "str_replace", "patch", "update", "modify", "substitute")
         has_edit_tool = any(
-            isinstance(t, dict) and any(k in str(t.get("name", "")).lower() for k in ("edit", "str_replace", "replace", "patch"))
+            isinstance(t, dict) and any(k in str(t.get("name", "")).lower() for k in edit_keywords)
             for t in raw_tools
         )
         if has_edit_tool:
             edit_guideline = (
-                "CRITICAL INSTRUCTION FOR FILE EDITING / STRING REPLACEMENT TOOLS:\n"
-                "When generating parameters for code replacement tools (e.g. Edit, str_replace, replace_file_content):\n"
-                "1. 'old_string' / 'old_str' MUST be an EXACT, literal, character-by-character copy from the recent tool output.\n"
-                "2. Never reformat, re-indent, change single/double quotes, or alter whitespace/line breaks in 'old_string'.\n"
-                "3. Include 2-4 surrounding unique lines before and after the change to serve as unambiguous anchor points.\n"
-                "4. Keep edits concise and targeted."
+                "CRITICAL INSTRUCTION FOR CODE/FILE EDITING TOOLS (e.g. Edit, Update, str_replace, replace_file_content):\n"
+                "To prevent 'String to replace not found in file' failures:\n"
+                "1. MINIMAL DIFF CHUNKS (MOST IMPORTANT): Keep 'old_string' / 'old_str' as short and focused as possible (ideally 3 to 10 lines, never more than 15-20 lines). NEVER replace entire functions, huge code blocks, or multiple unrelated sections in a single call. If multiple changes are needed, perform separate, smaller edits.\n"
+                "2. STRICT CHARACTER-BY-CHARACTER FIDELITY: 'old_string' MUST be an exact, literal character-by-character excerpt copied directly from the most recent file read/view tool output. Never rely on memory or hallucination. Do NOT alter whitespace, indentations (tabs vs spaces), single/double quotes, comments, or special Unicode characters.\n"
+                "3. MINIMAL SURROUNDING CONTEXT: Include only 1-2 unique surrounding lines before and after the change as context anchors to ensure uniqueness. Do not pad with unnecessary unchanged code.\n"
+                "4. READ BEFORE EDIT: If you are not completely certain of the exact lines and formatting in the target file, invoke a read/view tool first before issuing an edit tool call."
             )
             if "systemInstruction" in gemini_request:
                 si = gemini_request["systemInstruction"]
@@ -948,6 +1020,8 @@ def gemini_to_anthropic_response(
     content = []
     has_tool_use = False
     last_thought_signature = None
+    accumulated_thinking: List[str] = []
+    has_thinking = False
 
     for part in parts:
         if not isinstance(part, dict):
@@ -964,19 +1038,9 @@ def gemini_to_anthropic_response(
             if is_skip_thought_signature_placeholder(part):
                 continue
             thinking_text = part.get("text", "")
-            if thinking_text is None:
-                thinking_text = ""
-
-            block: Dict[str, Any] = {
-                "type": "thinking", "thinking": str(thinking_text)}
-
-            # 兼容 Anthropic 标准 signature 与内部 thoughtSignature
-            thoughtsignature = part.get("thoughtSignature")
-            if thoughtsignature:
-                block["signature"] = thoughtsignature
-                block["thoughtSignature"] = thoughtsignature
-
-            content.append(block)
+            if thinking_text is not None:
+                accumulated_thinking.append(str(thinking_text))
+            has_thinking = True
             continue
 
         # 处理文本块
@@ -1025,17 +1089,24 @@ def gemini_to_anthropic_response(
             )
             continue
 
+    # Anthropic 规范：一条消息内至多只能有一个 thinking 块且必须在消息首位
+    if has_thinking:
+        block: Dict[str, Any] = {
+            "type": "thinking",
+            "thinking": "".join(accumulated_thinking),
+        }
+        if last_thought_signature:
+            block["signature"] = last_thought_signature
+            block["thoughtSignature"] = last_thought_signature
+        content.insert(0, block)
+
     # 确定停止原因
     finish_reason = candidate.get("finishReason")
-
-    # 只有在正常停止（STOP）且有工具调用时才设为 tool_use
-    # 避免在 SAFETY、MAX_TOKENS 等情况下仍然返回 tool_use 导致循环
-    if has_tool_use and finish_reason == "STOP":
-        stop_reason = "tool_use"
-    elif finish_reason == "MAX_TOKENS":
+    if finish_reason == "MAX_TOKENS":
         stop_reason = "max_tokens"
+    elif has_tool_use and finish_reason in ("STOP", None, ""):
+        stop_reason = "tool_use"
     else:
-        # 其他情况（SAFETY、RECITATION 等）默认为 end_turn
         stop_reason = "end_turn"
 
     # 提取 token 使用情况
@@ -1134,9 +1205,12 @@ async def gemini_stream_to_anthropic_stream(
         return event
 
     def _usage_payload() -> Dict[str, int]:
-        usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
-        if cached_input_tokens > 0:
-            usage["cache_read_input_tokens"] = cached_input_tokens
+        usage = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": cached_input_tokens,
+        }
         return usage
 
     # 处理流式数据
@@ -1145,15 +1219,36 @@ async def gemini_stream_to_anthropic_stream(
             # 检查是否是 Response 对象（错误情况）
             if isinstance(chunk, Response):
                 log.warning(
-                    f"[GEMINI_TO_ANTHROPIC] 收到 Response 对象，状态码: {chunk.status_code}，直接转发错误")
-                # 直接转发错误响应内容，不做格式转换
-                body_val = getattr(chunk, 'body', None)
-                if isinstance(body_val, bytes):
-                    yield body_val
-                elif isinstance(body_val, str):
-                    yield body_val.encode('utf-8')
-                elif body_val is not None:
-                    yield str(body_val).encode('utf-8')
+                    f"[GEMINI_TO_ANTHROPIC] 收到 Response 对象，状态码: {chunk.status_code}，转为 Anthropic SSE 错误事件")
+                body_val = getattr(chunk, 'body', None) or getattr(chunk, 'content', None) or b""
+                err_msg = "Upstream error"
+                try:
+                    parsed = json.loads(body_val.decode('utf-8') if isinstance(body_val, bytes) else str(body_val))
+                    if isinstance(parsed, dict) and "error" in parsed:
+                        err_info = parsed["error"]
+                        err_msg = err_info.get("message") if isinstance(err_info, dict) else str(err_info)
+                except Exception:
+                    err_msg = str(body_val) if body_val else "Upstream error"
+
+                if not message_start_sent:
+                    message_start_sent = True
+                    yield _sse_event(
+                        "message_start",
+                        {
+                            "type": "message_start",
+                            "message": {
+                                "id": message_id,
+                                "type": "message",
+                                "role": "assistant",
+                                "model": model,
+                                "content": [],
+                                "stop_reason": None,
+                                "stop_sequence": None,
+                                "usage": _usage_payload(),
+                            },
+                        },
+                    )
+                yield _sse_event("error", {"type": "error", "error": {"type": "api_error", "message": err_msg}})
                 return
 
             # 记录接收到的原始chunk
@@ -1341,7 +1436,7 @@ async def gemini_stream_to_anthropic_stream(
                     ):
                         continue
                     text = part.get("text", "")
-                    if isinstance(text, str) and not text.strip():
+                    if text == "" or text is None:
                         continue
 
                     if current_block_type != "text":
@@ -1445,14 +1540,12 @@ async def gemini_stream_to_anthropic_stream(
             yield close_evt
 
         # 确定停止原因
-        # 只有在正常停止（STOP）且有工具调用时才设为 tool_use
-        # 避免在 SAFETY、MAX_TOKENS 等情况下仍然返回 tool_use 导致循环
-        if has_tool_use and finish_reason == "STOP":
-            stop_reason = "tool_use"
-        elif finish_reason == "MAX_TOKENS":
+        # 只要产生了工具调用且未被 token 上限截断，stop_reason 必须为 tool_use 以驱动客户端执行
+        if finish_reason == "MAX_TOKENS":
             stop_reason = "max_tokens"
+        elif has_tool_use and finish_reason in ("STOP", None, ""):
+            stop_reason = "tool_use"
         else:
-            # 其他情况（SAFETY、RECITATION 等）默认为 end_turn
             stop_reason = "end_turn"
 
         if _anthropic_debug_enabled():
@@ -1468,7 +1561,7 @@ async def gemini_stream_to_anthropic_stream(
             {
                 "type": "message_delta",
                 "delta": {"stop_reason": stop_reason, "stop_sequence": None},
-                "usage": _usage_payload(),
+                "usage": {"output_tokens": output_tokens},
             },
         )
 
