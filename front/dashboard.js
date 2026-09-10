@@ -182,6 +182,14 @@ const app = createApp({
             }
             if (tabName === 'models') loadModelMappings();
             if (tabName === 'config') loadConfig();
+            if (tabName === 'network') {
+                if (!diagnostics.proxyInput && config.form.proxy) {
+                    diagnostics.proxyInput = config.form.proxy;
+                }
+                if (!diagnostics.report && !diagnostics.loading) {
+                    runDiagnostics();
+                }
+            }
         };
 
         // ----------------------------------------------------------------------
@@ -1738,6 +1746,59 @@ const app = createApp({
             config.form.antigravity_api_url = 'https://daily-cloudcode-pa.googleapis.com';
             showStatus('已还原官方端点地址，请保存配置生效', 'info');
         };
+
+        const diagnostics = reactive({
+            show: false,
+            loading: false,
+            proxyInput: '',
+            report: null,
+        });
+
+        const openDiagnosticsModal = () => {
+            switchTab('network');
+        };
+
+        const closeDiagnosticsModal = () => {};
+
+        const runDiagnostics = async () => {
+            diagnostics.loading = true;
+            showStatus('🩺 正在对网络链路、DNS、外网出口与 Google 核心端点进行全面诊断...', 'info');
+            try {
+                const proxyInput = (diagnostics.proxyInput || '').trim();
+                const res = await fetch('./config/diagnose-network', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ proxy: proxyInput })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    diagnostics.report = data;
+                    if (data.summary.status === 'healthy') {
+                        showStatus('✅ 网络诊断完成：链路健康，与 Google 核心服务通信正常！', 'success');
+                    } else if (data.summary.status === 'warning') {
+                        showStatus('⚠️ 网络诊断完成：部分端点响应异常，请查看诊断分析', 'warning');
+                    } else {
+                        showStatus('🚨 网络诊断发现关键异常：请查看诊断分析与排错指引', 'error');
+                    }
+                } else {
+                    showStatus(`诊断执行失败: ${data.detail || '未知错误'}`, 'error');
+                }
+            } catch (err) {
+                showStatus(`网络诊断请求失败: ${err.message}`, 'error');
+            } finally {
+                diagnostics.loading = false;
+            }
+        };
+
+        const applyDiagnosticProxy = async () => {
+            config.form.proxy = diagnostics.proxyInput;
+            await saveConfig();
+            showStatus('已将测试代理保存至系统配置并生效！', 'success');
+        };
+
+        const testLatency = async () => {
+            switchTab('network');
+        };
         // ----------------------------------------------------------------------
         // 6. 登录与身份验证
         // ----------------------------------------------------------------------
@@ -1972,6 +2033,12 @@ const app = createApp({
             saveConfig,
             useMirrorUrls,
             restoreOfficialUrls,
+            testLatency,
+            diagnostics,
+            openDiagnosticsModal,
+            closeDiagnosticsModal,
+            runDiagnostics,
+            applyDiagnosticProxy,
             showAlert,
             showConfirm,
             handleModalConfirm,

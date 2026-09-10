@@ -110,6 +110,10 @@
                             <span class="nav-item-icon">🛠️</span>
                             <span>配置管理</span>
                         </button>
+                        <button class="nav-item" :class="{ active: activeTab === 'network' }" @click="switchTab('network')" :title="isSidebarCollapsed ? '网络诊断' : ''">
+                            <span class="nav-item-icon">🩺</span>
+                            <span>网络诊断</span>
+                        </button>
                         <button class="nav-item" :class="{ active: activeTab === 'about' }" @click="switchTab('about')" :title="isSidebarCollapsed ? '项目信息' : ''">
                             <span class="nav-item-icon">ℹ️</span>
                             <span>项目信息</span>
@@ -145,7 +149,7 @@
                                 </svg>
                             </button>
                             <h1 class="mobile-bar-title">
-                                {{ activeTab === 'antigravity' ? '反重力认证' : activeTab === 'oauth' ? '谷歌云认证' : activeTab === 'upload' ? '批量上传' : activeTab === 'tokens' ? 'TOKEN 看板' : activeTab === 'models' ? '模型映射' : activeTab === 'config' ? '配置管理' : '项目信息' }}
+                                {{ activeTab === 'antigravity' ? '反重力认证' : activeTab === 'oauth' ? '谷歌云认证' : activeTab === 'upload' ? '批量上传' : activeTab === 'tokens' ? 'TOKEN 看板' : activeTab === 'models' ? '模型映射' : activeTab === 'config' ? '配置管理' : activeTab === 'network' ? '网络诊断' : '项目信息' }}
                             </h1>
                         </div>
                         <div class="top-app-bar-right">
@@ -1273,6 +1277,8 @@
                                 </div>
                             </div>
 
+
+
                             <!-- 1 & 2. 基础配置与端点配置 (左右布局 Grid) -->
                             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; margin-bottom: 16px;">
                                 <!-- 1. 服务器与网络基础配置 -->
@@ -1353,137 +1359,351 @@
                                 </div>
                             </div>
 
-                            <!-- 3. 高级策略与控制 Grid -->
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 16px;">
-                                <div class="config-section-card" style="margin-bottom: 0;">
-                                    <div class="config-section-title">
-                                        <div class="config-section-title-left">
-                                            <span>🚫</span>
-                                            <span>自动封禁熔断策略</span>
-                                        </div>
+                            <!-- 3. 调度容灾与高级运行策略 (整合为单一扁平列表卡片) -->
+                            <div class="config-section-card mb-3">
+                                <div class="config-section-title">
+                                    <div class="config-section-title-left">
+                                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(99, 102, 241, 0.1); display: flex; align-items: center; justify-content: center; font-size: 16px;">🛡️</div>
+                                        <span style="font-size: 16px; font-weight: 700;">调度流控、重试容灾与高级运行策略</span>
                                     </div>
-                                    <div class="form-group mb-3">
-                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
-                                            <input type="checkbox" id="autoBanEnabled" v-model="config.form.auto_ban_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
-                                            <label for="autoBanEnabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用错误自动封禁凭证</label>
-                                        </div>
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">触发特定错误响应时自动锁定受损凭证文件</small>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="autoBanErrorCodes" style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">自动封禁 HTTP 错误码列表:</label>
-                                        <input type="text" id="autoBanErrorCodes" v-model="config.form.auto_ban_error_codes" class="config-input-styled" placeholder="例如: 400,403" />
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">逗号分隔的 HTTP 状态码（如 400, 403）</small>
-                                    </div>
+                                    <span class="badge badge-info" style="font-size: 11px;">共 6 项运行控制策略</span>
                                 </div>
 
-                                <div class="config-section-card" style="margin-bottom: 0;">
-                                    <div class="config-section-title">
-                                        <div class="config-section-title-left">
-                                            <span>🔄</span>
-                                            <span>错误自动重试避障</span>
+                                <div class="policy-setting-list" style="display: flex; flex-direction: column;">
+                                    <!-- 1. 自动封禁熔断策略 -->
+                                    <div class="policy-row" style="padding: 16px 0; border-bottom: 1px solid var(--border-color);">
+                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                                            <div style="flex: 1;">
+                                                <label for="autoBanEnabled" style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; cursor: pointer; color: var(--text-primary);">
+                                                    <span>🚫</span>
+                                                    <span>自动封禁熔断策略</span>
+                                                </label>
+                                                <p style="margin: 4px 0 0 28px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                                                    触发特定错误响应时自动锁定受损凭证文件，防止失效账号继续承接请求
+                                                </p>
+                                            </div>
+                                            <div style="display: flex; align-items: center; padding-top: 2px;">
+                                                <input type="checkbox" id="autoBanEnabled" v-model="config.form.auto_ban_enabled" class="config-checkbox" style="width: 18px; height: 18px; cursor: pointer;" />
+                                            </div>
+                                        </div>
+                                        <div v-if="config.form.auto_ban_enabled" style="margin: 12px 0 0 28px; padding: 12px 16px; border-radius: 8px; background: rgba(0,0,0,0.02); border: 1px solid var(--border-color); display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                                            <label for="autoBanErrorCodes" style="font-size: 12px; font-weight: 600; white-space: nowrap;">自动封禁 HTTP 错误码列表:</label>
+                                            <input type="text" id="autoBanErrorCodes" v-model="config.form.auto_ban_error_codes" class="config-input-styled" style="width: 220px; padding: 6px 10px; font-size: 12px;" placeholder="例如: 400,403" />
+                                            <small class="config-note">逗号分隔的 HTTP 状态码（如 400, 403）</small>
                                         </div>
                                     </div>
-                                    <div class="form-group mb-3">
-                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
-                                            <input type="checkbox" id="retry429Enabled" v-model="config.form.retry_429_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
-                                            <label for="retry429Enabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用 429/5xx 错误自动重试</label>
-                                        </div>
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">遇到限频 429 或服务端错误时自动发起指数避障重试</small>
-                                    </div>
-                                    <div style="display: flex; gap: 12px;">
-                                        <div style="flex: 1;">
-                                            <label for="retry429MaxRetries" style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">最大重试次数:</label>
-                                            <input type="number" id="retry429MaxRetries" v-model="config.form.retry_429_max_retries" class="config-input-styled" min="1" max="50" />
-                                        </div>
-                                        <div style="flex: 1;">
-                                            <label for="retry429Interval" style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">重试间隔(秒):</label>
-                                            <input type="number" id="retry429Interval" v-model="config.form.retry_429_interval" class="config-input-styled" min="0.01" max="10" step="0.01" />
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <div class="config-section-card" style="margin-bottom: 0;">
-                                    <div class="config-section-title">
-                                        <div class="config-section-title-left">
-                                            <span>🔥</span>
-                                            <span>账号配额保鲜预热</span>
+                                    <!-- 2. 错误自动重试避障 -->
+                                    <div class="policy-row" style="padding: 16px 0; border-bottom: 1px solid var(--border-color);">
+                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                                            <div style="flex: 1;">
+                                                <label for="retry429Enabled" style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; cursor: pointer; color: var(--text-primary);">
+                                                    <span>🔄</span>
+                                                    <span>错误自动重试避障</span>
+                                                </label>
+                                                <p style="margin: 4px 0 0 28px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                                                    遇到限频 429 或服务端错误时自动发起指数避障重试，提升复杂环境下的请求成功率
+                                                </p>
+                                            </div>
+                                            <div style="display: flex; align-items: center; padding-top: 2px;">
+                                                <input type="checkbox" id="retry429Enabled" v-model="config.form.retry_429_enabled" class="config-checkbox" style="width: 18px; height: 18px; cursor: pointer;" />
+                                            </div>
+                                        </div>
+                                        <div v-if="config.form.retry_429_enabled" style="margin: 12px 0 0 28px; padding: 12px 16px; border-radius: 8px; background: rgba(0,0,0,0.02); border: 1px solid var(--border-color); display: flex; align-items: center; gap: 18px; flex-wrap: wrap;">
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <label for="retry429MaxRetries" style="font-size: 12px; font-weight: 600; white-space: nowrap;">最大重试次数:</label>
+                                                <input type="number" id="retry429MaxRetries" v-model="config.form.retry_429_max_retries" class="config-input-styled" style="width: 80px; padding: 6px 10px; font-size: 12px;" min="1" max="50" />
+                                            </div>
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <label for="retry429Interval" style="font-size: 12px; font-weight: 600; white-space: nowrap;">重试间隔(秒):</label>
+                                                <input type="number" id="retry429Interval" v-model="config.form.retry_429_interval" class="config-input-styled" style="width: 90px; padding: 6px 10px; font-size: 12px;" min="0.01" max="10" step="0.01" />
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="form-group mb-3">
-                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
-                                            <input type="checkbox" id="quotaWarmupEnabled" v-model="config.form.quota_warmup_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
-                                            <label for="quotaWarmupEnabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用账号配额保鲜预热</label>
-                                        </div>
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">满额账号闲置满设定时长后，自动发送微量探针触发 Google 五小时/周 倒计时窗口</small>
-                                    </div>
-                                    <div class="form-group" v-if="config.form.quota_warmup_enabled">
-                                        <label for="quotaWarmupIdleHours" style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">闲置预热触发时长 (小时):</label>
-                                        <input type="number" id="quotaWarmupIdleHours" v-model.number="config.form.quota_warmup_idle_hours" class="config-input-styled" min="0.5" max="24" step="0.5" placeholder="4.5" />
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">满额连续闲置满该时长（如 4.5 小时）后，自动打点防重置时间延后</small>
-                                    </div>
-                                </div>
 
-                                <div class="config-section-card" style="margin-bottom: 0;">
-                                    <div class="config-section-title">
-                                        <div class="config-section-title-left">
-                                            <span>🧠</span>
-                                            <span>思维链与自适应深度思考</span>
+                                    <!-- 3. 账号配额保鲜预热 -->
+                                    <div class="policy-row" style="padding: 16px 0; border-bottom: 1px solid var(--border-color);">
+                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                                            <div style="flex: 1;">
+                                                <label for="quotaWarmupEnabled" style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; cursor: pointer; color: var(--text-primary);">
+                                                    <span>🔥</span>
+                                                    <span>账号配额保鲜预热</span>
+                                                </label>
+                                                <p style="margin: 4px 0 0 28px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                                                    满额账号闲置满设定时长后，自动发送微量探针触发 Google 五小时/周 倒计时窗口，防重置时间延后
+                                                </p>
+                                            </div>
+                                            <div style="display: flex; align-items: center; padding-top: 2px;">
+                                                <input type="checkbox" id="quotaWarmupEnabled" v-model="config.form.quota_warmup_enabled" class="config-checkbox" style="width: 18px; height: 18px; cursor: pointer;" />
+                                            </div>
+                                        </div>
+                                        <div v-if="config.form.quota_warmup_enabled" style="margin: 12px 0 0 28px; padding: 12px 16px; border-radius: 8px; background: rgba(0,0,0,0.02); border: 1px solid var(--border-color); display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                                            <label for="quotaWarmupIdleHours" style="font-size: 12px; font-weight: 600; white-space: nowrap;">闲置预热触发时长 (小时):</label>
+                                            <input type="number" id="quotaWarmupIdleHours" v-model.number="config.form.quota_warmup_idle_hours" class="config-input-styled" style="width: 100px; padding: 6px 10px; font-size: 12px;" min="0.5" max="24" step="0.5" placeholder="4.5" />
+                                            <small class="config-note">满额连续闲置满该时长（如 4.5 小时）后，自动打点激活额度倒计时</small>
                                         </div>
                                     </div>
-                                    <div class="form-group mb-3">
-                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
-                                            <input type="checkbox" id="returnThoughtsToFrontend" v-model="config.form.return_thoughts_to_frontend" class="config-checkbox" style="width: 16px; height: 16px;" />
-                                            <label for="returnThoughtsToFrontend" style="font-weight: 600; cursor: pointer; font-size: 13px;">输出思考推理过程文本</label>
-                                        </div>
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">保留并输出 Gemini 2.0 / 3.7 / Claude Thinking 模型的思考推理过程文本</small>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="adaptiveThinkingBudget" style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Claude Code 自适应思考默认预算上限 (Tier 档位):</label>
-                                        <select id="adaptiveThinkingBudget" v-model.number="config.form.adaptive_thinking_budget" class="config-input-styled">
-                                            <option :value="16000">16,000 Tokens (Tier-Medium 标准思考)</option>
-                                            <option :value="32000">32,000 Tokens (Tier-High 深度推演)</option>
-                                            <option :value="48000">48,000 Tokens (Tier-High 自适应推荐默认)</option>
-                                            <option :value="64000">64,000 Tokens (Tier-Max 满额极限思考)</option>
-                                        </select>
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">当客户端（如 Claude Code）未传固定数值时，提供给模型的最大自适应推理预算天花板</small>
-                                    </div>
-                                </div>
 
-                                <div class="config-section-card" style="margin-bottom: 0;">
-                                    <div class="config-section-title">
-                                        <div class="config-section-title-left">
-                                            <span>🔀</span>
-                                            <span>重试自动切换凭证</span>
+                                    <!-- 4. 思维链与自适应深度思考 -->
+                                    <div class="policy-row" style="padding: 16px 0; border-bottom: 1px solid var(--border-color);">
+                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                                            <div style="flex: 1;">
+                                                <label for="returnThoughtsToFrontend" style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; cursor: pointer; color: var(--text-primary);">
+                                                    <span>🧠</span>
+                                                    <span>思维链与自适应深度思考</span>
+                                                </label>
+                                                <p style="margin: 4px 0 0 28px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                                                    保留并输出 Gemini 2.0 / 3.7 / Claude Thinking 模型的思考推理过程文本，并控制自适应推理预算天花板
+                                                </p>
+                                            </div>
+                                            <div style="display: flex; align-items: center; padding-top: 2px;">
+                                                <input type="checkbox" id="returnThoughtsToFrontend" v-model="config.form.return_thoughts_to_frontend" class="config-checkbox" style="width: 18px; height: 18px; cursor: pointer;" />
+                                            </div>
+                                        </div>
+                                        <div style="margin: 12px 0 0 28px; padding: 12px 16px; border-radius: 8px; background: rgba(0,0,0,0.02); border: 1px solid var(--border-color); display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                                            <label for="adaptiveThinkingBudget" style="font-size: 12px; font-weight: 600; white-space: nowrap;">Claude Code 自适应思考默认预算上限 (Tier 档位):</label>
+                                            <select id="adaptiveThinkingBudget" v-model.number="config.form.adaptive_thinking_budget" class="config-input-styled" style="flex: 1; min-width: 260px; max-width: 380px; padding: 6px 10px; font-size: 12px;">
+                                                <option :value="16000">16,000 Tokens (Tier-Medium 标准思考)</option>
+                                                <option :value="32000">32,000 Tokens (Tier-High 深度推演)</option>
+                                                <option :value="48000">48,000 Tokens (Tier-High 自适应推荐默认)</option>
+                                                <option :value="64000">64,000 Tokens (Tier-Max 满额极限思考)</option>
+                                            </select>
+                                            <small class="config-note">当客户端未传固定数值时的自适应推理上限</small>
                                         </div>
                                     </div>
-                                    <div class="form-group mb-3">
-                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
-                                            <input type="checkbox" id="antigravitySwitchCredentialEnabled" v-model="config.form.antigravity_switch_credential_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
-                                            <label for="antigravitySwitchCredentialEnabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用错误重试无缝轮换凭证</label>
-                                        </div>
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">当某个凭证触发错误重试时，自动无缝轮换至备选凭证完成请求</small>
-                                    </div>
-                                </div>
 
-                                <div class="config-section-card" style="margin-bottom: 0;">
-                                    <div class="config-section-title">
-                                        <div class="config-section-title-left">
-                                            <span>📡</span>
-                                            <span>Antigravity 伴随流量打点</span>
+                                    <!-- 5. 重试自动切换凭证 -->
+                                    <div class="policy-row" style="padding: 16px 0; border-bottom: 1px solid var(--border-color);">
+                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                                            <div style="flex: 1;">
+                                                <label for="antigravitySwitchCredentialEnabled" style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; cursor: pointer; color: var(--text-primary);">
+                                                    <span>🔀</span>
+                                                    <span>重试自动切换凭证</span>
+                                                </label>
+                                                <p style="margin: 4px 0 0 28px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                                                    当某个凭证触发错误重试时，自动无缝轮换至备选凭证完成请求，保障客户端请求零感完成
+                                                </p>
+                                            </div>
+                                            <div style="display: flex; align-items: center; padding-top: 2px;">
+                                                <input type="checkbox" id="antigravitySwitchCredentialEnabled" v-model="config.form.antigravity_switch_credential_enabled" class="config-checkbox" style="width: 18px; height: 18px; cursor: pointer;" />
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="form-group mb-3">
-                                        <div class="checkbox-container" style="display: flex; align-items: center; gap: 8px;">
-                                            <input type="checkbox" id="antigravityTelemetryEnabled" v-model="config.form.antigravity_telemetry_enabled" class="config-checkbox" style="width: 16px; height: 16px;" />
-                                            <label for="antigravityTelemetryEnabled" style="font-weight: 600; cursor: pointer; font-size: 13px;">启用 CLI 伴随流量特征伪装</label>
+
+                                    <!-- 6. Antigravity 伴随流量打点 -->
+                                    <div class="policy-row" style="padding: 16px 0 4px 0;">
+                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                                            <div style="flex: 1;">
+                                                <label for="antigravityTelemetryEnabled" style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; cursor: pointer; color: var(--text-primary);">
+                                                    <span>📡</span>
+                                                    <span>Antigravity 伴随流量打点</span>
+                                                </label>
+                                                <p style="margin: 4px 0 0 28px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                                                    对话生成时并发发送指标上报、实验拉取与 Unleash 心跳，模拟官方 CLI 伴随流量特征
+                                                </p>
+                                            </div>
+                                            <div style="display: flex; align-items: center; padding-top: 2px;">
+                                                <input type="checkbox" id="antigravityTelemetryEnabled" v-model="config.form.antigravity_telemetry_enabled" class="config-checkbox" style="width: 18px; height: 18px; cursor: pointer;" />
+                                            </div>
                                         </div>
-                                        <small class="config-note" style="display: block; margin-top: 4px; opacity: 0.75;">对话生成时并发发送指标上报、实验拉取与 Unleash 心跳（模拟真实 CLI 伴随流量特征）</small>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- ================= 6. 项目信息标签页 ================= -->
+                        <!-- ================= 6. 网络诊断独立标签页 ================= -->
+                        <div v-if="activeTab === 'network'" class="tab-content active">
+                            <!-- 顶部 Hero 工具栏 -->
+                            <div class="config-hero-card mb-3">
+                                <div style="display: flex; align-items: center; gap: 14px;">
+                                    <div style="width: 48px; height: 48px; border-radius: 14px; background: rgba(16, 185, 129, 0.15); display: flex; align-items: center; justify-content: center; font-size: 26px; border: 1px solid rgba(16, 185, 129, 0.3);">
+                                        🩺
+                                    </div>
+                                    <div>
+                                        <h3 style="margin: 0; font-size: 20px; font-weight: 800; color: var(--text-primary);">网络连接与链路智能诊断中心</h3>
+                                        <p style="margin: 4px 0 0 0; opacity: 0.75; font-size: 12px;">在运行服务的机器上深度体检出站出口、本地代理连通性、DNS 解析与 Google 各核心端点 TLS 握手</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 诊断配置与操作卡片 -->
+                            <div class="config-section-card mb-3">
+                                <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between;">
+                                    <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 300px;">
+                                        <label style="font-size: 13px; font-weight: 700; white-space: nowrap;">🌐 测试代理地址:</label>
+                                        <input type="text" v-model="diagnostics.proxyInput" class="config-input-styled" style="flex: 1; max-width: 420px; padding: 8px 12px; font-size: 13px;" placeholder="留空为直连，或如 http://127.0.0.1:7890" />
+                                    </div>
+                                    <div style="display: flex; gap: 10px; align-items: center;">
+                                        <button v-if="diagnostics.proxyInput !== config.form.proxy" class="btn btn-compact btn-secondary-outline" @click="applyDiagnosticProxy" title="将当前输入的测试代理保存至系统配置表单并立即生效">
+                                            💾 应用为此代理并保存
+                                        </button>
+                                        <button class="btn btn-primary" :disabled="diagnostics.loading" @click="runDiagnostics" style="display: inline-flex; align-items: center; gap: 6px;">
+                                            <span v-if="diagnostics.loading">⏳ 深度体检中...</span>
+                                            <span v-else>🚀 开始全面体检</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 诊断内容区域 -->
+                            <!-- 加载状态 -->
+                            <div v-if="diagnostics.loading" class="config-section-card mb-3" style="text-align: center; padding: 56px 16px;">
+                                <div style="font-size: 44px; margin-bottom: 16px; animation: pulse 1.5s infinite;">🩺</div>
+                                <div style="font-size: 16px; font-weight: 700; margin-bottom: 8px;">正在深入体检服务器网络链路...</div>
+                                <div style="font-size: 13px; opacity: 0.7; max-width: 520px; margin: 0 auto; line-height: 1.6;">
+                                    正在探测本地代理端口、外网出口 IP 归属地、解析 Google 真实/虚拟 DNS，并并发测试 4 大 Google 核心端点的 TLS 握手及响应延时
+                                </div>
+                            </div>
+
+                            <!-- 诊断结果报告 -->
+                            <div v-else-if="diagnostics.report">
+                                <!-- 1. 核心诊断结论 Banner -->
+                                <div class="config-section-card mb-3" :style="{
+                                    border: '1px solid ' + (diagnostics.report.summary.status === 'healthy' ? 'rgba(16, 185, 129, 0.4)' : diagnostics.report.summary.status === 'warning' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(239, 68, 68, 0.4)'),
+                                    background: (diagnostics.report.summary.status === 'healthy' ? 'rgba(16, 185, 129, 0.08)' : diagnostics.report.summary.status === 'warning' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(239, 68, 68, 0.08)')
+                                }">
+                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                        <div style="font-size: 17px; font-weight: 800; display: flex; align-items: center; gap: 8px;">
+                                            <span>{{ diagnostics.report.summary.title }}</span>
+                                        </div>
+                                        <span class="badge" :class="{
+                                            'badge-success': diagnostics.report.summary.status === 'healthy',
+                                            'badge-warning': diagnostics.report.summary.status === 'warning',
+                                            'badge-danger': diagnostics.report.summary.status === 'critical'
+                                        }" style="font-size: 12px; padding: 4px 10px;">
+                                            {{ diagnostics.report.summary.status === 'healthy' ? '健康' : diagnostics.report.summary.status === 'warning' ? '警告' : '异常阻断' }}
+                                        </span>
+                                    </div>
+                                    <div style="font-size: 13.5px; line-height: 1.7; margin-bottom: 12px; opacity: 0.95;">
+                                        {{ diagnostics.report.summary.description }}
+                                    </div>
+
+                                    <!-- 排错行动建议 -->
+                                    <div v-if="diagnostics.report.summary.actions && diagnostics.report.summary.actions.length > 0" style="padding-top: 12px; border-top: 1px dashed rgba(0,0,0,0.1); font-size: 13px;">
+                                        <div style="font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; color: var(--text-primary);">
+                                            <span>💡</span> 推荐排查与解决建议:
+                                        </div>
+                                        <div v-for="(act, idx) in diagnostics.report.summary.actions" :key="idx" style="margin: 4px 0; padding-left: 18px; position: relative; line-height: 1.6;">
+                                            <span style="position: absolute; left: 0; font-weight: bold;">•</span> {{ act }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 2. 基础链路环境 (3 列卡片) -->
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                                    <!-- 出口与归属地 -->
+                                    <div class="config-section-card" style="margin-bottom: 0;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                            <span style="font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                                                <span>🌍</span> 公网出站出口
+                                            </span>
+                                            <span class="badge" :class="diagnostics.report.egress_info.is_cn ? 'badge-danger' : 'badge-success'">
+                                                {{ diagnostics.report.egress_info.country_name || '海外节点' }}
+                                            </span>
+                                        </div>
+                                        <div style="font-size: 12.5px; opacity: 0.85; line-height: 1.7;">
+                                            <div><strong>出口 IP:</strong> {{ diagnostics.report.egress_info.ip || '探测失败/直连不通' }}</div>
+                                            <div v-if="diagnostics.report.egress_info.is_cn" style="color: var(--danger, #ef4444); margin-top: 4px; font-weight: 600;">
+                                                ⚠️ 出口为中国大陆，无法直连 Google，必须配置海外代理！
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 代理通信 -->
+                                    <div class="config-section-card" style="margin-bottom: 0;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                            <span style="font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                                                <span>🔌</span> 代理客户端通信
+                                            </span>
+                                            <span v-if="diagnostics.report.proxy_info.is_configured" class="badge" :class="diagnostics.report.proxy_info.tcp_reachable ? 'badge-success' : 'badge-danger'">
+                                                {{ diagnostics.report.proxy_info.tcp_reachable ? 'TCP 正常 (' + diagnostics.report.proxy_info.tcp_latency_ms + 'ms)' : '连接被拒绝' }}
+                                            </span>
+                                            <span v-else class="badge badge-info">直连模式</span>
+                                        </div>
+                                        <div style="font-size: 12.5px; opacity: 0.85; line-height: 1.7;">
+                                            <div style="word-break: break-all;"><strong>代理地址:</strong> {{ diagnostics.report.proxy_info.proxy_url }}</div>
+                                            <div v-if="diagnostics.report.proxy_info.tcp_error" style="color: var(--danger, #ef4444); margin-top: 4px;">
+                                                {{ diagnostics.report.proxy_info.tcp_error }}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- DNS 解析与 Fake-IP -->
+                                    <div class="config-section-card" style="margin-bottom: 0;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                            <span style="font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                                                <span>🧭</span> 目标域名 DNS
+                                            </span>
+                                            <span v-if="diagnostics.report.dns_info.is_fake_ip" class="badge badge-warning">TUN / Fake-IP</span>
+                                            <span v-else-if="diagnostics.report.dns_info.ips.length > 0" class="badge badge-success">真实解析</span>
+                                            <span v-else class="badge badge-danger">解析失败</span>
+                                        </div>
+                                        <div style="font-size: 12.5px; opacity: 0.85; line-height: 1.7;">
+                                            <div><strong>oauth2:</strong> {{ diagnostics.report.dns_info.ips.join(', ') || '无解析记录' }}</div>
+                                            <div v-if="diagnostics.report.dns_info.hint" style="color: var(--warning, #f59e0b); font-size: 11.5px; margin-top: 4px; line-height: 1.5;">
+                                                {{ diagnostics.report.dns_info.hint }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 3. Google 各核心端点探测矩阵 -->
+                                <div class="config-section-card mb-3">
+                                    <div class="config-section-title">
+                                        <div class="config-section-title-left">
+                                            <span>⚡</span>
+                                            <span>Google 各核心端点 TLS 握手探测矩阵</span>
+                                        </div>
+                                        <span class="badge badge-info" style="font-size: 11px;">并发模拟真实网络握手</span>
+                                    </div>
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px;">
+                                        <div v-for="ep in diagnostics.report.endpoints" :key="ep.key" style="border: 1px solid var(--border-color); border-radius: 10px; padding: 14px 16px; background: rgba(0,0,0,0.015);">
+                                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                                                <div>
+                                                    <div style="font-weight: 700; font-size: 14px;">{{ ep.name }}</div>
+                                                    <div style="font-size: 11.5px; opacity: 0.7; margin-top: 2px;">{{ ep.desc }}</div>
+                                                </div>
+                                                <div style="display: flex; gap: 8px; align-items: center;">
+                                                    <span v-if="ep.status === 'ok'" class="badge badge-success">握手成功</span>
+                                                    <span v-else class="badge badge-danger">握手失败</span>
+                                                    <span class="badge" :class="ep.status === 'ok' ? (ep.latency_ms < 500 ? 'badge-success' : ep.latency_ms < 1500 ? 'badge-warning' : 'badge-danger') : 'badge-danger'">
+                                                        {{ ep.latency_ms }} ms
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div style="font-size: 12px; opacity: 0.75; margin-bottom: 8px; word-break: break-all; font-family: monospace;">
+                                                {{ ep.url }}
+                                            </div>
+
+                                            <!-- 错误排查建议 -->
+                                            <div v-if="ep.status !== 'ok'" style="margin-top: 8px; padding: 10px 14px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; font-size: 12px; line-height: 1.6;">
+                                                <div style="color: var(--danger, #ef4444); font-weight: 600; margin-bottom: 4px;">
+                                                    ❌ 错误: {{ ep.error_detail }}
+                                                </div>
+                                                <div v-if="ep.suggestion" style="color: var(--text-primary); margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(239, 68, 68, 0.2);">
+                                                    💡 <strong>排查建议:</strong> {{ ep.suggestion }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 初始未测试提示卡片 -->
+                            <div v-else class="config-section-card mb-3" style="text-align: center; padding: 56px 16px;">
+                                <div style="font-size: 44px; margin-bottom: 12px;">📡</div>
+                                <div style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">尚未执行网络体检</div>
+                                <div style="font-size: 13px; opacity: 0.7; margin-bottom: 18px;">
+                                    点击下方按钮即可立即在服务端并发探测外网出口、代理可达性、DNS 解析与 Google 各核心端点的 TLS 握手状态
+                                </div>
+                                <button class="btn btn-primary" @click="runDiagnostics">
+                                    🚀 立即开始全面体检
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- ================= 7. 项目信息标签页 ================= -->
                         <div v-if="activeTab === 'about'" class="tab-content active">
                             <!-- 统一 Hero 工具栏 -->
                             <div class="config-hero-card mb-3">
@@ -1617,7 +1837,7 @@
 
     </div>
 
-    <script src="/front/dashboard.js?v=23.0.0"></script>
+    <script src="/front/dashboard.js?v=23.2.0"></script>
 </body>
 
 </html>
